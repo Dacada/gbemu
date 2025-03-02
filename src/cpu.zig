@@ -107,6 +107,7 @@ const RegisterBank = struct {
 const CpuState = enum {
     fetch_opcode_only,
     start_current_opcode,
+    store_value_then_fetch,
 };
 
 pub const Cpu = struct {
@@ -115,6 +116,8 @@ pub const Cpu = struct {
 
     state: CpuState,
     current_opcode: u8,
+    value_to_store: u8,
+    address_to_store_to: *u8,
 
     pub fn init(mmu_: mmu.Mmu) Cpu {
         return Cpu{
@@ -148,6 +151,8 @@ pub const Cpu = struct {
 
             .state = CpuState.fetch_opcode_only,
             .current_opcode = undefined,
+            .value_to_store = undefined,
+            .address_to_store_to = undefined,
         };
     }
 
@@ -164,6 +169,7 @@ pub const Cpu = struct {
         switch (self.state) {
             CpuState.fetch_opcode_only => try self.fetchNextOpcode(),
             CpuState.start_current_opcode => try self.decodeAndSetup(),
+            CpuState.store_value_then_fetch => self.storeValue(),
         }
     }
 
@@ -171,6 +177,13 @@ pub const Cpu = struct {
         self.current_opcode = try self.mmu.read(self.register_bank.PC);
         self.register_bank.PC += 1;
         self.state = CpuState.start_current_opcode;
+    }
+
+    fn storeValue(self: *Cpu) void {
+        self.address_to_store_to.* = self.value_to_store;
+        self.address_to_store_to = undefined;
+        self.value_to_store = undefined;
+        self.state = CpuState.fetch_opcode_only;
     }
 
     fn ptrOpcodeRegOrMmu(self: *Cpu, idx: u3, comptime ro: bool) if (ro) mmu.MmuMemoryError!*const u8 else mmu.MmuMemoryError!*u8 {
@@ -224,6 +237,23 @@ pub const Cpu = struct {
             }
         }
 
+        // LD register or indirect (HL) immediate
+        else if (self.current_opcode & 0b11_000_111 == 0b00_000_110) {
+            const to: u3 = @intCast((self.current_opcode & 0b00_111_000) >> 3);
+            const to_ptr = try self.ptrOpcodeRegOrMmu(to, false);
+
+            const val = try self.mmu.read(self.register_bank.PC);
+            self.register_bank.PC += 1;
+
+            if (to == 0b110) {
+                self.value_to_store = val;
+                self.address_to_store_to = to_ptr;
+                self.state = CpuState.store_value_then_fetch;
+            } else {
+                to_ptr.* = val;
+                self.state = CpuState.fetch_opcode_only;
+            }
+        }
     }
 };
 
@@ -605,4 +635,56 @@ test "ld immediate" {
         try cpu.tick(); // load illegal instruction
         try helper_expect_cpu_equal(&cpu, &cpu_4);
     }
+}
+
+test "ld reg/ram program" {
+    var rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    var mmu_ = try mmu.Mmu.init(rom, exram, std.testing.allocator);
+    defer mmu_.deinit();
+    mmu_.zeroize();
+
+    var cpu = Cpu.init(mmu_);
+    cpu.zeroize_regs();
+
+    // This program swaps the values of B and the value from dereferencing RAM on the address you get from using B on high and low. In pseudocode:
+
+    //   B = 0xD0
+    //   RAM[0xD0D0] = 0xFF
+    //   ---
+    //   H = B
+    //   L = B
+    //   B = RAM[HL]
+    //   RAM[HL] = H
+    //   ---
+    //   ASSERT B == 0xFF
+    //   ASSERT HL == 0xD0D0
+    //   ASSERT RAM[0xD0D0] = 0xD0
+
+    try mmu_.write(0xD0D0, 0xFF);
+    cpu.register_bank.BC.Hi = 0xD0;
+
+    rom[0] = 0x68; // LD L, B
+    rom[1] = 0x65; // LD H, L
+    rom[2] = 0x46; // LD B, (HL)
+    rom[3] = 0x74; // LD (HL), H
+    rom[4] = 0x00; // NOP
+    rom[5] = 0xFD; // (illegal)
+
+    try cpu.tick(); // fetch instr 1
+    try cpu.tick(); // exec instr 1, load instr 2
+    try cpu.tick(); // exec instr 2, load instr 3
+    try cpu.tick(); // exec instr 3
+    try cpu.tick(); // load instr 4
+    try cpu.tick(); // exec instr 4
+    try cpu.tick(); // load instr 5
+    try cpu.tick(); // exec instr 5, load instr 6
+
+    try std.testing.expectEqual(0xFF, cpu.register_bank.BC.Hi);
+    try std.testing.expectEqual(0xD0D0, cpu.register_bank.HL.all());
+    try std.testing.expectEqual(0xD0, try mmu_.read(0xD0D0));
 }
