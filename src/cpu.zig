@@ -255,6 +255,21 @@ pub const Cpu = struct {
             }
         }
 
+        // LD accumulator indirect
+        else if (self.current_opcode & 0b111_00_111 == 0b000_00_010) {
+            const reg: u1 = @intCast((self.current_opcode & 0b000_10_000) >> 4);
+            const addr = switch (reg) {
+                0 => self.register_bank.BC.all(),
+                1 => self.register_bank.DE.all(),
+            };
+            const rw = (self.current_opcode & 0b000_01_000) >> 3;
+
+            if (rw == 1) {
+                self.register_bank.AF.Hi = try self.mmu.read(addr);
+            } else {
+                try self.mmu.write(addr, self.register_bank.AF.Hi);
+            }
+            self.state = CpuState.fetch_opcode_only;
         }
 
         // Catch anything else
@@ -441,6 +456,13 @@ const TestCpuState = struct {
             else => undefined,
         }
         return self;
+    }
+
+    fn reg16(self: *TestCpuState, r: u1, val: u16) *TestCpuState {
+        return switch (r) {
+            0b0 => self.rBC(val),
+            0b1 => self.rDE(val),
+        };
     }
 };
 
@@ -798,6 +820,102 @@ test "ld immediate indirect" {
     );
 }
 
+test "ld accumulator indirect" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    for (0..2) |from| {
+        // Constants
+        const instr: u8 = @intCast(0b000_0_1010 | (from << 4));
+        const test_value: u8 = 0xFF;
+        const test_addr: u16 = 0xD00D;
+
+        try run_test_case(
+            rom,
+            exram,
+            &[_]u8{
+                0x00,
+                instr,
+                0xFD,
+            },
+            TestCpuState.init()
+                .reg16(@intCast(from), test_addr)
+                .ram(test_addr, test_value),
+            &[_]*TestCpuState{
+                TestCpuState.init() // load nop
+                    .rPC(0x0001)
+                    .reg16(@intCast(from), test_addr)
+                    .ram(test_addr, test_value),
+                TestCpuState.init() // execute nop and load instruction under test
+                    .rPC(0x0002)
+                    .reg16(@intCast(from), test_addr)
+                    .ram(test_addr, test_value),
+                TestCpuState.init() // execute instruction under test: load from ram
+                    .rPC(0x0002)
+                    .reg16(@intCast(from), test_addr)
+                    .rA(test_value)
+                    .ram(test_addr, test_value),
+                TestCpuState.init() // load illegal instruction
+                    .rPC(0x0003)
+                    .reg16(@intCast(from), test_addr)
+                    .rA(test_value)
+                    .ram(test_addr, test_value),
+            },
+        );
+    }
+}
+
+test "ld from accumulator indirect" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    for (0..2) |from| {
+        // Constants
+        const instr: u8 = @intCast(0b000_0_0010 | (from << 4));
+        const test_value: u8 = 0xFF;
+        const test_addr: u16 = 0xD00D;
+
+        try run_test_case(
+            rom,
+            exram,
+            &[_]u8{
+                0x00,
+                instr,
+                0xFD,
+            },
+            TestCpuState.init()
+                .reg16(@intCast(from), test_addr)
+                .rA(test_value),
+            &[_]*TestCpuState{
+                TestCpuState.init() // load nop
+                    .rPC(0x0001)
+                    .reg16(@intCast(from), test_addr)
+                    .rA(test_value),
+                TestCpuState.init() // execute nop and load instruction under test
+                    .rPC(0x0002)
+                    .reg16(@intCast(from), test_addr)
+                    .rA(test_value),
+                TestCpuState.init() // execute instruction under test: load from ram
+                    .rPC(0x0002)
+                    .reg16(@intCast(from), test_addr)
+                    .rA(test_value)
+                    .ram(test_addr, test_value),
+                TestCpuState.init() // load illegal instruction
+                    .rPC(0x0003)
+                    .reg16(@intCast(from), test_addr)
+                    .rA(test_value)
+                    .ram(test_addr, test_value),
+            },
+        );
+    }
+}
+
 // Now follow some test programs, implemented as I add instructions.
 
 test "test program 1" {
@@ -875,4 +993,37 @@ test "test program 2" {
     try std.testing.expectEqual(0xFF, cpu.register_bank.BC.Hi);
     try std.testing.expectEqual(0xFF, cpu.register_bank.BC.Lo);
     try std.testing.expectEqual(0x00, cpu.mmu.read(0xD00D));
+}
+
+test "test program 3" {
+    // Only LD instructions indirect from and to A
+
+    // This program loads the value from (BC) into (DE) using A as an intermediary.
+
+    // RAM[0xD00D] = 0xFF
+    // BC = 0xD00D
+    // DE = 0xDDDD
+    // ---
+    // A = RAM[BC]
+    // RAM[DE] = A
+    // ---
+    // ASSERT A == 0xFF
+    // ASSERT RAM[0xDDDD] == 0xFF
+
+    const cpu = try run_program(
+        &[_]u8{
+            0x0A, // LD A, (BC)
+            0x12, // LD (DE), A
+            0x00, // NOP
+            0xDF, // (illegal)
+        },
+        TestCpuState.init()
+            .ram(0xD00D, 0xFF)
+            .rBC(0xD00D)
+            .rDE(0xDDDD),
+    );
+    defer destroy_cpu(&cpu);
+
+    try std.testing.expectEqual(0xFF, cpu.register_bank.AF.Hi);
+    try std.testing.expectEqual(0xFF, cpu.mmu.read(0xDDDD));
 }
