@@ -108,6 +108,8 @@ const CpuState = enum {
     fetch_opcode_only,
     start_current_opcode,
     store_value_then_fetch,
+    finish_fetching_address,
+    store_or_load_address_accumulator,
 };
 
 pub const Cpu = struct {
@@ -118,6 +120,7 @@ pub const Cpu = struct {
     current_opcode: u8,
     value_to_store: u8,
     ptr_to_store_to: *u8,
+    address_being_read: u16,
 
     pub fn init(mmu_: mmu.Mmu) Cpu {
         return Cpu{
@@ -153,6 +156,7 @@ pub const Cpu = struct {
             .current_opcode = undefined,
             .value_to_store = undefined,
             .ptr_to_store_to = undefined,
+            .address_being_read = undefined,
         };
     }
 
@@ -170,6 +174,8 @@ pub const Cpu = struct {
             CpuState.fetch_opcode_only => try self.fetchNextOpcode(),
             CpuState.start_current_opcode => try self.decodeAndSetup(),
             CpuState.store_value_then_fetch => self.storeValue(),
+            CpuState.finish_fetching_address => try self.finishFetchingAddress(),
+            CpuState.store_or_load_address_accumulator => try self.storeOrLoadReadAddress(),
         }
     }
 
@@ -183,6 +189,25 @@ pub const Cpu = struct {
         self.ptr_to_store_to.* = self.value_to_store;
         self.ptr_to_store_to = undefined;
         self.value_to_store = undefined;
+        self.state = CpuState.fetch_opcode_only;
+    }
+
+    fn finishFetchingAddress(self: *Cpu) !void {
+        var val: u16 = try self.mmu.read(self.register_bank.PC);
+        val <<= 8;
+        self.address_being_read |= val;
+        self.register_bank.PC += 1;
+        self.state = CpuState.store_or_load_address_accumulator;
+    }
+
+    fn storeOrLoadReadAddress(self: *Cpu) !void {
+        const rw = (self.current_opcode & 0b000_1_0000) >> 4;
+        if (rw == 1) {
+            self.register_bank.AF.Hi = try self.mmu.read(self.address_being_read);
+        } else {
+            try self.mmu.write(self.address_being_read, self.register_bank.AF.Hi);
+        }
+        self.address_being_read = undefined;
         self.state = CpuState.fetch_opcode_only;
     }
 
@@ -207,6 +232,7 @@ pub const Cpu = struct {
 
     fn decodeAndSetup(self: *Cpu) (mmu.MmuMemoryError || CpuError)!void {
         if (self.current_opcode == 0xFD) {
+            // Helper for testing, at least for now
             return CpuError.IllegalInstruction;
         }
 
@@ -270,6 +296,13 @@ pub const Cpu = struct {
                 try self.mmu.write(addr, self.register_bank.AF.Hi);
             }
             self.state = CpuState.fetch_opcode_only;
+        }
+
+        // LD accumulator direct
+        else if (self.current_opcode & 0b111_0_1111 == 0b111_0_1010) {
+            self.address_being_read = try self.mmu.read(self.register_bank.PC);
+            self.register_bank.PC += 1;
+            self.state = CpuState.finish_fetching_address;
         }
 
         // Catch anything else
@@ -550,9 +583,12 @@ fn run_test_case(rom: []u8, exram: []u8, program: []const u8, initial_state: *Te
         state.deinit();
     };
 
-    for (ticks) |state| {
+    for (ticks, 1..) |state, idx| {
         try cpu.tick();
-        try expect_cpu_state(&cpu, state);
+        expect_cpu_state(&cpu, state) catch |err| {
+            std.debug.print("Failed on tick {d}\n", .{idx});
+            return err;
+        };
     }
 }
 
@@ -916,6 +952,104 @@ test "ld from accumulator indirect" {
     }
 }
 
+test "ld to accumulator direct" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    // Constants
+    const instr: u8 = 0b11111010;
+    const test_value: u8 = 0xFF;
+    const test_addr: u16 = 0xD00D;
+
+    try run_test_case(
+        rom,
+        exram,
+        &[_]u8{
+            0x00,
+            instr,
+            @intCast(test_addr & 0xFF),
+            @intCast((test_addr & 0xFF00) >> 8),
+            0xFD,
+        },
+        TestCpuState.init()
+            .ram(test_addr, test_value),
+        &[_]*TestCpuState{
+            TestCpuState.init() // load nop
+                .rPC(0x0001)
+                .ram(test_addr, test_value),
+            TestCpuState.init() // execute nop and load instruction under test
+                .rPC(0x0002)
+                .ram(test_addr, test_value),
+            TestCpuState.init() // execute instruction under test: get lsb of address
+                .rPC(0x0003)
+                .ram(test_addr, test_value),
+            TestCpuState.init() // execute instruction under test: get msb of address
+                .rPC(0x0004)
+                .ram(test_addr, test_value),
+            TestCpuState.init() // execute instruction under test: store address value to A
+                .rPC(0x0004)
+                .rA(test_value)
+                .ram(test_addr, test_value),
+            TestCpuState.init() // fetch illegal instruction
+                .rPC(0x0005)
+                .rA(test_value)
+                .ram(test_addr, test_value),
+        },
+    );
+}
+
+test "ld from accumulator direct" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    // Constants
+    const instr: u8 = 0b11101010;
+    const test_value: u8 = 0xFF;
+    const test_addr: u16 = 0xD00D;
+
+    try run_test_case(
+        rom,
+        exram,
+        &[_]u8{
+            0x00,
+            instr,
+            @intCast(test_addr & 0xFF),
+            @intCast((test_addr & 0xFF00) >> 8),
+            0xFD,
+        },
+        TestCpuState.init()
+            .rA(test_value),
+        &[_]*TestCpuState{
+            TestCpuState.init() // load nop
+                .rPC(0x0001)
+                .rA(test_value),
+            TestCpuState.init() // execute nop and load instruction under test
+                .rPC(0x0002)
+                .rA(test_value),
+            TestCpuState.init() // execute instruction under test: get lsb of address
+                .rPC(0x0003)
+                .rA(test_value),
+            TestCpuState.init() // execute instruction under test: get msb of address
+                .rPC(0x0004)
+                .rA(test_value),
+            TestCpuState.init() // execute instruction under test: store address value to A
+                .rPC(0x0004)
+                .rA(test_value)
+                .ram(test_addr, test_value),
+            TestCpuState.init() // fetch illegal instruction
+                .rPC(0x0005)
+                .rA(test_value)
+                .ram(test_addr, test_value),
+        },
+    );
+}
+
 // Now follow some test programs, implemented as I add instructions.
 
 test "test program 1" {
@@ -1015,12 +1149,45 @@ test "test program 3" {
             0x0A, // LD A, (BC)
             0x12, // LD (DE), A
             0x00, // NOP
-            0xDF, // (illegal)
+            0xFD, // (illegal)
         },
         TestCpuState.init()
             .ram(0xD00D, 0xFF)
             .rBC(0xD00D)
             .rDE(0xDDDD),
+    );
+    defer destroy_cpu(&cpu);
+
+    try std.testing.expectEqual(0xFF, cpu.register_bank.AF.Hi);
+    try std.testing.expectEqual(0xFF, cpu.mmu.read(0xDDDD));
+}
+
+test "test program 4" {
+    // Only LD instructions direct from and to A
+
+    // This program loads the value from 0xD00D into 0xDDDD using A as an intermediary.
+
+    // RAM[0xD00D] = 0xFF
+    // ---
+    // A = RAM[0xD00D]
+    // RAM[0xDDDD] = A
+    // ---
+    // ASSERT A == 0xFF
+    // ASSERT RAM[0xDDDD] == 0xFF
+
+    const cpu = try run_program(
+        &[_]u8{
+            0xFA, // LD A, 0xD00D
+            0x0D,
+            0xD0,
+            0xEA, // LD 0xDDDD, A
+            0xDD,
+            0xDD,
+            0x00, // NOP
+            0xFD, // (illegal)
+        },
+        TestCpuState.init()
+            .ram(0xD00D, 0xFF),
     );
     defer destroy_cpu(&cpu);
 
