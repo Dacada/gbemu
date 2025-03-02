@@ -1,6 +1,10 @@
 const std = @import("std");
 const mmu = @import("mmu.zig");
 
+pub const CpuError = error{
+    IllegalInstruction,
+};
+
 const RegisterFlags = packed struct {
     Z: u1,
     N: u1,
@@ -101,7 +105,7 @@ const RegisterBank = struct {
 };
 
 const CpuState = enum {
-    init,
+    fetch_opcode_only,
     start_current_opcode,
 };
 
@@ -142,24 +146,34 @@ pub const Cpu = struct {
                 .PC = 0,
             },
 
-            .state = CpuState.init,
+            .state = CpuState.fetch_opcode_only,
             .current_opcode = undefined,
         };
     }
 
-    pub fn tick(self: *Cpu) mmu.MmuMemoryError!void {
+    pub fn zeroize_regs(self: *Cpu) void {
+        self.register_bank.AF.setAll(0x0000);
+        self.register_bank.BC.setAll(0x0000);
+        self.register_bank.DE.setAll(0x0000);
+        self.register_bank.HL.setAll(0x0000);
+        self.register_bank.SP = 0x0000;
+        self.register_bank.PC = 0x0000;
+    }
+
+    pub fn tick(self: *Cpu) (mmu.MmuMemoryError || CpuError)!void {
         switch (self.state) {
-            CpuState.init => try self.fetchNextOpcode(),
+            CpuState.fetch_opcode_only => try self.fetchNextOpcode(),
             CpuState.start_current_opcode => try self.decodeAndSetup(),
         }
     }
 
     fn fetchNextOpcode(self: *Cpu) mmu.MmuMemoryError!void {
         self.current_opcode = try self.mmu.read(self.register_bank.PC);
+        self.register_bank.PC += 1;
         self.state = CpuState.start_current_opcode;
     }
 
-    fn indexRegister(self: *Cpu, idx: u3, comptime ro: bool) if (ro) mmu.MmuMemoryError!*const u8 else mmu.MmuMemoryError!*u8 {
+    fn ptrOpcodeRegOrMmu(self: *Cpu, idx: u3, comptime ro: bool) if (ro) mmu.MmuMemoryError!*const u8 else mmu.MmuMemoryError!*u8 {
         return switch (idx) {
             0b000 => &self.register_bank.BC.Hi,
             0b001 => &self.register_bank.BC.Lo,
@@ -178,33 +192,38 @@ pub const Cpu = struct {
         };
     }
 
-    fn decodeAndSetup(self: *Cpu) mmu.MmuMemoryError!void {
-        defer self.register_bank.PC += 1;
+    fn decodeAndSetup(self: *Cpu) (mmu.MmuMemoryError || CpuError)!void {
+        if (self.current_opcode == 0xFD) {
+            return CpuError.IllegalInstruction;
+        }
 
         // NOP
-        if (self.current_opcode == 0) {
-            self.state = CpuState.init;
+        else if (self.current_opcode == 0) {
+            try self.fetchNextOpcode();
         }
 
         // HALT
-        if (self.current_opcode == 0x76) {
+        else if (self.current_opcode == 0x76) {
             // TODO: Figure out how HALT works
-            self.state = CpuState.init;
+            return CpuError.IllegalInstruction;
         }
 
-        // LD register
-        else if ((self.current_opcode & 0b01_000_000) >> 6 == 0b01) {
+        // LD register or indirect (HL)
+        else if ((self.current_opcode & 0b11_000_000) >> 6 == 0b01) {
             const to: u3 = @intCast((self.current_opcode & 0b00_111_000) >> 3);
             const from: u3 = @intCast(self.current_opcode & 0b00_000_111);
-            try self.doLDRegister(from, to);
-            self.state = CpuState.init;
-        }
-    }
+            const from_ptr = try self.ptrOpcodeRegOrMmu(from, true);
+            const to_ptr = try self.ptrOpcodeRegOrMmu(to, false);
+            to_ptr.* = from_ptr.*;
 
-    fn doLDRegister(self: *Cpu, from: u3, to: u3) mmu.MmuMemoryError!void {
-        const from_reg = try self.indexRegister(from, true);
-        const to_reg = try self.indexRegister(to, false);
-        to_reg.* = from_reg.*;
+            if (to == 0b110 or from == 0b110) {
+                // we already used the bus to write to ram, so fetch has to wait until the next tick
+                self.state = CpuState.fetch_opcode_only;
+            } else {
+                try self.fetchNextOpcode();
+            }
+        }
+
     }
 };
 
@@ -215,7 +234,7 @@ test "fetch" {
     defer std.testing.allocator.free(exram);
     rom[0] = 0xAA;
     var mmu_ = try mmu.Mmu.init(rom, exram, std.testing.allocator);
-    defer mmu_.deinit(std.testing.allocator);
+    defer mmu_.deinit();
     var cpu = Cpu.init(mmu_);
 
     try cpu.tick();
@@ -230,18 +249,19 @@ test "nop" {
     const exram = try std.testing.allocator.alloc(u8, 0x2000);
     defer std.testing.allocator.free(exram);
     rom[0] = 0x00;
+    rom[1] = 0xFD;
     var mmu_ = try mmu.Mmu.init(rom, exram, std.testing.allocator);
-    defer mmu_.deinit(std.testing.allocator);
+    defer mmu_.deinit();
     var cpu = Cpu.init(mmu_);
 
-    try cpu.tick();
-    try cpu.tick();
-
-    try std.testing.expectEqual(1, cpu.register_bank.PC);
-    try std.testing.expectEqual(CpuState.init, cpu.state);
+    try cpu.tick(); // fetch nop
+    try std.testing.expectEqual(1, cpu.register_bank.PC); // pc advances during fetch
+    try cpu.tick(); // execute nop and fetch the illegal instruction
+    try std.testing.expectEqual(2, cpu.register_bank.PC); // pc has advanced
+    try std.testing.expectError(CpuError.IllegalInstruction, cpu.tick()); // execute the next instruction (and fetch the third one)
 }
 
-fn test_setup_reg_from(cpu: *Cpu, reg: u3, val: u8) !void {
+fn helper_set_cpu_register(cpu: *Cpu, reg: u3, val: u8) !void {
     switch (reg) {
         0b000 => cpu.register_bank.BC.Hi = val,
         0b001 => cpu.register_bank.BC.Lo = val,
@@ -250,37 +270,19 @@ fn test_setup_reg_from(cpu: *Cpu, reg: u3, val: u8) !void {
         0b100 => cpu.register_bank.HL.Hi = val,
         0b101 => cpu.register_bank.HL.Lo = val,
         0b111 => cpu.register_bank.AF.Hi = val,
-        0b110 => {
-            return std.testing.expect(false);
-        },
+        else => undefined,
     }
 }
 
-fn test_check_reg_to(cpu: *const Cpu, from: u3, to: u3, val: u8, val_for_HL: u8) !void {
-    for (0..(0b111 + 1)) |addr_| {
-        const addr: u3 = @intCast(addr_);
-        const actual = switch (addr) {
-            0b000 => cpu.register_bank.BC.Hi,
-            0b001 => cpu.register_bank.BC.Lo,
-            0b010 => cpu.register_bank.DE.Hi,
-            0b011 => cpu.register_bank.DE.Lo,
-            0b100 => cpu.register_bank.HL.Hi,
-            0b101 => cpu.register_bank.HL.Lo,
-            0b111 => cpu.register_bank.AF.Hi,
-            0b110 => {
-                continue;
-            },
-        };
-        if (addr == from or addr == to) {
-            try std.testing.expectEqual(val, actual);
-        } else {
-            if (addr == 0b100 or addr == 0b101) {
-                try std.testing.expectEqual(val_for_HL, actual);
-            } else {
-                try std.testing.expectEqual(0, actual);
-            }
-        }
-    }
+fn helper_expect_cpu_equal(actual: *const Cpu, expected: *const Cpu) !void {
+    try std.testing.expectEqualSlices(u8, expected.mmu.rom, actual.mmu.rom);
+    try std.testing.expectEqualSlices(u8, expected.mmu.wram, actual.mmu.wram);
+    try std.testing.expectEqual(expected.register_bank.AF.all(), actual.register_bank.AF.all());
+    try std.testing.expectEqual(expected.register_bank.BC.all(), actual.register_bank.BC.all());
+    try std.testing.expectEqual(expected.register_bank.DE.all(), actual.register_bank.DE.all());
+    try std.testing.expectEqual(expected.register_bank.HL.all(), actual.register_bank.HL.all());
+    try std.testing.expectEqual(expected.register_bank.SP, actual.register_bank.SP);
+    try std.testing.expectEqual(expected.register_bank.PC, actual.register_bank.PC);
 }
 
 test "ld register" {
@@ -295,29 +297,65 @@ test "ld register" {
             if (to == 0b110) {
                 continue;
             }
+
+            // Constants
             const instr: u8 = @intCast((0b01 << 6) | (to << 3) | from);
             const test_value: u8 = 0x0D;
 
+            // setup CPU state
             var rom = try std.testing.allocator.alloc(u8, 0x8000);
             defer std.testing.allocator.free(rom);
-            rom[0] = instr;
+            @memset(rom, 0x00);
+            rom[0] = 0x00;
+            rom[1] = instr;
+            rom[2] = 0xFD;
 
             var mmu_ = try mmu.Mmu.init(rom, exram, std.testing.allocator);
-            defer mmu_.deinit(std.testing.allocator);
+            defer mmu_.deinit();
+            mmu_.zeroize();
 
             var cpu = Cpu.init(mmu_);
-            cpu.register_bank.AF.setAll(0x0000);
-            cpu.register_bank.BC.setAll(0x0000);
-            cpu.register_bank.DE.setAll(0x0000);
-            cpu.register_bank.HL.setAll(0x0000);
-            cpu.register_bank.SP = 0x0000;
-            cpu.register_bank.PC = 0x0000;
-            try test_setup_reg_from(&cpu, @intCast(from), test_value);
+            cpu.zeroize_regs();
+            try helper_set_cpu_register(&cpu, @intCast(from), test_value);
 
-            try cpu.tick();
-            try cpu.tick();
+            // Setup expected state after first tick
+            var mmu_1 = try mmu.Mmu.init(rom, exram, std.testing.allocator);
+            defer mmu_1.deinit();
+            mmu_1.zeroize();
 
-            try test_check_reg_to(&cpu, @intCast(from), @intCast(to), test_value, 0);
+            var cpu_1 = Cpu.init(mmu_1);
+            cpu_1.zeroize_regs();
+            try helper_set_cpu_register(&cpu_1, @intCast(from), test_value);
+            cpu_1.register_bank.PC = 0x0001;
+
+            // Setup expected state after second tick
+            var mmu_2 = try mmu.Mmu.init(rom, exram, std.testing.allocator);
+            defer mmu_2.deinit();
+            mmu_2.zeroize();
+
+            var cpu_2 = Cpu.init(mmu_1);
+            cpu_2.zeroize_regs();
+            try helper_set_cpu_register(&cpu_2, @intCast(from), test_value);
+            cpu_2.register_bank.PC = 0x0002;
+
+            // Setup expected state after third tick
+            var mmu_3 = try mmu.Mmu.init(rom, exram, std.testing.allocator);
+            defer mmu_3.deinit();
+            mmu_3.zeroize();
+
+            var cpu_3 = Cpu.init(mmu_1);
+            cpu_3.zeroize_regs();
+            try helper_set_cpu_register(&cpu_3, @intCast(from), test_value);
+            try helper_set_cpu_register(&cpu_3, @intCast(to), test_value);
+            cpu_3.register_bank.PC = 0x0003;
+
+            // Execute
+            try cpu.tick(); // load nop
+            try helper_expect_cpu_equal(&cpu, &cpu_1);
+            try cpu.tick(); // execute nop and load instruction under test
+            try helper_expect_cpu_equal(&cpu, &cpu_2);
+            try cpu.tick(); // execute instruction under test and load illegal instruction
+            try helper_expect_cpu_equal(&cpu, &cpu_3);
         }
     }
 }
@@ -331,29 +369,78 @@ test "ld register indirect from every register" {
             continue;
         }
         const instr: u8 = @intCast((0b01 << 6) | (0b110 << 3) | from);
-        const test_value: u8 = 0xD0;
         const test_addr: u16 = 0xD0D0;
+        const test_value: u8 = 0xD0; // this makes the reading from H or from L test case easy
 
         var rom = try std.testing.allocator.alloc(u8, 0x8000);
         defer std.testing.allocator.free(rom);
-        rom[0] = instr;
+        rom[0] = 0x00;
+        rom[1] = instr;
+        rom[2] = 0xFD;
 
         var mmu_ = try mmu.Mmu.init(rom, exram, std.testing.allocator);
-        defer mmu_.deinit(std.testing.allocator);
+        defer mmu_.deinit();
+        mmu_.zeroize();
 
         var cpu = Cpu.init(mmu_);
-        cpu.register_bank.AF.setAll(0x0000);
-        cpu.register_bank.BC.setAll(0x0000);
-        cpu.register_bank.DE.setAll(0x0000);
+        cpu.zeroize_regs();
+        try helper_set_cpu_register(&cpu, @intCast(from), test_value);
         cpu.register_bank.HL.setAll(test_addr);
-        cpu.register_bank.SP = 0x0000;
-        cpu.register_bank.PC = 0x0000;
-        try test_setup_reg_from(&cpu, @intCast(from), test_value);
 
-        try cpu.tick();
-        try cpu.tick();
+        // Setup expected state after first tick
+        var mmu_1 = try mmu.Mmu.init(rom, exram, std.testing.allocator);
+        defer mmu_1.deinit();
+        mmu_1.zeroize();
 
-        try std.testing.expectEqual(test_value, mmu_.read(test_addr));
+        var cpu_1 = Cpu.init(mmu_1);
+        cpu_1.zeroize_regs();
+        try helper_set_cpu_register(&cpu_1, @intCast(from), test_value);
+        cpu_1.register_bank.HL.setAll(test_addr);
+        cpu_1.register_bank.PC = 0x0001;
+
+        // Setup expected state after second tick
+        var mmu_2 = try mmu.Mmu.init(rom, exram, std.testing.allocator);
+        defer mmu_2.deinit();
+        mmu_2.zeroize();
+
+        var cpu_2 = Cpu.init(mmu_2);
+        cpu_2.zeroize_regs();
+        try helper_set_cpu_register(&cpu_2, @intCast(from), test_value);
+        cpu_2.register_bank.HL.setAll(test_addr);
+        cpu_2.register_bank.PC = 0x0002;
+
+        // Setup expected state after third tick
+        var mmu_3 = try mmu.Mmu.init(rom, exram, std.testing.allocator);
+        defer mmu_3.deinit();
+        mmu_3.zeroize();
+        try mmu_3.write(test_addr, test_value);
+
+        var cpu_3 = Cpu.init(mmu_3);
+        cpu_3.zeroize_regs();
+        try helper_set_cpu_register(&cpu_3, @intCast(from), test_value);
+        cpu_3.register_bank.HL.setAll(test_addr);
+        cpu_3.register_bank.PC = 0x0002;
+
+        // Setup expected state after fourth tick
+        var mmu_4 = try mmu.Mmu.init(rom, exram, std.testing.allocator);
+        defer mmu_4.deinit();
+        mmu_4.zeroize();
+        try mmu_4.write(test_addr, test_value);
+
+        var cpu_4 = Cpu.init(mmu_4);
+        cpu_4.zeroize_regs();
+        try helper_set_cpu_register(&cpu_4, @intCast(from), test_value);
+        cpu_4.register_bank.HL.setAll(test_addr);
+        cpu_4.register_bank.PC = 0x0003;
+
+        try cpu.tick(); // load nop
+        try helper_expect_cpu_equal(&cpu, &cpu_1);
+        try cpu.tick(); // execute nop and load instruction under test
+        try helper_expect_cpu_equal(&cpu, &cpu_2);
+        try cpu.tick(); // execute instruction under test (write to ram)
+        try helper_expect_cpu_equal(&cpu, &cpu_3);
+        try cpu.tick(); // load illegal instruction
+        try helper_expect_cpu_equal(&cpu, &cpu_4);
     }
 }
 
@@ -371,23 +458,151 @@ test "ld register indirect to every register" {
 
         var rom = try std.testing.allocator.alloc(u8, 0x8000);
         defer std.testing.allocator.free(rom);
-        rom[0] = instr;
+        rom[0] = 0x00;
+        rom[1] = instr;
+        rom[2] = 0xFD;
 
         var mmu_ = try mmu.Mmu.init(rom, exram, std.testing.allocator);
-        defer mmu_.deinit(std.testing.allocator);
-
-        var cpu = Cpu.init(mmu_);
-        cpu.register_bank.AF.setAll(0x0000);
-        cpu.register_bank.BC.setAll(0x0000);
-        cpu.register_bank.DE.setAll(0x0000);
-        cpu.register_bank.HL.setAll(test_addr);
-        cpu.register_bank.SP = 0x0000;
-        cpu.register_bank.PC = 0x0000;
+        defer mmu_.deinit();
+        mmu_.zeroize();
         try mmu_.write(test_addr, test_value);
 
-        try cpu.tick();
-        try cpu.tick();
+        var cpu = Cpu.init(mmu_);
+        cpu.zeroize_regs();
+        cpu.register_bank.HL.setAll(test_addr);
 
-        try test_check_reg_to(&cpu, 0b110, @intCast(to), test_value, 0xD0);
+        // Setup expected state after first tick
+        var mmu_1 = try mmu.Mmu.init(rom, exram, std.testing.allocator);
+        defer mmu_1.deinit();
+        mmu_1.zeroize();
+        try mmu_1.write(test_addr, test_value);
+
+        var cpu_1 = Cpu.init(mmu_1);
+        cpu_1.zeroize_regs();
+        cpu_1.register_bank.HL.setAll(test_addr);
+        cpu_1.register_bank.PC = 0x0001;
+
+        // Setup expected state after second tick
+        var mmu_2 = try mmu.Mmu.init(rom, exram, std.testing.allocator);
+        defer mmu_2.deinit();
+        mmu_2.zeroize();
+        try mmu_2.write(test_addr, test_value);
+
+        var cpu_2 = Cpu.init(mmu_2);
+        cpu_2.zeroize_regs();
+        cpu_2.register_bank.HL.setAll(test_addr);
+        cpu_2.register_bank.PC = 0x0002;
+
+        // Setup expected state after second tick
+        var mmu_3 = try mmu.Mmu.init(rom, exram, std.testing.allocator);
+        defer mmu_3.deinit();
+        mmu_3.zeroize();
+        try mmu_3.write(test_addr, test_value);
+
+        var cpu_3 = Cpu.init(mmu_3);
+        cpu_3.zeroize_regs();
+        cpu_3.register_bank.HL.setAll(test_addr);
+        cpu_3.register_bank.PC = 0x0002;
+        try helper_set_cpu_register(&cpu_3, @intCast(to), test_value);
+
+        // Setup expected state after second tick
+        var mmu_4 = try mmu.Mmu.init(rom, exram, std.testing.allocator);
+        defer mmu_4.deinit();
+        mmu_4.zeroize();
+        try mmu_4.write(test_addr, test_value);
+
+        var cpu_4 = Cpu.init(mmu_4);
+        cpu_4.zeroize_regs();
+        cpu_4.register_bank.HL.setAll(test_addr);
+        cpu_4.register_bank.PC = 0x0003;
+        try helper_set_cpu_register(&cpu_4, @intCast(to), test_value);
+
+        try cpu.tick(); // load nop
+        try helper_expect_cpu_equal(&cpu, &cpu_1);
+        try cpu.tick(); // execute nop and load instruction under test
+        try helper_expect_cpu_equal(&cpu, &cpu_2);
+        try cpu.tick(); // execute instruction under test (read from ram)
+        try helper_expect_cpu_equal(&cpu, &cpu_3);
+        try cpu.tick(); // load illegal instruction
+        try helper_expect_cpu_equal(&cpu, &cpu_4);
+    }
+}
+
+test "ld immediate" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    for (0..(0b111 + 1)) |to| {
+        if (to == 0b110) {
+            continue;
+        }
+
+        // Constants
+        const instr: u8 = @intCast(0b00 << 6 | (to << 3) | 0b110);
+        const test_value: u8 = 0xFF;
+
+        // setup CPU state
+        var rom = try std.testing.allocator.alloc(u8, 0x8000);
+        defer std.testing.allocator.free(rom);
+        @memset(rom, 0x00);
+        rom[0] = 0x00;
+        rom[1] = instr;
+        rom[2] = test_value;
+        rom[3] = 0xFD;
+
+        var mmu_ = try mmu.Mmu.init(rom, exram, std.testing.allocator);
+        defer mmu_.deinit();
+        mmu_.zeroize();
+
+        var cpu = Cpu.init(mmu_);
+        cpu.zeroize_regs();
+
+        // Setup expected state after first tick
+        var mmu_1 = try mmu.Mmu.init(rom, exram, std.testing.allocator);
+        defer mmu_1.deinit();
+        mmu_1.zeroize();
+
+        var cpu_1 = Cpu.init(mmu_1);
+        cpu_1.zeroize_regs();
+        cpu_1.register_bank.PC = 0x0001;
+
+        // Setup expected state after second tick
+        var mmu_2 = try mmu.Mmu.init(rom, exram, std.testing.allocator);
+        defer mmu_2.deinit();
+        mmu_2.zeroize();
+
+        var cpu_2 = Cpu.init(mmu_2);
+        cpu_2.zeroize_regs();
+        cpu_2.register_bank.PC = 0x0002;
+
+        // Setup expected state after third tick
+        var mmu_3 = try mmu.Mmu.init(rom, exram, std.testing.allocator);
+        defer mmu_3.deinit();
+        mmu_3.zeroize();
+
+        var cpu_3 = Cpu.init(mmu_3);
+        cpu_3.zeroize_regs();
+        cpu_3.register_bank.PC = 0x0003;
+        try helper_set_cpu_register(&cpu_3, @intCast(to), test_value);
+
+        // Setup expected state after fourth tick
+        var mmu_4 = try mmu.Mmu.init(rom, exram, std.testing.allocator);
+        defer mmu_4.deinit();
+        mmu_4.zeroize();
+
+        var cpu_4 = Cpu.init(mmu_4);
+        cpu_4.zeroize_regs();
+        cpu_4.register_bank.PC = 0x0004;
+        try helper_set_cpu_register(&cpu_4, @intCast(to), test_value);
+
+        // Execute
+        try cpu.tick(); // load nop
+        try helper_expect_cpu_equal(&cpu, &cpu_1);
+        try cpu.tick(); // execute nop and load instruction under test
+        try helper_expect_cpu_equal(&cpu, &cpu_2);
+        try cpu.tick(); // execute instruction under test: load immediate into register
+        try helper_expect_cpu_equal(&cpu, &cpu_3);
+        try cpu.tick(); // load illegal instruction
+        try helper_expect_cpu_equal(&cpu, &cpu_4);
     }
 }

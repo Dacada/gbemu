@@ -19,6 +19,8 @@ pub const Mmu = struct {
     hram: []u8,
     ie: u8,
 
+    allocator: std.mem.Allocator,
+
     pub fn init(rom: []const u8, exram: []u8, allocator: std.mem.Allocator) MmuSetupError!Mmu {
         if (rom.len != 0x8000) {
             return MmuSetupError.UnexpectedMemoryCapacity;
@@ -35,15 +37,40 @@ pub const Mmu = struct {
             .io = try allocator.alloc(u8, 0xFF80 - 0xFF00),
             .hram = try allocator.alloc(u8, 0xFFFF - 0xFF80),
             .ie = undefined,
+            .allocator = allocator,
         };
     }
 
-    pub fn deinit(self: *const Mmu, allocator: std.mem.Allocator) void {
-        allocator.free(self.vram);
-        allocator.free(self.wram);
-        allocator.free(self.oam);
-        allocator.free(self.io);
-        allocator.free(self.hram);
+    pub fn zeroize(self: *Mmu) void {
+        @memset(self.vram, 0);
+        @memset(self.wram, 0);
+        @memset(self.oam, 0);
+        @memset(self.io, 0);
+        @memset(self.hram, 0);
+        self.ie = 0;
+    }
+
+    test "zeroize mmu owned memory" {
+        const rom = try std.testing.allocator.alloc(u8, 0x8000);
+        defer std.testing.allocator.free(rom);
+        const exram = try std.testing.allocator.alloc(u8, 0x2000);
+        defer std.testing.allocator.free(exram);
+        var mmu = try Mmu.init(rom, exram, std.testing.allocator);
+        defer mmu.deinit();
+        mmu.zeroize();
+        inline for (.{ mmu.vram, mmu.wram, mmu.oam, mmu.io, mmu.hram }) |slice| {
+            for (slice) |cell| {
+                try std.testing.expectEqual(0, cell);
+            }
+        }
+    }
+
+    pub fn deinit(self: *const Mmu) void {
+        self.allocator.free(self.vram);
+        self.allocator.free(self.wram);
+        self.allocator.free(self.oam);
+        self.allocator.free(self.io);
+        self.allocator.free(self.hram);
     }
 
     fn generateReference(comptime is_const: bool) fn (if (is_const) *const Mmu else *Mmu, u16) if (is_const) MmuMemoryError!*const u8 else MmuMemoryError!*u8 {
@@ -119,7 +146,7 @@ test "mmu" {
     const exram = try std.testing.allocator.alloc(u8, 0x2000);
     defer std.testing.allocator.free(exram);
     var mmu = try Mmu.init(rom, exram, std.testing.allocator);
-    defer mmu.deinit(std.testing.allocator);
+    defer mmu.deinit();
 
     // Set up ROM
     for (0..0x8000) |addr| {
