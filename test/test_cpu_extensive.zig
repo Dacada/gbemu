@@ -455,3 +455,97 @@ test "ld from accumulator direct" {
         },
     );
 }
+
+test "ldh to accumulator indirect" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    // Constants
+    const instr: u8 = 0b11110010;
+    const test_value: u8 = 0xFF;
+    const test_addr: u16 = 0xFFAA;
+
+    try run_test_case(
+        "LDH to accumulator indirect",
+        rom,
+        exram,
+        &[_]u8{
+            0x00,
+            instr,
+            0xFD,
+        },
+        TestCpuState.init()
+            .rC(test_addr & 0xFF)
+            .ram(test_addr, test_value),
+        &[_]*TestCpuState{
+            TestCpuState.init() // load nop
+                .rPC(0x0001)
+                .rC(test_addr & 0xFF)
+                .ram(test_addr, test_value),
+            TestCpuState.init() // execute nop and load instruction under test
+                .rPC(0x0002)
+                .rC(test_addr & 0xFF)
+                .ram(test_addr, test_value),
+            TestCpuState.init() // execute instruction under test: load from ram
+                .rPC(0x0002)
+                .rC(test_addr & 0xFF)
+                .rA(test_value)
+                .ram(test_addr, test_value),
+            TestCpuState.init() // fetch illegal instruction
+                .rPC(0x0003)
+                .rC(test_addr & 0xFF)
+                .rA(test_value)
+                .ram(test_addr, test_value),
+        },
+    );
+}
+
+test "ldh from accumulator indirect" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    // Constants
+    const instr: u8 = 0b11100010;
+    const test_value: u8 = 0xFF;
+    const test_addr: u16 = 0xFFAA;
+
+    try run_test_case(
+        "LDH from accumulator indirect",
+        rom,
+        exram,
+        &[_]u8{
+            0x00,
+            instr,
+            0xFD,
+        },
+        TestCpuState.init()
+            .rC(test_addr & 0xFF)
+            .rA(test_value),
+        &[_]*TestCpuState{
+            TestCpuState.init() // load nop
+                .rPC(0x0001)
+                .rC(test_addr & 0xFF)
+                .rA(test_value),
+            TestCpuState.init() // execute nop and load instruction under test
+                .rPC(0x0002)
+                .rC(test_addr & 0xFF)
+                .rA(test_value),
+            TestCpuState.init() // execute instruction under test: load from ram
+                .rPC(0x0002)
+                .rC(test_addr & 0xFF)
+                .rA(test_value)
+                .ram(test_addr, test_value),
+            TestCpuState.init() // fetch illegal instruction
+                .rPC(0x0003)
+                .rC(test_addr & 0xFF)
+                .rA(test_value)
+                .ram(test_addr, test_value),
+        },
+    );
+}

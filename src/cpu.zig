@@ -305,6 +305,18 @@ pub const Cpu = struct {
             self.state = CpuState.finish_fetching_address;
         }
 
+        // LDH accumulator indirect
+        else if (self.current_opcode & 0b111_0_1111 == 0b111_0_0010) {
+            const addr: u16 = 0xFF00 | @as(u16, self.register_bank.BC.Lo);
+            const rw = (self.current_opcode & 0b000_1_0000) >> 4;
+            if (rw == 1) {
+                self.register_bank.AF.Hi = try self.mmu.read(addr);
+            } else {
+                try self.mmu.write(addr, self.register_bank.AF.Hi);
+            }
+            self.state = CpuState.fetch_opcode_only;
+        }
+
         // Catch anything else
         else {
             return CpuError.IllegalInstruction;
