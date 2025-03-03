@@ -2,7 +2,7 @@ const std = @import("std");
 
 pub fn build(b: *std.Build) void {
     const lib_source = "src/lib.zig";
-    const exe_source = "src/main.zig";
+    const test_source = "test/test.zig";
 
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
@@ -14,21 +14,9 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     b.installArtifact(lib);
-
-    const exe = b.addExecutable(.{
-        .name = "gbemu",
-        .root_source_file = b.path(exe_source),
-        .target = target,
-        .optimize = optimize,
+    const lib_module = b.addModule("lib", .{
+        .root_source_file = b.path(lib_source),
     });
-    b.installArtifact(exe);
-    const run_cmd = b.addRunArtifact(exe);
-    run_cmd.step.dependOn(b.getInstallStep());
-    if (b.args) |args| {
-        run_cmd.addArgs(args);
-    }
-    const run_step = b.step("run", "Run the app");
-    run_step.dependOn(&run_cmd.step);
 
     const lib_unit_tests = b.addTest(.{
         .root_source_file = b.path(lib_source),
@@ -36,6 +24,16 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
+
+    const extended_unit_tests = b.addTest(.{
+        .root_source_file = b.path(test_source),
+        .target = target,
+        .optimize = optimize,
+    });
+    extended_unit_tests.root_module.addImport("lib", lib_module);
+    const run_extended_unit_tests = b.addRunArtifact(extended_unit_tests);
+
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_lib_unit_tests.step);
+    test_step.dependOn(&run_extended_unit_tests.step);
 }
