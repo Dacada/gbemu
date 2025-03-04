@@ -183,3 +183,33 @@ test "test program 5" {
     try std.testing.expectEqual(0xFF, cpu.register_bank.AF.Hi);
     try std.testing.expectEqual(0xFF, cpu.mmu.read(0xFFBB));
 }
+
+test "test program 6" {
+    // Only LDH instructions direct from and to A
+
+    // This program loads the value from 0xFFAA into 0xFFBB using A as the intermediary
+
+    // RAM[0xFFAA] = 0xFF
+    // ---
+    // A = RAM[0xFFAA]
+    // RAM[0xFFBB] = A
+    // ---
+    // ASSERT A == 0xFF
+    // ASSERT RAM[0xFFBB] = 0xFF
+
+    const cpu = try run_program(
+        "LDH direct accumulator",
+        &[_]u8{
+            0xF0, // LDH A, 0xFFAA
+            0xAA,
+            0xE0, // LDH 0xFFBB, A
+            0xBB,
+        },
+        TestCpuState.init()
+            .ram(0xFFAA, 0xFF),
+    );
+    defer destroy_cpu(&cpu);
+
+    try std.testing.expectEqual(0xFF, cpu.register_bank.AF.Hi);
+    try std.testing.expectEqual(0xFF, cpu.mmu.read(0xFFBB));
+}
