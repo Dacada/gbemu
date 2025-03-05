@@ -231,13 +231,8 @@ pub const Cpu = struct {
     }
 
     fn decodeAndSetup(self: *Cpu) (mmu.MmuMemoryError || CpuError)!void {
-        if (self.current_opcode == 0xFD) {
-            // Helper for testing, at least for now
-            return CpuError.IllegalInstruction;
-        }
-
         // NOP
-        else if (self.current_opcode == 0) {
+        if (self.current_opcode == 0) {
             try self.fetchNextOpcode();
         }
 
@@ -323,6 +318,27 @@ pub const Cpu = struct {
             self.register_bank.PC += 1;
             self.address_being_read = 0xFF00 | immediate;
             self.state = CpuState.store_or_load_address_accumulator;
+        }
+
+        // LD accumulator indirect HL inc/dec
+        else if (self.current_opcode & 0b111_00_111 == 0b001_00_010) {
+            const addr = self.register_bank.HL.all();
+            const decinc = (self.current_opcode & 0b000_10_000) >> 4;
+            const rw = (self.current_opcode & 0b000_01_000) >> 3;
+
+            if (rw == 1) {
+                self.register_bank.AF.Hi = try self.mmu.read(addr);
+            } else {
+                try self.mmu.write(addr, self.register_bank.AF.Hi);
+            }
+
+            if (decinc == 1) {
+                self.register_bank.HL.setAll(addr - 1);
+            } else {
+                self.register_bank.HL.setAll(addr + 1);
+            }
+
+            self.state = CpuState.fetch_opcode_only;
         }
 
         // Catch anything else

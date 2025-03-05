@@ -641,3 +641,115 @@ test "ldh from accumulator direct" {
         },
     );
 }
+
+test "ld to accumulator indirect HL" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    inline for (0..2) |decinc| {
+        // Constants
+        const instr: u8 = @intCast(0b00101010 | (decinc << 4));
+        const test_value: u8 = 0xFF;
+        const test_addr: u16 = 0xFFAA;
+        const test_addr_next = switch (decinc) {
+            1 => test_addr - 1,
+            0 => test_addr + 1,
+            else => unreachable,
+        };
+
+        const name = try std.fmt.allocPrint(std.testing.allocator, "LD to accumulator indirect dec/inc={b}", .{decinc});
+        defer std.testing.allocator.free(name);
+        try run_test_case(
+            name,
+            rom,
+            exram,
+            &[_]u8{
+                0x00,
+                instr,
+                0xFD,
+            },
+            TestCpuState.init()
+                .rHL(test_addr)
+                .ram(test_addr, test_value),
+            &[_]*TestCpuState{
+                TestCpuState.init() // load nop
+                    .rPC(0x0001)
+                    .rHL(test_addr)
+                    .ram(test_addr, test_value),
+                TestCpuState.init() // execute nop and load instruction under test
+                    .rPC(0x0002)
+                    .rHL(test_addr)
+                    .ram(test_addr, test_value),
+                TestCpuState.init() // execute instruction under test: load value from ram
+                    .rPC(0x0002)
+                    .rHL(test_addr_next)
+                    .rA(test_value)
+                    .ram(test_addr, test_value),
+                TestCpuState.init() // fetch illegal instruction
+                    .rPC(0x0003)
+                    .rHL(test_addr_next)
+                    .rA(test_value)
+                    .ram(test_addr, test_value),
+            },
+        );
+    }
+}
+
+test "ld from accumulator indirect HL" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    inline for (0..2) |decinc| {
+        // Constants
+        const instr: u8 = @intCast(0b00100010 | (decinc << 4));
+        const test_value: u8 = 0xFF;
+        const test_addr: u16 = 0xFFAA;
+        const test_addr_next = switch (decinc) {
+            1 => test_addr - 1,
+            0 => test_addr + 1,
+            else => unreachable,
+        };
+
+        const name = try std.fmt.allocPrint(std.testing.allocator, "LD from accumulator indirect dec/inc={b}", .{decinc});
+        defer std.testing.allocator.free(name);
+        try run_test_case(
+            name,
+            rom,
+            exram,
+            &[_]u8{
+                0x00,
+                instr,
+                0xFD,
+            },
+            TestCpuState.init()
+                .rHL(test_addr)
+                .rA(test_value),
+            &[_]*TestCpuState{
+                TestCpuState.init() // load nop
+                    .rPC(0x0001)
+                    .rHL(test_addr)
+                    .rA(test_value),
+                TestCpuState.init() // execute nop and load instruction under test
+                    .rPC(0x0002)
+                    .rHL(test_addr)
+                    .rA(test_value),
+                TestCpuState.init() // execute instruction under test: load value to ram
+                    .rPC(0x0002)
+                    .rHL(test_addr_next)
+                    .rA(test_value)
+                    .ram(test_addr, test_value),
+                TestCpuState.init() // fetch illegal instruction
+                    .rPC(0x0003)
+                    .rHL(test_addr_next)
+                    .rA(test_value)
+                    .ram(test_addr, test_value),
+            },
+        );
+    }
+}

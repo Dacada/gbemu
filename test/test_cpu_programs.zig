@@ -213,3 +213,39 @@ test "test program 6" {
     try std.testing.expectEqual(0xFF, cpu.register_bank.AF.Hi);
     try std.testing.expectEqual(0xFF, cpu.mmu.read(0xFFBB));
 }
+
+test "test program 7" {
+    // Only LD instructions indirect from and to A with inc/dec HL
+
+    // This program loads three consecutive values starting from 0xFFA0 and does nothing with them
+
+    // HL = 0xD0A0
+    // RAM[0xD0A0] = 0x11
+    // RAM(0xD0A1] = 0x22
+    // RAM[0xD0A2] = 0x33
+    // ---
+    // A = RAM[HL+]
+    // A = RAM[HL+]
+    // A = RAM[HL+]
+    // ---
+    // ASSERT A == 0x33
+    // ASSERT HL == 0xD0A3
+
+    const cpu = try run_program(
+        "LD indirect accumulator with inc/dec HL",
+        &[_]u8{
+            0x2A, // LD A, (HL+)
+            0x2A, // LD A, (HL+)
+            0x2A, // LD A, (HL+)
+        },
+        TestCpuState.init()
+            .ram(0xD0A0, 0x11)
+            .ram(0xD0A1, 0x22)
+            .ram(0xD0A2, 0x33)
+            .rHL(0xD0A0),
+    );
+    defer destroy_cpu(&cpu);
+
+    try std.testing.expectEqual(0x33, cpu.register_bank.AF.Hi);
+    try std.testing.expectEqual(0xD0A3, cpu.register_bank.HL.all());
+}
