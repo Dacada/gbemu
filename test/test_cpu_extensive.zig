@@ -753,3 +753,46 @@ test "ld from accumulator indirect HL" {
         );
     }
 }
+
+test "ld immediate 16bit" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    inline for (0..(0b11 + 1)) |reg| {
+        // Constants
+        const instr: u8 = @intCast(0b00000001 | (reg << 4));
+        const test_value: u16 = 0xABCD;
+
+        const name = try std.fmt.allocPrint(std.testing.allocator, "LD immediate 16bit reg={b}", .{reg});
+        defer std.testing.allocator.free(name);
+        try run_test_case(
+            name,
+            rom,
+            exram,
+            &[_]u8{
+                0x00,
+                instr,
+                test_value & 0x00FF,
+                (test_value & 0xFF00) >> 8,
+                0xFD,
+            },
+            TestCpuState.init(),
+            &[_]*TestCpuState{
+                TestCpuState.init() // load nop
+                    .rPC(0x0001),
+                TestCpuState.init() // execute nop and load instruction under test
+                    .rPC(0x0002),
+                TestCpuState.init() // execute instruction under test: load lsb from program
+                    .rPC(0x0003),
+                TestCpuState.init() // execute instruction under test: load msb from program
+                    .rPC(0x0004),
+                TestCpuState.init() // load illegal instruction and store value to register pair
+                    .rPC(0x0005)
+                    .reg16(reg, test_value),
+            },
+        );
+    }
+}

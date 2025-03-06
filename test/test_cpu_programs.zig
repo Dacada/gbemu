@@ -173,6 +173,7 @@ test "test program 5" {
             0x0E, // LD C, 0xBB
             0xBB,
             0xE2, // LDH (C), A
+            0xFD, // (illegal)
         },
         TestCpuState.init()
             .ram(0xFFAA, 0xFF)
@@ -204,6 +205,7 @@ test "test program 6" {
             0xAA,
             0xE0, // LDH 0xFFBB, A
             0xBB,
+            0xFD, // (illegal)
         },
         TestCpuState.init()
             .ram(0xFFAA, 0xFF),
@@ -237,6 +239,7 @@ test "test program 7" {
             0x2A, // LD A, (HL+)
             0x2A, // LD A, (HL+)
             0x2A, // LD A, (HL+)
+            0xFD, // (illegal)
         },
         TestCpuState.init()
             .ram(0xD0A0, 0x11)
@@ -248,4 +251,29 @@ test "test program 7" {
 
     try std.testing.expectEqual(0x33, cpu.register_bank.AF.Hi);
     try std.testing.expectEqual(0xD0A3, cpu.register_bank.HL.all());
+}
+
+test "test program 8" {
+    // Only 16 bit immediate LD instructions
+
+    // This program loads a value to the SP
+
+    // ---
+    // SP = 0xFFAA
+    // ---
+    // ASSERT SP == 0xFFAA
+
+    const cpu = try run_program(
+        "LD immediate 16bit",
+        &[_]u8{
+            0x31, // LD SP, 0xFFAA
+            0xAA,
+            0xFF,
+            0xFD, // (illegal)
+        },
+        TestCpuState.init(),
+    );
+    defer destroy_cpu(&cpu);
+
+    try std.testing.expectEqual(0xFFAA, cpu.register_bank.SP.all());
 }

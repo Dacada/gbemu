@@ -100,7 +100,7 @@ const RegisterBank = struct {
     BC: RegisterWithHalves,
     DE: RegisterWithHalves,
     HL: RegisterWithHalves,
-    SP: u16,
+    SP: RegisterWithHalves, // We don't use the 8bit addressing but uniformity makes some opcodes simpler
     PC: u16,
 };
 
@@ -110,6 +110,8 @@ const CpuState = enum {
     store_value_8_bit,
     fetch_address_msb_from_program,
     store_or_load_accumulator,
+    fetch_value_msb_from_program,
+    store_to_16bit_register,
 };
 
 pub const Cpu = struct {
@@ -148,7 +150,10 @@ pub const Cpu = struct {
                     .Hi = 0,
                     .Lo = 0,
                 },
-                .SP = 0,
+                .SP = RegisterWithHalves{
+                    .Hi = 0,
+                    .Lo = 0,
+                },
                 .PC = 0,
             },
 
@@ -164,7 +169,7 @@ pub const Cpu = struct {
         self.register_bank.BC.setAll(0x0000);
         self.register_bank.DE.setAll(0x0000);
         self.register_bank.HL.setAll(0x0000);
-        self.register_bank.SP = 0x0000;
+        self.register_bank.SP.setAll(0x0000);
         self.register_bank.PC = 0x0000;
     }
 
@@ -175,6 +180,8 @@ pub const Cpu = struct {
             CpuState.store_value_8_bit => try self.storeValue8Bit(),
             CpuState.fetch_address_msb_from_program => try self.fetchAddressMsbFromProgram(),
             CpuState.store_or_load_accumulator => try self.storeOrLoadAccumulator(),
+            CpuState.fetch_value_msb_from_program => try self.fetchValueMsbFromProgram(),
+            CpuState.store_to_16bit_register => try self.storeTo16BitRegister(),
         };
     }
 
@@ -197,10 +204,25 @@ pub const Cpu = struct {
         };
     }
 
+    fn ptrReg16Bit(self: *Cpu, idx: u2) *RegisterWithHalves {
+        return switch (idx) {
+            0b00 => &self.register_bank.BC,
+            0b01 => &self.register_bank.DE,
+            0b10 => &self.register_bank.HL,
+            0b11 => &self.register_bank.SP,
+        };
+    }
+
     fn fetchValueFromProgram(self: *Cpu) mmu.MmuMemoryError!u8 {
         const val = try self.mmu.read(self.register_bank.PC);
         self.register_bank.PC += 1;
         return val;
+    }
+
+    fn fetchValueFromProgramThenStoreAsMsb(self: *Cpu) mmu.MmuMemoryError!void {
+        var val: u16 = try self.fetchValueFromProgram();
+        val <<= 8;
+        self.intermediate_16bit |= val;
     }
 
     fn startExecutionCurrentOpcode(self: *Cpu) (mmu.MmuMemoryError || CpuError)!CpuState {
@@ -306,6 +328,12 @@ pub const Cpu = struct {
             return CpuState.fetch_opcode;
         }
 
+        // LD immediate 16bit
+        if (self.current_opcode & 0b11_00_1111 == 0b00_00_0001) {
+            self.intermediate_16bit = try self.fetchValueFromProgram();
+            return CpuState.fetch_value_msb_from_program;
+        }
+
         // Catch anything else
         return CpuError.IllegalInstruction;
     }
@@ -324,10 +352,13 @@ pub const Cpu = struct {
     }
 
     fn fetchAddressMsbFromProgram(self: *Cpu) mmu.MmuMemoryError!CpuState {
-        var val: u16 = try self.fetchValueFromProgram();
-        val <<= 8;
-        self.intermediate_16bit |= val;
+        try self.fetchValueFromProgramThenStoreAsMsb();
         return CpuState.store_or_load_accumulator;
+    }
+
+    fn fetchValueMsbFromProgram(self: *Cpu) mmu.MmuMemoryError!CpuState {
+        try self.fetchValueFromProgramThenStoreAsMsb();
+        return CpuState.store_to_16bit_register;
     }
 
     fn storeOrLoadAccumulator(self: *Cpu) mmu.MmuMemoryError!CpuState {
@@ -339,6 +370,13 @@ pub const Cpu = struct {
         }
         self.intermediate_16bit = undefined;
         return CpuState.fetch_opcode;
+    }
+
+    fn storeTo16BitRegister(self: *Cpu) mmu.MmuMemoryError!CpuState {
+        const which: u2 = @intCast((self.current_opcode & 0b00_11_0000) >> 4);
+        const reg = self.ptrReg16Bit(which);
+        reg.setAll(self.intermediate_16bit);
+        return try self.fetchOpcode();
     }
 };
 

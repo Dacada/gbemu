@@ -144,10 +144,12 @@ pub const TestCpuState = struct {
         return self;
     }
 
-    pub fn reg16(self: *TestCpuState, r: u1, val: u16) *TestCpuState {
+    pub fn reg16(self: *TestCpuState, r: u2, val: u16) *TestCpuState {
         return switch (r) {
-            0b0 => self.rBC(val),
-            0b1 => self.rDE(val),
+            0b00 => self.rBC(val),
+            0b01 => self.rDE(val),
+            0b10 => self.rHL(val),
+            0b11 => self.rSP(val),
         };
     }
 };
@@ -187,7 +189,7 @@ fn expect_cpu_state(cpu: *const Cpu, state: *TestCpuState) !void {
     try std.testing.expectEqual(state.regE, cpu.register_bank.DE.Lo);
     try std.testing.expectEqual(state.regH, cpu.register_bank.HL.Hi);
     try std.testing.expectEqual(state.regL, cpu.register_bank.HL.Lo);
-    try std.testing.expectEqual(state.regSP, cpu.register_bank.SP);
+    try std.testing.expectEqual(state.regSP, cpu.register_bank.SP.all());
     try std.testing.expectEqual(state.regPC, cpu.register_bank.PC);
 
     try std.testing.expectEqualSlices(u8, mmu.vram, cpu.mmu.vram);
@@ -211,7 +213,7 @@ fn map_initial_state(cpu: *Cpu, initial_state: *TestCpuState) !void {
     cpu.register_bank.DE.Lo = initial_state.regE;
     cpu.register_bank.HL.Hi = initial_state.regH;
     cpu.register_bank.HL.Lo = initial_state.regL;
-    cpu.register_bank.SP = initial_state.regSP;
+    cpu.register_bank.SP.setAll(initial_state.regSP);
     cpu.register_bank.PC = initial_state.regPC;
 
     for (initial_state.addresses.items) |state| {
