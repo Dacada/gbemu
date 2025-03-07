@@ -178,19 +178,19 @@ fn expect_cpu_state(cpu: *const Cpu, state: *TestCpuState) !void {
         try mmu.write(s.address, s.value);
     }
 
-    try std.testing.expectEqual(state.flagZ, cpu.register_bank.AF.Lo.Z);
-    try std.testing.expectEqual(state.flagN, cpu.register_bank.AF.Lo.N);
-    try std.testing.expectEqual(state.flagH, cpu.register_bank.AF.Lo.H);
-    try std.testing.expectEqual(state.flagC, cpu.register_bank.AF.Lo.C);
-    try std.testing.expectEqual(state.regA, cpu.register_bank.AF.Hi);
-    try std.testing.expectEqual(state.regB, cpu.register_bank.BC.Hi);
-    try std.testing.expectEqual(state.regC, cpu.register_bank.BC.Lo);
-    try std.testing.expectEqual(state.regD, cpu.register_bank.DE.Hi);
-    try std.testing.expectEqual(state.regE, cpu.register_bank.DE.Lo);
-    try std.testing.expectEqual(state.regH, cpu.register_bank.HL.Hi);
-    try std.testing.expectEqual(state.regL, cpu.register_bank.HL.Lo);
-    try std.testing.expectEqual(state.regSP, cpu.register_bank.SP.all());
-    try std.testing.expectEqual(state.regPC, cpu.register_bank.PC);
+    try std.testing.expectEqual(state.flagZ, cpu.reg.F.Z);
+    try std.testing.expectEqual(state.flagN, cpu.reg.F.N);
+    try std.testing.expectEqual(state.flagH, cpu.reg.F.H);
+    try std.testing.expectEqual(state.flagC, cpu.reg.F.C);
+    try std.testing.expectEqual(state.regA, cpu.reg.A);
+    try std.testing.expectEqual(state.regB, cpu.reg.BC.Hi);
+    try std.testing.expectEqual(state.regC, cpu.reg.BC.Lo);
+    try std.testing.expectEqual(state.regD, cpu.reg.DE.Hi);
+    try std.testing.expectEqual(state.regE, cpu.reg.DE.Lo);
+    try std.testing.expectEqual(state.regH, cpu.reg.HL.Hi);
+    try std.testing.expectEqual(state.regL, cpu.reg.HL.Lo);
+    try std.testing.expectEqual(state.regSP, cpu.reg.SP.all());
+    try std.testing.expectEqual(state.regPC, cpu.reg.PC);
 
     try std.testing.expectEqualSlices(u8, mmu.vram, cpu.mmu.vram);
     try std.testing.expectEqualSlices(u8, mmu.exram, cpu.mmu.vram);
@@ -202,19 +202,19 @@ fn expect_cpu_state(cpu: *const Cpu, state: *TestCpuState) !void {
 }
 
 fn map_initial_state(cpu: *Cpu, initial_state: *TestCpuState) !void {
-    cpu.register_bank.AF.Lo.Z = initial_state.flagZ;
-    cpu.register_bank.AF.Lo.N = initial_state.flagN;
-    cpu.register_bank.AF.Lo.H = initial_state.flagH;
-    cpu.register_bank.AF.Lo.C = initial_state.flagC;
-    cpu.register_bank.AF.Hi = initial_state.regA;
-    cpu.register_bank.BC.Hi = initial_state.regB;
-    cpu.register_bank.BC.Lo = initial_state.regC;
-    cpu.register_bank.DE.Hi = initial_state.regD;
-    cpu.register_bank.DE.Lo = initial_state.regE;
-    cpu.register_bank.HL.Hi = initial_state.regH;
-    cpu.register_bank.HL.Lo = initial_state.regL;
-    cpu.register_bank.SP.setAll(initial_state.regSP);
-    cpu.register_bank.PC = initial_state.regPC;
+    cpu.reg.F.Z = initial_state.flagZ;
+    cpu.reg.F.N = initial_state.flagN;
+    cpu.reg.F.H = initial_state.flagH;
+    cpu.reg.F.C = initial_state.flagC;
+    cpu.reg.A = initial_state.regA;
+    cpu.reg.BC.Hi = initial_state.regB;
+    cpu.reg.BC.Lo = initial_state.regC;
+    cpu.reg.DE.Hi = initial_state.regD;
+    cpu.reg.DE.Lo = initial_state.regE;
+    cpu.reg.HL.Hi = initial_state.regH;
+    cpu.reg.HL.Lo = initial_state.regL;
+    cpu.reg.SP.setAll(initial_state.regSP);
+    cpu.reg.PC = initial_state.regPC;
 
     for (initial_state.addresses.items) |state| {
         try cpu.mmu.write(state.address, state.value);

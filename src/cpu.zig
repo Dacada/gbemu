@@ -10,64 +10,7 @@ const RegisterFlags = packed struct {
     N: u1,
     H: u1,
     C: u1,
-    rest: u4,
-
-    pub fn all(reg: RegisterFlags) u8 {
-        return (@as(u8, reg.Z) << 7) | (@as(u8, reg.N) << 6) | (@as(u8, reg.H) << 5) | (@as(u8, reg.C) << 4) | reg.rest;
-    }
-
-    pub fn setAll(reg: *RegisterFlags, val: u8) void {
-        reg.Z = @intCast((val & 0b1000_0000) >> 7);
-        reg.N = @intCast((val & 0b0100_0000) >> 6);
-        reg.H = @intCast((val & 0b0010_0000) >> 5);
-        reg.C = @intCast((val & 0b0001_0000) >> 4);
-        reg.rest = @intCast(val & 0b0000_1111);
-    }
 };
-
-test "register flags" {
-    var reg: RegisterFlags = undefined;
-
-    reg.setAll(0xAA);
-    try std.testing.expectEqual(1, reg.Z);
-    try std.testing.expectEqual(0, reg.N);
-    try std.testing.expectEqual(1, reg.H);
-    try std.testing.expectEqual(0, reg.C);
-    try std.testing.expectEqual(0xA, reg.rest);
-
-    reg.Z = 0;
-    reg.N = 1;
-    reg.H = 0;
-    reg.C = 1;
-    reg.rest = 0x5;
-    try std.testing.expectEqual(0x55, reg.all());
-}
-
-const RegisterWithFlags = packed struct {
-    Hi: u8,
-    Lo: RegisterFlags,
-
-    pub fn all(reg: RegisterWithFlags) u16 {
-        return (@as(u16, reg.Hi) << 8) | reg.Lo.all();
-    }
-
-    pub fn setAll(reg: *RegisterWithFlags, val: u16) void {
-        reg.Hi = @intCast((val & 0xFF00) >> 8);
-        reg.Lo.setAll(@intCast(val & 0x00FF));
-    }
-};
-
-test "register with flags" {
-    var reg: RegisterWithFlags = undefined;
-
-    reg.setAll(0xABCD);
-    try std.testing.expectEqual(0xAB, reg.Hi);
-    try std.testing.expectEqual(0xCD, reg.Lo.all());
-
-    reg.Hi = 0x12;
-    reg.Lo.setAll(0x34);
-    try std.testing.expectEqual(0x1234, reg.all());
-}
 
 const RegisterWithHalves = packed struct {
     Hi: u8,
@@ -96,48 +39,41 @@ test "register with halves" {
 }
 
 const RegisterBank = struct {
-    AF: RegisterWithFlags,
+    A: u8,
     BC: RegisterWithHalves,
     DE: RegisterWithHalves,
+    F: RegisterFlags,
+
     HL: RegisterWithHalves,
-    SP: RegisterWithHalves, // We don't use the 8bit addressing but uniformity makes some opcodes simpler
+
+    IR: u8,
+    SP: RegisterWithHalves,
     PC: u16,
+
+    WZ: RegisterWithHalves,
 };
 
-const CpuState = enum {
-    start_execution_current_opcode,
-    fetch_opcode,
-    store_value_8_bit,
-    fetch_address_msb_from_program,
-    store_or_load_accumulator,
-    fetch_value_msb_from_program,
-    store_to_16bit_register,
+const SelfRefCpuMethod = struct {
+    func: *const fn (*Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod,
+
+    fn init(func: fn (*Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod) SelfRefCpuMethod {
+        return SelfRefCpuMethod{
+            .func = func,
+        };
+    }
 };
 
 pub const Cpu = struct {
     mmu: mmu.Mmu,
-    register_bank: RegisterBank,
+    reg: RegisterBank,
 
-    state: CpuState,
-    current_opcode: u8,
-
-    intermediate_8bit: u8,
-    intermediate_16bit: u16,
+    next_tick: SelfRefCpuMethod,
 
     pub fn init(mmu_: mmu.Mmu) Cpu {
         return Cpu{
             .mmu = mmu_,
-            .register_bank = RegisterBank{
-                .AF = RegisterWithFlags{
-                    .Hi = 0,
-                    .Lo = RegisterFlags{
-                        .Z = 0,
-                        .N = 0,
-                        .H = 0,
-                        .C = 0,
-                        .rest = 0,
-                    },
-                },
+            .reg = RegisterBank{
+                .A = 0,
                 .BC = RegisterWithHalves{
                     .Hi = 0,
                     .Lo = 0,
@@ -146,272 +82,287 @@ pub const Cpu = struct {
                     .Hi = 0,
                     .Lo = 0,
                 },
+                .F = RegisterFlags{
+                    .C = 0,
+                    .H = 0,
+                    .N = 0,
+                    .Z = 0,
+                },
                 .HL = RegisterWithHalves{
                     .Hi = 0,
                     .Lo = 0,
                 },
+                .IR = 0,
                 .SP = RegisterWithHalves{
                     .Hi = 0,
                     .Lo = 0,
                 },
                 .PC = 0,
+                .WZ = RegisterWithHalves{
+                    .Hi = 0,
+                    .Lo = 0,
+                },
             },
-
-            .state = CpuState.fetch_opcode,
-            .current_opcode = undefined,
-            .intermediate_8bit = undefined,
-            .intermediate_16bit = undefined,
+            .next_tick = SelfRefCpuMethod.init(Cpu.fetchOpcode),
         };
     }
 
     pub fn zeroize_regs(self: *Cpu) void {
-        self.register_bank.AF.setAll(0x0000);
-        self.register_bank.BC.setAll(0x0000);
-        self.register_bank.DE.setAll(0x0000);
-        self.register_bank.HL.setAll(0x0000);
-        self.register_bank.SP.setAll(0x0000);
-        self.register_bank.PC = 0x0000;
+        self.reg.A = 0x00;
+        self.reg.BC.setAll(0x0000);
+        self.reg.DE.setAll(0x0000);
+        self.reg.HL.setAll(0x0000);
+        self.reg.SP.setAll(0x0000);
+        self.reg.PC = 0x0000;
     }
 
     pub fn tick(self: *Cpu) (mmu.MmuMemoryError || CpuError)!void {
-        self.state = switch (self.state) {
-            CpuState.start_execution_current_opcode => try self.startExecutionCurrentOpcode(),
-            CpuState.fetch_opcode => try self.fetchOpcode(),
-            CpuState.store_value_8_bit => try self.storeValue8Bit(),
-            CpuState.fetch_address_msb_from_program => try self.fetchAddressMsbFromProgram(),
-            CpuState.store_or_load_accumulator => try self.storeOrLoadAccumulator(),
-            CpuState.fetch_value_msb_from_program => try self.fetchValueMsbFromProgram(),
-            CpuState.store_to_16bit_register => try self.storeTo16BitRegister(),
-        };
+        self.next_tick = try self.next_tick.func(self);
     }
 
-    fn ptrRegOrMmu8Bit(self: *Cpu, idx: u3, comptime ro: bool) if (ro) mmu.MmuMemoryError!*const u8 else mmu.MmuMemoryError!*u8 {
+    fn fetchPC(self: *Cpu) mmu.MmuMemoryError!u8 {
+        const val = try self.mmu.read(self.reg.PC);
+        self.reg.PC += 1;
+        return val;
+    }
+
+    fn fetchOpcode(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        self.reg.IR = try self.fetchPC();
+        return SelfRefCpuMethod.init(Cpu.decodeOpcode);
+    }
+
+    fn decodeOpcode(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        // NOP
+        if (self.reg.IR == 0) {
+            return self.fetchOpcode();
+        }
+
+        // Load register (register)
+        if (self.reg.IR & 0b11_000_111 == 0b01_000_110) { // from indirect HL
+            self.reg.WZ.Lo = try self.mmu.read(self.reg.HL.all());
+            return SelfRefCpuMethod.init(Cpu.loadRegisterIndirectHL2);
+        }
+        if (self.reg.IR & 0b11_111_000 == 0b01_110_000) { // to indirect HL
+            const from: u3 = @intCast(self.reg.IR & 0b00_000_111);
+            const from_ptr = self.ptrReg8Bit(from);
+            try self.mmu.write(self.reg.HL.all(), from_ptr.*);
+            return SelfRefCpuMethod.init(Cpu.fetchOpcode);
+        }
+        if (self.reg.IR & 0b11_000_000 == 0b01_000_000) {
+            const to: u3 = @intCast((self.reg.IR & 0b00_111_000) >> 3);
+            const from: u3 = @intCast(self.reg.IR & 0b00_000_111);
+            const to_ptr = self.ptrReg8Bit(to);
+            const from_ptr = self.ptrReg8Bit(from);
+            to_ptr.* = from_ptr.*;
+            return self.fetchOpcode();
+        }
+
+        // Load register (immediate)
+        if (self.reg.IR & 0b11_111_111 == 0b00_110_110) { // to indirect HL
+            self.reg.WZ.Lo = try self.fetchPC();
+            return SelfRefCpuMethod.init(Cpu.loadRegisterImmediateIndirectHL2);
+        }
+        if (self.reg.IR & 0b11_000_111 == 0b00_000_110) {
+            self.reg.WZ.Lo = try self.fetchPC();
+            return SelfRefCpuMethod.init(Cpu.loadRegisterImmediate2);
+        }
+
+        // Load accumulator (indirect)
+        if (self.reg.IR & 0b111_0_1111 == 0b000_0_1010) {
+            const reg: u2 = @intCast((self.reg.IR & 0b000_10_000) >> 4);
+            const reg_ptr = self.ptrReg16Bit(reg);
+            self.reg.WZ.Lo = try self.mmu.read(reg_ptr.all());
+            return SelfRefCpuMethod.init(Cpu.loadAccumulatorIndirect2);
+        }
+
+        // Load from accumulator (indirect)
+        if (self.reg.IR & 0b111_0_1111 == 0b000_0_0010) {
+            const reg: u2 = @intCast((self.reg.IR & 0b000_10_000) >> 4);
+            const reg_ptr = self.ptrReg16Bit(reg);
+            try self.mmu.write(reg_ptr.all(), self.reg.A);
+            return SelfRefCpuMethod.init(Cpu.fetchOpcode);
+        }
+
+        // Load accumulator (direct)
+        if (self.reg.IR & 0b11111111 == 0b11111010) {
+            self.reg.WZ.Lo = try self.fetchPC();
+            return SelfRefCpuMethod.init(Cpu.loadAccumulatorDirect2);
+        }
+
+        // Load from accumulator (direct)
+        if (self.reg.IR & 0b11111111 == 0b11101010) {
+            self.reg.WZ.Lo = try self.fetchPC();
+            return SelfRefCpuMethod.init(Cpu.loadFromAccumulatorDirect2);
+        }
+
+        // Load accumulator (indirect 0xFF00+C)
+        if (self.reg.IR & 0b11111111 == 0b11110010) {
+            const addr = 0xFF00 | @as(u16, self.reg.BC.Lo);
+            self.reg.WZ.Lo = try self.mmu.read(addr);
+            return SelfRefCpuMethod.init(Cpu.loadAccumulatorIndirectHigh2);
+        }
+
+        // Load from accumulator (indirect 0xFF00+C)
+        if (self.reg.IR & 0b11111111 == 0b11100010) {
+            const addr = 0xFF00 | @as(u16, self.reg.BC.Lo);
+            try self.mmu.write(addr, self.reg.A);
+            return SelfRefCpuMethod.init(Cpu.fetchOpcode);
+        }
+
+        // Load accumulator (direct 0xFF00+immediate)
+        if (self.reg.IR & 0b11111111 == 0b11110000) {
+            self.reg.WZ.Lo = try self.fetchPC();
+            return SelfRefCpuMethod.init(Cpu.loadAccumulatorDirectHigh2);
+        }
+
+        // Load from accumulator (direct 0xFF00+immediate)
+        if (self.reg.IR & 0b11111111 == 0b11100000) {
+            self.reg.WZ.Lo = try self.fetchPC();
+            return SelfRefCpuMethod.init(Cpu.loadFromAccumulatorDirectHigh2);
+        }
+
+        // Load accumulator (indirect HL)
+        if (self.reg.IR & 0b111_0_1111 == 0b001_0_1010) {
+            const addr = self.reg.HL.all();
+            self.reg.WZ.Lo = try self.mmu.read(addr);
+            const incdec: u1 = @intCast((self.reg.IR & 0b000_1_0000) >> 4);
+            const newval = switch (incdec) {
+                0 => addr + 1,
+                1 => addr - 1,
+            };
+            self.reg.HL.setAll(newval);
+            return SelfRefCpuMethod.init(Cpu.loadAccumulatorIndirectHL2);
+        }
+
+        // Load from accumulator (indirect HL)
+        if (self.reg.IR & 0b111_0_1111 == 0b001_0_0010) {
+            const addr = self.reg.HL.all();
+            try self.mmu.write(addr, self.reg.A);
+            const incdec: u1 = @intCast((self.reg.IR & 0b000_1_0000) >> 4);
+            const newval = switch (incdec) {
+                0 => addr + 1,
+                1 => addr - 1,
+            };
+            self.reg.HL.setAll(newval);
+            return SelfRefCpuMethod.init(Cpu.fetchOpcode);
+        }
+
+        // Load 16-bit register
+        if (self.reg.IR & 0b11_00_1111 == 0b00_00_0001) {
+            self.reg.WZ.Lo = try self.fetchPC();
+            return SelfRefCpuMethod.init(Cpu.load16bitRegister2);
+        }
+
+        return CpuError.IllegalInstruction;
+    }
+
+    fn loadRegisterIndirectHL2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        const to: u3 = @intCast((self.reg.IR & 0b00_111_000) >> 3);
+        const to_ptr = self.ptrReg8Bit(to);
+        to_ptr.* = self.reg.WZ.Lo;
+        return self.fetchOpcode();
+    }
+
+    fn loadRegisterImmediate2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        const to: u3 = @intCast((self.reg.IR & 0b00_111_000) >> 3);
+        const to_ptr = self.ptrReg8Bit(to);
+        to_ptr.* = self.reg.WZ.Lo;
+        return self.fetchOpcode();
+    }
+
+    fn loadRegisterImmediateIndirectHL2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        try self.mmu.write(self.reg.HL.all(), self.reg.WZ.Lo);
+        return SelfRefCpuMethod.init(Cpu.fetchOpcode);
+    }
+
+    fn loadAccumulatorIndirect2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        self.reg.A = self.reg.WZ.Lo;
+        return self.fetchOpcode();
+    }
+
+    fn loadAccumulatorDirect2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        self.reg.WZ.Hi = try self.fetchPC();
+        return SelfRefCpuMethod.init(Cpu.loadAccumulatorDirect3);
+    }
+
+    fn loadAccumulatorDirect3(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        self.reg.WZ.Lo = try self.mmu.read(self.reg.WZ.all());
+        return SelfRefCpuMethod.init(Cpu.loadAccumulatorDirect4);
+    }
+
+    fn loadAccumulatorDirect4(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        self.reg.A = self.reg.WZ.Lo;
+        return self.fetchOpcode();
+    }
+
+    fn loadFromAccumulatorDirect2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        self.reg.WZ.Hi = try self.fetchPC();
+        return SelfRefCpuMethod.init(Cpu.loadFromAccumulatorDirect3);
+    }
+
+    fn loadFromAccumulatorDirect3(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        try self.mmu.write(self.reg.WZ.all(), self.reg.A);
+        return SelfRefCpuMethod.init(Cpu.fetchOpcode);
+    }
+
+    fn loadAccumulatorIndirectHigh2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        self.reg.A = self.reg.WZ.Lo;
+        return self.fetchOpcode();
+    }
+
+    fn loadAccumulatorDirectHigh2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        const addr = 0xFF00 | @as(u16, self.reg.WZ.Lo);
+        self.reg.WZ.Lo = try self.mmu.read(addr);
+        return SelfRefCpuMethod.init(Cpu.loadAccumulatorDirectHigh3);
+    }
+
+    fn loadAccumulatorDirectHigh3(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        self.reg.A = self.reg.WZ.Lo;
+        return self.fetchOpcode();
+    }
+
+    fn loadFromAccumulatorDirectHigh2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        const addr = 0xFF00 | @as(u16, self.reg.WZ.Lo);
+        try self.mmu.write(addr, self.reg.A);
+        return SelfRefCpuMethod.init(Cpu.fetchOpcode);
+    }
+
+    fn loadAccumulatorIndirectHL2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        self.reg.A = self.reg.WZ.Lo;
+        return self.fetchOpcode();
+    }
+
+    fn load16bitRegister2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        self.reg.WZ.Hi = try self.fetchPC();
+        return SelfRefCpuMethod.init(Cpu.load16bitRegister3);
+    }
+
+    fn load16bitRegister3(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        const reg: u2 = @intCast((self.reg.IR & 0b00_11_0000) >> 4);
+        const reg_ptr = self.ptrReg16Bit(reg);
+        reg_ptr.setAll(self.reg.WZ.all());
+        return self.fetchOpcode();
+    }
+
+    fn ptrReg8Bit(self: *Cpu, idx: u3) *u8 {
         return switch (idx) {
-            0b000 => &self.register_bank.BC.Hi,
-            0b001 => &self.register_bank.BC.Lo,
-            0b010 => &self.register_bank.DE.Hi,
-            0b011 => &self.register_bank.DE.Lo,
-            0b100 => &self.register_bank.HL.Hi,
-            0b101 => &self.register_bank.HL.Lo,
-            0b110 => {
-                if (ro) {
-                    return try self.mmu.referenceRO(self.register_bank.HL.all());
-                } else {
-                    return try self.mmu.referenceRW(self.register_bank.HL.all());
-                }
-            },
-            0b111 => &self.register_bank.AF.Hi,
+            0b000 => &self.reg.BC.Hi,
+            0b001 => &self.reg.BC.Lo,
+            0b010 => &self.reg.DE.Hi,
+            0b011 => &self.reg.DE.Lo,
+            0b100 => &self.reg.HL.Hi,
+            0b101 => &self.reg.HL.Lo,
+            0b110 => unreachable,
+            0b111 => &self.reg.A,
         };
     }
 
     fn ptrReg16Bit(self: *Cpu, idx: u2) *RegisterWithHalves {
         return switch (idx) {
-            0b00 => &self.register_bank.BC,
-            0b01 => &self.register_bank.DE,
-            0b10 => &self.register_bank.HL,
-            0b11 => &self.register_bank.SP,
+            0b00 => &self.reg.BC,
+            0b01 => &self.reg.DE,
+            0b10 => &self.reg.HL,
+            0b11 => &self.reg.SP,
         };
     }
-
-    fn fetchValueFromProgram(self: *Cpu) mmu.MmuMemoryError!u8 {
-        const val = try self.mmu.read(self.register_bank.PC);
-        self.register_bank.PC += 1;
-        return val;
-    }
-
-    fn fetchValueFromProgramThenStoreAsMsb(self: *Cpu) mmu.MmuMemoryError!void {
-        var val: u16 = try self.fetchValueFromProgram();
-        val <<= 8;
-        self.intermediate_16bit |= val;
-    }
-
-    fn startExecutionCurrentOpcode(self: *Cpu) (mmu.MmuMemoryError || CpuError)!CpuState {
-        // NOP
-        if (self.current_opcode == 0) {
-            return try self.fetchOpcode();
-        }
-
-        // HALT
-        if (self.current_opcode == 0x76) {
-            // TODO: Figure out how HALT works
-            return CpuError.IllegalInstruction;
-        }
-
-        // LD register or indirect (HL)
-        if ((self.current_opcode & 0b11_000_000) >> 6 == 0b01) {
-            const to: u3 = @intCast((self.current_opcode & 0b00_111_000) >> 3);
-            const from: u3 = @intCast(self.current_opcode & 0b00_000_111);
-            const from_ptr = try self.ptrRegOrMmu8Bit(from, true);
-            const to_ptr = try self.ptrRegOrMmu8Bit(to, false);
-            to_ptr.* = from_ptr.*;
-
-            if (to == 0b110 or from == 0b110) {
-                return CpuState.fetch_opcode;
-            } else {
-                return try self.fetchOpcode();
-            }
-        }
-
-        // LD register or indirect (HL) immediate
-        if (self.current_opcode & 0b11_000_111 == 0b00_000_110) {
-            const to: u3 = @intCast((self.current_opcode & 0b00_111_000) >> 3);
-            const val = try self.fetchValueFromProgram();
-
-            self.intermediate_8bit = val;
-            if (to == 0b110) {
-                return CpuState.store_value_8_bit;
-            } else {
-                return self.storeValue8Bit();
-            }
-        }
-
-        // LD accumulator indirect
-        if (self.current_opcode & 0b111_00_111 == 0b000_00_010) {
-            const reg: u1 = @intCast((self.current_opcode & 0b000_10_000) >> 4);
-            const addr = switch (reg) {
-                0 => self.register_bank.BC.all(),
-                1 => self.register_bank.DE.all(),
-            };
-            const rw = (self.current_opcode & 0b000_01_000) >> 3;
-
-            if (rw == 1) {
-                self.register_bank.AF.Hi = try self.mmu.read(addr);
-            } else {
-                try self.mmu.write(addr, self.register_bank.AF.Hi);
-            }
-            return CpuState.fetch_opcode;
-        }
-
-        // LD accumulator direct
-        if (self.current_opcode & 0b111_0_1111 == 0b111_0_1010) {
-            self.intermediate_16bit = try self.fetchValueFromProgram();
-            return CpuState.fetch_address_msb_from_program;
-        }
-
-        // LDH accumulator indirect
-        if (self.current_opcode & 0b111_0_1111 == 0b111_0_0010) {
-            const addr: u16 = 0xFF00 | @as(u16, self.register_bank.BC.Lo);
-            const rw = (self.current_opcode & 0b000_1_0000) >> 4;
-            if (rw == 1) {
-                self.register_bank.AF.Hi = try self.mmu.read(addr);
-            } else {
-                try self.mmu.write(addr, self.register_bank.AF.Hi);
-            }
-            return CpuState.fetch_opcode;
-        }
-
-        // LDH accumulator direct
-        if (self.current_opcode & 0b111_0_1111 == 0b111_0_0000) {
-            const immediate: u16 = try self.fetchValueFromProgram();
-            self.intermediate_16bit = 0xFF00 | immediate;
-            return CpuState.store_or_load_accumulator;
-        }
-
-        // LD accumulator indirect HL inc/dec
-        if (self.current_opcode & 0b111_00_111 == 0b001_00_010) {
-            const addr = self.register_bank.HL.all();
-            const decinc = (self.current_opcode & 0b000_10_000) >> 4;
-            const rw = (self.current_opcode & 0b000_01_000) >> 3;
-
-            if (rw == 1) {
-                self.register_bank.AF.Hi = try self.mmu.read(addr);
-            } else {
-                try self.mmu.write(addr, self.register_bank.AF.Hi);
-            }
-
-            if (decinc == 1) {
-                self.register_bank.HL.setAll(addr - 1);
-            } else {
-                self.register_bank.HL.setAll(addr + 1);
-            }
-
-            return CpuState.fetch_opcode;
-        }
-
-        // LD immediate 16bit
-        if (self.current_opcode & 0b11_00_1111 == 0b00_00_0001) {
-            self.intermediate_16bit = try self.fetchValueFromProgram();
-            return CpuState.fetch_value_msb_from_program;
-        }
-
-        // Catch anything else
-        return CpuError.IllegalInstruction;
-    }
-
-    fn fetchOpcode(self: *Cpu) mmu.MmuMemoryError!CpuState {
-        self.current_opcode = try self.fetchValueFromProgram();
-        return CpuState.start_execution_current_opcode;
-    }
-
-    fn storeValue8Bit(self: *Cpu) mmu.MmuMemoryError!CpuState {
-        const to: u3 = @intCast((self.current_opcode & 0b00_111_000) >> 3);
-        const to_ptr = try self.ptrRegOrMmu8Bit(to, false);
-        to_ptr.* = self.intermediate_8bit;
-        self.intermediate_8bit = undefined;
-        return CpuState.fetch_opcode;
-    }
-
-    fn fetchAddressMsbFromProgram(self: *Cpu) mmu.MmuMemoryError!CpuState {
-        try self.fetchValueFromProgramThenStoreAsMsb();
-        return CpuState.store_or_load_accumulator;
-    }
-
-    fn fetchValueMsbFromProgram(self: *Cpu) mmu.MmuMemoryError!CpuState {
-        try self.fetchValueFromProgramThenStoreAsMsb();
-        return CpuState.store_to_16bit_register;
-    }
-
-    fn storeOrLoadAccumulator(self: *Cpu) mmu.MmuMemoryError!CpuState {
-        const rw = (self.current_opcode & 0b000_1_0000) >> 4;
-        if (rw == 1) {
-            self.register_bank.AF.Hi = try self.mmu.read(self.intermediate_16bit);
-        } else {
-            try self.mmu.write(self.intermediate_16bit, self.register_bank.AF.Hi);
-        }
-        self.intermediate_16bit = undefined;
-        return CpuState.fetch_opcode;
-    }
-
-    fn storeTo16BitRegister(self: *Cpu) mmu.MmuMemoryError!CpuState {
-        const which: u2 = @intCast((self.current_opcode & 0b00_11_0000) >> 4);
-        const reg = self.ptrReg16Bit(which);
-        reg.setAll(self.intermediate_16bit);
-        return try self.fetchOpcode();
-    }
 };
-
-// Very basic tests
-
-test "fetch" {
-    var rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-    rom[0] = 0xAA;
-    var mmu_ = try mmu.Mmu.init(rom, exram, std.testing.allocator);
-    defer mmu_.deinit();
-    var cpu = Cpu.init(mmu_);
-
-    try cpu.tick();
-
-    try std.testing.expectEqual(0xAA, cpu.current_opcode);
-    try std.testing.expectEqual(CpuState.start_execution_current_opcode, cpu.state);
-}
-
-test "nop" {
-    var rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-    rom[0] = 0x00;
-    rom[1] = 0xFD;
-    var mmu_ = try mmu.Mmu.init(rom, exram, std.testing.allocator);
-    defer mmu_.deinit();
-    var cpu = Cpu.init(mmu_);
-
-    try cpu.tick(); // fetch nop
-    try std.testing.expectEqual(1, cpu.register_bank.PC); // pc advances during fetch
-    try cpu.tick(); // execute nop and fetch the illegal instruction
-    try std.testing.expectEqual(2, cpu.register_bank.PC); // pc has advanced
-    try std.testing.expectError(CpuError.IllegalInstruction, cpu.tick()); // execute the next instruction (and fetch the third one)
-}
