@@ -12,7 +12,7 @@ const RegisterFlags = packed struct {
     C: u1,
     rest: u4,
 
-    pub fn all(reg: RegisterFlags) u8 {
+    pub fn all(reg: *const RegisterFlags) u8 {
         return (@as(u8, reg.Z) << 7) | (@as(u8, reg.N) << 6) | (@as(u8, reg.H) << 5) | (@as(u8, reg.C) << 4) | reg.rest;
     }
 
@@ -47,7 +47,7 @@ const RegisterWithFlags = packed struct {
     Hi: u8,
     Lo: RegisterFlags,
 
-    pub fn all(reg: RegisterWithFlags) u16 {
+    pub fn all(reg: *const RegisterWithFlags) u16 {
         return (@as(u16, reg.Hi) << 8) | reg.Lo.all();
     }
 
@@ -61,7 +61,7 @@ const RegisterWithHalves = packed struct {
     Hi: u8,
     Lo: u8,
 
-    pub fn all(reg: RegisterWithHalves) u16 {
+    pub fn all(reg: *const RegisterWithHalves) u16 {
         return (@as(u16, reg.Hi) << 8) | reg.Lo;
     }
 
@@ -78,6 +78,39 @@ const RegisterWithHalves = packed struct {
     pub fn dec(reg: *RegisterWithHalves) void {
         reg.Lo, const carry = @subWithOverflow(reg.Lo, 1);
         reg.Hi, _ = @subWithOverflow(reg.Hi, carry);
+    }
+};
+
+const Register = union(enum) {
+    RegisterWithFlags: *RegisterWithFlags,
+    RegisterWithHalves: *RegisterWithHalves,
+
+    pub fn all(reg: Register) u16 {
+        return switch (reg) {
+            .RegisterWithFlags => |r| r.all(),
+            .RegisterWithHalves => |r| r.all(),
+        };
+    }
+
+    pub fn setAll(reg: Register, val: u16) void {
+        return switch (reg) {
+            .RegisterWithFlags => |r| r.setAll(val),
+            .RegisterWithHalves => |r| r.setAll(val),
+        };
+    }
+
+    pub fn hi(reg: Register) u8 {
+        return switch (reg) {
+            .RegisterWithFlags => |r| r.Hi,
+            .RegisterWithHalves => |r| r.Hi,
+        };
+    }
+
+    pub fn lo(reg: Register) u8 {
+        return switch (reg) {
+            .RegisterWithFlags => |r| r.Lo.all(),
+            .RegisterWithHalves => |r| r.Lo,
+        };
     }
 };
 
@@ -100,11 +133,10 @@ const RegisterBank = struct {
 
     HL: RegisterWithHalves,
 
-    IR: u8,
-
     SP: RegisterWithHalves,
     PC: u16,
 
+    IR: u8,
     WZ: RegisterWithHalves,
 };
 
@@ -150,12 +182,12 @@ pub const Cpu = struct {
                     .Hi = 0,
                     .Lo = 0,
                 },
-                .IR = 0,
                 .SP = RegisterWithHalves{
                     .Hi = 0,
                     .Lo = 0,
                 },
                 .PC = 0,
+                .IR = 0,
                 .WZ = RegisterWithHalves{
                     .Hi = 0,
                     .Lo = 0,
@@ -319,6 +351,12 @@ pub const Cpu = struct {
             return SelfRefCpuMethod.init(Cpu.fetchOpcode);
         }
 
+        // Push register
+        if (self.reg.IR & 0b11_00_1111 == 0b11_00_0101) {
+            self.reg.SP.dec();
+            return SelfRefCpuMethod.init(Cpu.pushRegister2);
+        }
+
         return CpuError.IllegalInstruction;
     }
 
@@ -426,6 +464,21 @@ pub const Cpu = struct {
         return SelfRefCpuMethod.init(Cpu.fetchOpcode);
     }
 
+    fn pushRegister2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        const reg: u2 = @intCast((self.reg.IR & 0b00_11_0000) >> 4);
+        const reg_ptr = self.ptrRegGeneric(reg);
+        try self.mmu.write(self.reg.SP.all(), reg_ptr.hi());
+        self.reg.SP.dec();
+        return SelfRefCpuMethod.init(Cpu.pushRegister3);
+    }
+
+    fn pushRegister3(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        const reg: u2 = @intCast((self.reg.IR & 0b00_11_0000) >> 4);
+        const reg_ptr = self.ptrRegGeneric(reg);
+        try self.mmu.write(self.reg.SP.all(), reg_ptr.lo());
+        return SelfRefCpuMethod.init(Cpu.fetchOpcode);
+    }
+
     fn ptrReg8Bit(self: *Cpu, idx: u3) *u8 {
         return switch (idx) {
             0b000 => &self.reg.BC.Hi,
@@ -445,6 +498,15 @@ pub const Cpu = struct {
             0b01 => &self.reg.DE,
             0b10 => &self.reg.HL,
             0b11 => &self.reg.SP,
+        };
+    }
+
+    fn ptrRegGeneric(self: *Cpu, idx: u2) Register {
+        return switch (idx) {
+            0b00 => Register{ .RegisterWithHalves = &self.reg.BC },
+            0b01 => Register{ .RegisterWithHalves = &self.reg.DE },
+            0b10 => Register{ .RegisterWithHalves = &self.reg.HL },
+            0b11 => Register{ .RegisterWithFlags = &self.reg.AF },
         };
     }
 };

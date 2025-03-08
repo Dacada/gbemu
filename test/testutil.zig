@@ -13,6 +13,7 @@ pub const TestCpuState = struct {
     flagN: u1 = 0,
     flagH: u1 = 0,
     flagC: u1 = 0,
+    flagPadding: u4 = 0,
 
     regA: u8 = 0,
     regB: u8 = 0,
@@ -63,6 +64,21 @@ pub const TestCpuState = struct {
 
     pub fn rA(self: *TestCpuState, v: u8) *TestCpuState {
         self.regA = v;
+        return self;
+    }
+
+    pub fn rF(self: *TestCpuState, v: u8) *TestCpuState {
+        self.flagZ = @intCast((v & 0b1000_0000) >> 7);
+        self.flagN = @intCast((v & 0b0100_0000) >> 6);
+        self.flagH = @intCast((v & 0b0010_0000) >> 5);
+        self.flagC = @intCast((v & 0b0001_0000) >> 4);
+        self.flagPadding = @intCast(v & 0xF);
+        return self;
+    }
+
+    pub fn rAF(self: *TestCpuState, v: u16) *TestCpuState {
+        self.regA = @intCast((v & 0xFF00) >> 8);
+        _ = self.rF(@intCast(v & 0xFF));
         return self;
     }
 
@@ -152,6 +168,15 @@ pub const TestCpuState = struct {
             0b11 => self.rSP(val),
         };
     }
+
+    pub fn reg16p(self: *TestCpuState, r: u2, val: u16) *TestCpuState {
+        return switch (r) {
+            0b00 => self.rBC(val),
+            0b01 => self.rDE(val),
+            0b10 => self.rHL(val),
+            0b11 => self.rAF(val),
+        };
+    }
 };
 
 fn make_cpu(rom: []const u8, exram: []u8) !Cpu {
@@ -182,6 +207,7 @@ fn expect_cpu_state(cpu: *const Cpu, state: *TestCpuState) !void {
     try std.testing.expectEqual(state.flagN, cpu.reg.AF.Lo.N);
     try std.testing.expectEqual(state.flagH, cpu.reg.AF.Lo.H);
     try std.testing.expectEqual(state.flagC, cpu.reg.AF.Lo.C);
+    try std.testing.expectEqual(state.flagPadding, cpu.reg.AF.Lo.rest);
     try std.testing.expectEqual(state.regA, cpu.reg.AF.Hi);
     try std.testing.expectEqual(state.regB, cpu.reg.BC.Hi);
     try std.testing.expectEqual(state.regC, cpu.reg.BC.Lo);
@@ -206,6 +232,7 @@ fn map_initial_state(cpu: *Cpu, initial_state: *TestCpuState) !void {
     cpu.reg.AF.Lo.N = initial_state.flagN;
     cpu.reg.AF.Lo.H = initial_state.flagH;
     cpu.reg.AF.Lo.C = initial_state.flagC;
+    cpu.reg.AF.Lo.rest = initial_state.flagPadding;
     cpu.reg.AF.Hi = initial_state.regA;
     cpu.reg.BC.Hi = initial_state.regB;
     cpu.reg.BC.Lo = initial_state.regC;
