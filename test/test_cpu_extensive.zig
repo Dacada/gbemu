@@ -846,3 +846,43 @@ test "Load from stack pointer (direct)" {
         },
     );
 }
+
+test "Load stack pointer from HL" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    const instr = 0b11111001;
+    const test_value = 0xFFAA;
+
+    try run_test_case(
+        "Load stack pointer from HL",
+        rom,
+        exram,
+        &[_]u8{
+            0x00,
+            instr,
+            0xFD,
+        },
+        TestCpuState.init()
+            .rHL(test_value),
+        &[_]*TestCpuState{
+            TestCpuState.init() // read nop(PC) from ram
+                .rPC(0x0001)
+                .rHL(test_value),
+            TestCpuState.init() // execute nop | read iut(PC) from ram
+                .rPC(0x0002)
+                .rHL(test_value),
+            TestCpuState.init() // execute iut: write HL to SP
+                .rPC(0x0002)
+                .rHL(test_value)
+                .rSP(test_value),
+            TestCpuState.init() // read (PC) from ram
+                .rPC(0x0003)
+                .rHL(test_value)
+                .rSP(test_value),
+        },
+    );
+}

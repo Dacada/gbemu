@@ -305,3 +305,28 @@ test "test program 9" {
     try std.testing.expectEqual(0xAA, try cpu.mmu.read(0xD00D));
     try std.testing.expectEqual(0xFF, try cpu.mmu.read(0xD00D + 1));
 }
+
+test "test program 10" {
+    // Load SP from HL
+
+    // This program writes the value of HL to the SP
+
+    // HL = 0xFFAA
+    // ---
+    // LD SP, HL
+    // ---
+    // ASSERT SP = 0xFFAA
+
+    const cpu = try run_program(
+        "LD SP direct",
+        &[_]u8{
+            0xF9, // LD SP, HL
+            0xFD, // (illegal)
+        },
+        TestCpuState.init()
+            .rHL(0xFFAA),
+    );
+    defer destroy_cpu(&cpu);
+
+    try std.testing.expectEqual(0xFFAA, cpu.reg.SP.all());
+}

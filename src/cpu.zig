@@ -265,6 +265,12 @@ pub const Cpu = struct {
             return SelfRefCpuMethod.init(Cpu.loadFrmStackPointerDirect2);
         }
 
+        // Load stack pointer from HL
+        if (self.reg.IR & 0b11111111 == 0b11111001) {
+            self.reg.SP.setAll(self.reg.HL.all());
+            return SelfRefCpuMethod.init(Cpu.fetchOpcode);
+        }
+
         return CpuError.IllegalInstruction;
     }
 
