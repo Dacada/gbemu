@@ -364,6 +364,12 @@ pub const Cpu = struct {
             return SelfRefCpuMethod.init(Cpu.popRegister2);
         }
 
+        // Load HL from adjusted SP
+        if (self.reg.IR & 0b11111111 == 0b11111000) {
+            self.reg.WZ.Lo = try self.fetchPC();
+            return SelfRefCpuMethod.init(Cpu.loadHLfromAdjustedSP2);
+        }
+
         return CpuError.IllegalInstruction;
     }
 
@@ -496,6 +502,31 @@ pub const Cpu = struct {
         const reg: u2 = @intCast((self.reg.IR & 0b00_11_0000) >> 4);
         const reg_ptr = self.ptrRegGeneric(reg);
         reg_ptr.setAll(self.reg.WZ.all());
+        return self.fetchOpcode();
+    }
+
+    fn loadHLfromAdjustedSP2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        const SPLlo: u4 = @intCast(self.reg.SP.Lo & 0xF);
+        const Zlo: u4 = @intCast(self.reg.WZ.Lo & 0xF);
+        const SPLhi: u4 = @intCast((self.reg.SP.Lo & 0xF0) >> 4);
+        const Zhi: u4 = @intCast((self.reg.WZ.Lo & 0xF0) >> 4);
+
+        const Llo, const halfcarry = @addWithOverflow(SPLlo, Zlo);
+        const Lhi_tmp, const carry_tmp = @addWithOverflow(SPLhi, halfcarry);
+        const Lhi, const carry = @addWithOverflow(Lhi_tmp, Zhi);
+
+        self.reg.HL.Lo = (@as(u8, Lhi) << 4) | Llo;
+        self.reg.AF.Lo.setAll(0);
+        self.reg.AF.Lo.C = carry | carry_tmp;
+        self.reg.AF.Lo.H = halfcarry;
+
+        return SelfRefCpuMethod.init(Cpu.loadHLfromAdjustedSP3);
+    }
+
+    fn loadHLfromAdjustedSP3(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        const adj: u8 = if ((self.reg.WZ.Lo & 0b1000_0000) >> 7 == 1) 0xFF else 0x00;
+        const tmp, _ = @addWithOverflow(self.reg.SP.Hi, adj);
+        self.reg.HL.Hi, _ = @addWithOverflow(tmp, self.reg.AF.Lo.C);
         return self.fetchOpcode();
     }
 

@@ -1010,3 +1010,63 @@ test "Pop from stack" {
         );
     }
 }
+
+test "Load HL from adjusted SP" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    inline for (0..(0xFF + 1)) |e| {
+        // Constants
+        const instr: u8 = 0b11111000;
+        const test_value: u16 = 0x100D;
+
+        const signed_e: i8 = @bitCast(@as(u8, e));
+        const test_value_after_second_add_signed, _ = @addWithOverflow(@as(i16, test_value), signed_e);
+        const test_value_after_second_add: u16 = @bitCast(test_value_after_second_add_signed);
+        const test_value_after_first_add: u16 = test_value_after_second_add & 0x00FF;
+        _, const halfcarry_flag = @addWithOverflow(@as(u4, test_value & 0x000F), @as(u4, e & 0x0F));
+        _, const carry_flag = @addWithOverflow(@as(u8, test_value & 0x00FF), @as(u8, e));
+
+        const name = try std.fmt.allocPrint(std.testing.allocator, "Load HL from adjusted SP (e={d})", .{e});
+        defer std.testing.allocator.free(name);
+        try run_test_case(
+            name,
+            rom,
+            exram,
+            &[_]u8{
+                0x00,
+                instr,
+                e,
+                0xFD,
+            },
+            TestCpuState.init()
+                .rSP(test_value),
+            &[_]*TestCpuState{
+                TestCpuState.init() // read nop(PC) from ram
+                    .rPC(0x0001)
+                    .rSP(test_value),
+                TestCpuState.init() // execute nop | read iut(PC) from ram
+                    .rPC(0x0002)
+                    .rSP(test_value),
+                TestCpuState.init() // execute iut: read e(PC) from ram
+                    .rPC(0x0003)
+                    .rSP(test_value),
+                TestCpuState.init() // execute iut: add e to SP_lsb
+                    .rPC(0x0003)
+                    .fC(carry_flag)
+                    .fH(halfcarry_flag)
+                    .rSP(test_value)
+                    .rHL(test_value_after_first_add),
+                TestCpuState.init() // read (PC) | execute iut: add carry to SP_msb
+                    .rPC(0x0004)
+                    .fC(carry_flag)
+                    .fH(halfcarry_flag)
+                    .rSP(test_value)
+                    .rHL(test_value_after_second_add),
+            },
+        );
+    }
+}
