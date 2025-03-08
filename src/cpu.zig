@@ -10,6 +10,51 @@ const RegisterFlags = packed struct {
     N: u1,
     H: u1,
     C: u1,
+    rest: u4,
+
+    pub fn all(reg: RegisterFlags) u8 {
+        return (@as(u8, reg.Z) << 7) | (@as(u8, reg.N) << 6) | (@as(u8, reg.H) << 5) | (@as(u8, reg.C) << 4) | reg.rest;
+    }
+
+    pub fn setAll(reg: *RegisterFlags, val: u8) void {
+        reg.Z = @intCast((val & 0b1000_0000) >> 7);
+        reg.N = @intCast((val & 0b0100_0000) >> 6);
+        reg.H = @intCast((val & 0b0010_0000) >> 5);
+        reg.C = @intCast((val & 0b0001_0000) >> 4);
+        reg.rest = @intCast(val & 0b0000_1111);
+    }
+};
+
+test "register flags" {
+    var reg: RegisterFlags = undefined;
+
+    reg.setAll(0xAA);
+    try std.testing.expectEqual(1, reg.Z);
+    try std.testing.expectEqual(0, reg.N);
+    try std.testing.expectEqual(1, reg.H);
+    try std.testing.expectEqual(0, reg.C);
+    try std.testing.expectEqual(0xA, reg.rest);
+
+    reg.Z = 0;
+    reg.N = 1;
+    reg.H = 0;
+    reg.C = 1;
+    reg.rest = 0x5;
+    try std.testing.expectEqual(0x55, reg.all());
+}
+
+const RegisterWithFlags = packed struct {
+    Hi: u8,
+    Lo: RegisterFlags,
+
+    pub fn all(reg: RegisterWithFlags) u16 {
+        return (@as(u16, reg.Hi) << 8) | reg.Lo.all();
+    }
+
+    pub fn setAll(reg: *RegisterWithFlags, val: u16) void {
+        reg.Hi = @intCast((val & 0xFF00) >> 8);
+        reg.Lo.setAll(@intCast(val & 0x00FF));
+    }
 };
 
 const RegisterWithHalves = packed struct {
@@ -49,14 +94,14 @@ test "register with halves" {
 }
 
 const RegisterBank = struct {
-    A: u8,
+    AF: RegisterWithFlags,
     BC: RegisterWithHalves,
     DE: RegisterWithHalves,
-    F: RegisterFlags,
 
     HL: RegisterWithHalves,
 
     IR: u8,
+
     SP: RegisterWithHalves,
     PC: u16,
 
@@ -83,7 +128,16 @@ pub const Cpu = struct {
         return Cpu{
             .mmu = mmu_,
             .reg = RegisterBank{
-                .A = 0,
+                .AF = RegisterWithFlags{
+                    .Hi = 0,
+                    .Lo = RegisterFlags{
+                        .Z = 0,
+                        .N = 0,
+                        .H = 0,
+                        .C = 0,
+                        .rest = 0,
+                    },
+                },
                 .BC = RegisterWithHalves{
                     .Hi = 0,
                     .Lo = 0,
@@ -91,12 +145,6 @@ pub const Cpu = struct {
                 .DE = RegisterWithHalves{
                     .Hi = 0,
                     .Lo = 0,
-                },
-                .F = RegisterFlags{
-                    .C = 0,
-                    .H = 0,
-                    .N = 0,
-                    .Z = 0,
                 },
                 .HL = RegisterWithHalves{
                     .Hi = 0,
@@ -118,7 +166,7 @@ pub const Cpu = struct {
     }
 
     pub fn zeroize_regs(self: *Cpu) void {
-        self.reg.A = 0x00;
+        self.reg.AF.setAll(0x0000);
         self.reg.BC.setAll(0x0000);
         self.reg.DE.setAll(0x0000);
         self.reg.HL.setAll(0x0000);
@@ -189,7 +237,7 @@ pub const Cpu = struct {
         if (self.reg.IR & 0b111_0_1111 == 0b000_0_0010) {
             const reg: u2 = @intCast((self.reg.IR & 0b000_10_000) >> 4);
             const reg_ptr = self.ptrReg16Bit(reg);
-            try self.mmu.write(reg_ptr.all(), self.reg.A);
+            try self.mmu.write(reg_ptr.all(), self.reg.AF.Hi);
             return SelfRefCpuMethod.init(Cpu.fetchOpcode);
         }
 
@@ -215,7 +263,7 @@ pub const Cpu = struct {
         // Load from accumulator (indirect 0xFF00+C)
         if (self.reg.IR & 0b11111111 == 0b11100010) {
             const addr = 0xFF00 | @as(u16, self.reg.BC.Lo);
-            try self.mmu.write(addr, self.reg.A);
+            try self.mmu.write(addr, self.reg.AF.Hi);
             return SelfRefCpuMethod.init(Cpu.fetchOpcode);
         }
 
@@ -244,7 +292,7 @@ pub const Cpu = struct {
 
         // Load from accumulator (indirect HL)
         if (self.reg.IR & 0b111_0_1111 == 0b001_0_0010) {
-            try self.mmu.write(self.reg.HL.all(), self.reg.A);
+            try self.mmu.write(self.reg.HL.all(), self.reg.AF.Hi);
             const incdec: u1 = @intCast((self.reg.IR & 0b000_1_0000) >> 4);
             switch (incdec) {
                 0 => self.reg.HL.inc(),
@@ -294,7 +342,7 @@ pub const Cpu = struct {
     }
 
     fn loadAccumulatorIndirect2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
-        self.reg.A = self.reg.WZ.Lo;
+        self.reg.AF.Hi = self.reg.WZ.Lo;
         return self.fetchOpcode();
     }
 
@@ -309,7 +357,7 @@ pub const Cpu = struct {
     }
 
     fn loadAccumulatorDirect4(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
-        self.reg.A = self.reg.WZ.Lo;
+        self.reg.AF.Hi = self.reg.WZ.Lo;
         return self.fetchOpcode();
     }
 
@@ -319,12 +367,12 @@ pub const Cpu = struct {
     }
 
     fn loadFromAccumulatorDirect3(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
-        try self.mmu.write(self.reg.WZ.all(), self.reg.A);
+        try self.mmu.write(self.reg.WZ.all(), self.reg.AF.Hi);
         return SelfRefCpuMethod.init(Cpu.fetchOpcode);
     }
 
     fn loadAccumulatorIndirectHigh2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
-        self.reg.A = self.reg.WZ.Lo;
+        self.reg.AF.Hi = self.reg.WZ.Lo;
         return self.fetchOpcode();
     }
 
@@ -335,18 +383,18 @@ pub const Cpu = struct {
     }
 
     fn loadAccumulatorDirectHigh3(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
-        self.reg.A = self.reg.WZ.Lo;
+        self.reg.AF.Hi = self.reg.WZ.Lo;
         return self.fetchOpcode();
     }
 
     fn loadFromAccumulatorDirectHigh2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
         const addr = 0xFF00 | @as(u16, self.reg.WZ.Lo);
-        try self.mmu.write(addr, self.reg.A);
+        try self.mmu.write(addr, self.reg.AF.Hi);
         return SelfRefCpuMethod.init(Cpu.fetchOpcode);
     }
 
     fn loadAccumulatorIndirectHL2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
-        self.reg.A = self.reg.WZ.Lo;
+        self.reg.AF.Hi = self.reg.WZ.Lo;
         return self.fetchOpcode();
     }
 
@@ -387,7 +435,7 @@ pub const Cpu = struct {
             0b100 => &self.reg.HL.Hi,
             0b101 => &self.reg.HL.Lo,
             0b110 => unreachable,
-            0b111 => &self.reg.A,
+            0b111 => &self.reg.AF.Hi,
         };
     }
 

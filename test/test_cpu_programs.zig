@@ -113,7 +113,7 @@ test "test program 3" {
     );
     defer destroy_cpu(&cpu);
 
-    try std.testing.expectEqual(0xFF, cpu.reg.A);
+    try std.testing.expectEqual(0xFF, cpu.reg.AF.Hi);
     try std.testing.expectEqual(0xFF, cpu.mmu.read(0xDDDD));
 }
 
@@ -147,7 +147,7 @@ test "test program 4" {
     );
     defer destroy_cpu(&cpu);
 
-    try std.testing.expectEqual(0xFF, cpu.reg.A);
+    try std.testing.expectEqual(0xFF, cpu.reg.AF.Hi);
     try std.testing.expectEqual(0xFF, cpu.mmu.read(0xDDDD));
 }
 
@@ -181,7 +181,7 @@ test "test program 5" {
     );
     defer destroy_cpu(&cpu);
 
-    try std.testing.expectEqual(0xFF, cpu.reg.A);
+    try std.testing.expectEqual(0xFF, cpu.reg.AF.Hi);
     try std.testing.expectEqual(0xFF, cpu.mmu.read(0xFFBB));
 }
 
@@ -212,7 +212,7 @@ test "test program 6" {
     );
     defer destroy_cpu(&cpu);
 
-    try std.testing.expectEqual(0xFF, cpu.reg.A);
+    try std.testing.expectEqual(0xFF, cpu.reg.AF.Hi);
     try std.testing.expectEqual(0xFF, cpu.mmu.read(0xFFBB));
 }
 
@@ -249,7 +249,7 @@ test "test program 7" {
     );
     defer destroy_cpu(&cpu);
 
-    try std.testing.expectEqual(0x33, cpu.reg.A);
+    try std.testing.expectEqual(0x33, cpu.reg.AF.Hi);
     try std.testing.expectEqual(0xD0A3, cpu.reg.HL.all());
 }
 
