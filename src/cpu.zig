@@ -357,6 +357,13 @@ pub const Cpu = struct {
             return SelfRefCpuMethod.init(Cpu.pushRegister2);
         }
 
+        // Pop register
+        if (self.reg.IR & 0b11_00_1111 == 0b11_00_0001) {
+            self.reg.WZ.Lo = try self.mmu.read(self.reg.SP.all());
+            self.reg.SP.inc();
+            return SelfRefCpuMethod.init(Cpu.popRegister2);
+        }
+
         return CpuError.IllegalInstruction;
     }
 
@@ -477,6 +484,19 @@ pub const Cpu = struct {
         const reg_ptr = self.ptrRegGeneric(reg);
         try self.mmu.write(self.reg.SP.all(), reg_ptr.lo());
         return SelfRefCpuMethod.init(Cpu.fetchOpcode);
+    }
+
+    fn popRegister2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        self.reg.WZ.Hi = try self.mmu.read(self.reg.SP.all());
+        self.reg.SP.inc();
+        return SelfRefCpuMethod.init(Cpu.popRegister3);
+    }
+
+    fn popRegister3(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        const reg: u2 = @intCast((self.reg.IR & 0b00_11_0000) >> 4);
+        const reg_ptr = self.ptrRegGeneric(reg);
+        reg_ptr.setAll(self.reg.WZ.all());
+        return self.fetchOpcode();
     }
 
     fn ptrReg8Bit(self: *Cpu, idx: u3) *u8 {

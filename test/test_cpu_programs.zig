@@ -330,3 +330,51 @@ test "test program 10" {
 
     try std.testing.expectEqual(0xFFAA, cpu.reg.SP.all());
 }
+
+test "test program 11" {
+    // Push and pop instructions
+
+    // Push some registers to the stack, clear them (only with loads), then pop them
+
+    // SP = 0xFFAA
+    // BC = 0x0123
+    // DE = 0x4567
+    // ---
+    // PUSH BC
+    // PUSH DE
+    // LD B, 0
+    // LD C, B
+    // LD D, C
+    // LD E, D
+    // POP DE
+    // POP BC
+    // ---
+    // ASSERT SP = 0xFFAA
+    // ASSERT BC = 0x0123
+    // ASSERT DE = 0x4567
+
+    const cpu = try run_program(
+        "PUSH & POP",
+        &[_]u8{
+            0xC5, // PUSH BC
+            0xD5, // PUSH DE
+            0x06, // LD B, 0
+            0x00,
+            0x48, // LD C, B
+            0x51, // LD D, C
+            0x5A, // LD E, D
+            0xD1, // POP DE
+            0xC1, // POP BC
+            0xFD, // (illegal)
+        },
+        TestCpuState.init()
+            .rSP(0xFFAA)
+            .rBC(0x0123)
+            .rDE(0x4567),
+    );
+    defer destroy_cpu(&cpu);
+
+    try std.testing.expectEqual(0xFFAA, cpu.reg.SP.all());
+    try std.testing.expectEqual(0x0123, cpu.reg.BC.all());
+    try std.testing.expectEqual(0x4567, cpu.reg.DE.all());
+}

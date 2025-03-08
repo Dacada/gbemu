@@ -950,3 +950,63 @@ test "Push to stack" {
         );
     }
 }
+
+test "Pop from stack" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    inline for (0..(0b11 + 1)) |reg| {
+        // Constants
+        const instr: u8 = @intCast(0b11000001 | (reg << 4));
+        const test_value: u16 = 0xABCD;
+        const test_addr: u16 = 0xFFAA;
+
+        const name = try std.fmt.allocPrint(std.testing.allocator, "Pop from stack (reg={b})", .{reg});
+        defer std.testing.allocator.free(name);
+        try run_test_case(
+            name,
+            rom,
+            exram,
+            &[_]u8{
+                0x00,
+                instr,
+                0xFD,
+            },
+            TestCpuState.init()
+                .rSP(test_addr)
+                .ram(test_addr, test_value & 0xFF)
+                .ram(test_addr + 1, (test_value & 0xFF00) >> 8),
+            &[_]*TestCpuState{
+                TestCpuState.init() // read nop(PC) from ram
+                    .rPC(0x0001)
+                    .rSP(test_addr)
+                    .ram(test_addr, test_value & 0xFF)
+                    .ram(test_addr + 1, (test_value & 0xFF00) >> 8),
+                TestCpuState.init() // execute nop | read iut(PC) from ram
+                    .rPC(0x0002)
+                    .rSP(test_addr)
+                    .ram(test_addr, test_value & 0xFF)
+                    .ram(test_addr + 1, (test_value & 0xFF00) >> 8),
+                TestCpuState.init() // execute iut: read data_lsb[SP] | increase SP
+                    .rPC(0x0002)
+                    .rSP(test_addr + 1)
+                    .ram(test_addr, test_value & 0xFF)
+                    .ram(test_addr + 1, (test_value & 0xFF00) >> 8),
+                TestCpuState.init() // execute iut: read data_msb[SP] | increase SP
+                    .rPC(0x0002)
+                    .rSP(test_addr + 2)
+                    .ram(test_addr, test_value & 0xFF)
+                    .ram(test_addr + 1, (test_value & 0xFF00) >> 8),
+                TestCpuState.init() // read (PC) | write data to reg
+                    .rPC(0x0003)
+                    .rSP(test_addr + 2)
+                    .reg16p(reg, test_value)
+                    .ram(test_addr, test_value & 0xFF)
+                    .ram(test_addr + 1, (test_value & 0xFF00) >> 8),
+            },
+        );
+    }
+}
