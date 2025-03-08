@@ -277,3 +277,31 @@ test "test program 8" {
 
     try std.testing.expectEqual(0xFFAA, cpu.reg.SP.all());
 }
+
+test "test program 9" {
+    // Load from SP direct
+
+    // This program writes the value of the SP to ram
+
+    // SP = 0xFFAA
+    // ---
+    // LD 0xD00D, SP
+    // ---
+    // ASSERT RAM[0xD00D] = 0xFFAA
+
+    const cpu = try run_program(
+        "LD SP direct",
+        &[_]u8{
+            0x08, // LD 0xD00D, SP
+            0x0D,
+            0xD0,
+            0xFD, // (illegal)
+        },
+        TestCpuState.init()
+            .rSP(0xFFAA),
+    );
+    defer destroy_cpu(&cpu);
+
+    try std.testing.expectEqual(0xAA, try cpu.mmu.read(0xD00D));
+    try std.testing.expectEqual(0xFF, try cpu.mmu.read(0xD00D + 1));
+}

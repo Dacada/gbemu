@@ -24,6 +24,16 @@ const RegisterWithHalves = packed struct {
         reg.Hi = @intCast((val & 0xFF00) >> 8);
         reg.Lo = @intCast(val & 0x00FF);
     }
+
+    pub fn inc(reg: *RegisterWithHalves) void {
+        reg.Lo, const carry = @addWithOverflow(reg.Lo, 1);
+        reg.Hi, _ = @addWithOverflow(reg.Hi, carry);
+    }
+
+    pub fn dec(reg: *RegisterWithHalves) void {
+        reg.Lo, const carry = @subWithOverflow(reg.Lo, 1);
+        reg.Hi, _ = @subWithOverflow(reg.Hi, carry);
+    }
 };
 
 test "register with halves" {
@@ -223,27 +233,23 @@ pub const Cpu = struct {
 
         // Load accumulator (indirect HL)
         if (self.reg.IR & 0b111_0_1111 == 0b001_0_1010) {
-            const addr = self.reg.HL.all();
-            self.reg.WZ.Lo = try self.mmu.read(addr);
+            self.reg.WZ.Lo = try self.mmu.read(self.reg.HL.all());
             const incdec: u1 = @intCast((self.reg.IR & 0b000_1_0000) >> 4);
-            const newval = switch (incdec) {
-                0 => addr + 1,
-                1 => addr - 1,
-            };
-            self.reg.HL.setAll(newval);
+            switch (incdec) {
+                0 => self.reg.HL.inc(),
+                1 => self.reg.HL.dec(),
+            }
             return SelfRefCpuMethod.init(Cpu.loadAccumulatorIndirectHL2);
         }
 
         // Load from accumulator (indirect HL)
         if (self.reg.IR & 0b111_0_1111 == 0b001_0_0010) {
-            const addr = self.reg.HL.all();
-            try self.mmu.write(addr, self.reg.A);
+            try self.mmu.write(self.reg.HL.all(), self.reg.A);
             const incdec: u1 = @intCast((self.reg.IR & 0b000_1_0000) >> 4);
-            const newval = switch (incdec) {
-                0 => addr + 1,
-                1 => addr - 1,
-            };
-            self.reg.HL.setAll(newval);
+            switch (incdec) {
+                0 => self.reg.HL.inc(),
+                1 => self.reg.HL.dec(),
+            }
             return SelfRefCpuMethod.init(Cpu.fetchOpcode);
         }
 
@@ -251,6 +257,12 @@ pub const Cpu = struct {
         if (self.reg.IR & 0b11_00_1111 == 0b00_00_0001) {
             self.reg.WZ.Lo = try self.fetchPC();
             return SelfRefCpuMethod.init(Cpu.load16bitRegister2);
+        }
+
+        // Load from stack pointer (direct)
+        if (self.reg.IR & 0b11111111 == 0b00001000) {
+            self.reg.WZ.Lo = try self.fetchPC();
+            return SelfRefCpuMethod.init(Cpu.loadFrmStackPointerDirect2);
         }
 
         return CpuError.IllegalInstruction;
@@ -342,6 +354,22 @@ pub const Cpu = struct {
         const reg_ptr = self.ptrReg16Bit(reg);
         reg_ptr.setAll(self.reg.WZ.all());
         return self.fetchOpcode();
+    }
+
+    fn loadFrmStackPointerDirect2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        self.reg.WZ.Hi = try self.fetchPC();
+        return SelfRefCpuMethod.init(Cpu.loadFromStackPointerDirect3);
+    }
+
+    fn loadFromStackPointerDirect3(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        try self.mmu.write(self.reg.WZ.all(), self.reg.SP.Lo);
+        self.reg.WZ.inc();
+        return SelfRefCpuMethod.init(Cpu.loadFromStackPointerDirect4);
+    }
+
+    fn loadFromStackPointerDirect4(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        try self.mmu.write(self.reg.WZ.all(), self.reg.SP.Hi);
+        return SelfRefCpuMethod.init(Cpu.fetchOpcode);
     }
 
     fn ptrReg8Bit(self: *Cpu, idx: u3) *u8 {

@@ -791,3 +791,58 @@ test "Load 16-bit register" {
         );
     }
 }
+
+test "Load from stack pointer (direct)" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    const instr = 0b00001000;
+    const test_addr = 0xD00D;
+    const test_value = 0xFFAA;
+
+    try run_test_case(
+        "Load from stack pointer (direct)",
+        rom,
+        exram,
+        &[_]u8{
+            0x00,
+            instr,
+            @intCast(test_addr & 0xFF),
+            @intCast((test_addr & 0xFF00) >> 8),
+            0xFD,
+        },
+        TestCpuState.init()
+            .rSP(test_value),
+        &[_]*TestCpuState{
+            TestCpuState.init() // read nop(PC) from ram
+                .rPC(0x0001)
+                .rSP(test_value),
+            TestCpuState.init() // execute nop | read iut(PC) from ram
+                .rPC(0x0002)
+                .rSP(test_value),
+            TestCpuState.init() // execute iut: read address_lsb(PC) from ram
+                .rPC(0x0003)
+                .rSP(test_value),
+            TestCpuState.init() // execute iut: read address_msb(PC) from ram
+                .rPC(0x0004)
+                .rSP(test_value),
+            TestCpuState.init() // execute iut: write SP_lsb(address) to ram
+                .rPC(0x0004)
+                .rSP(test_value)
+                .ram(test_addr, test_value & 0xFF),
+            TestCpuState.init() // execute iut: write SP_msb(address) to ram
+                .rPC(0x0004)
+                .rSP(test_value)
+                .ram(test_addr, test_value & 0xFF)
+                .ram(test_addr + 1, (test_value & 0xFF00) >> 8),
+            TestCpuState.init() // read (PC) from ram
+                .rPC(0x0005)
+                .rSP(test_value)
+                .ram(test_addr, test_value & 0xFF)
+                .ram(test_addr + 1, (test_value & 0xFF00) >> 8),
+        },
+    );
+}
