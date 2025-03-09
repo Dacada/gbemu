@@ -1,5 +1,6 @@
 const std = @import("std");
 const mmu = @import("mmu.zig");
+const alu = @import("alu.zig");
 
 pub const CpuError = error{
     IllegalInstruction,
@@ -222,10 +223,7 @@ pub const Cpu = struct {
     }
 
     fn decodeOpcode(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
-        // NOP
-        if (self.reg.IR == 0) {
-            return self.fetchOpcode();
-        }
+        // LOAD 8-BIT
 
         // Load register (register)
         if (self.reg.IR & 0b11_000_111 == 0b01_000_110) { // from indirect HL
@@ -333,6 +331,8 @@ pub const Cpu = struct {
             return SelfRefCpuMethod.init(Cpu.fetchOpcode);
         }
 
+        // LOAD 16-BIT
+
         // Load 16-bit register
         if (self.reg.IR & 0b11_00_1111 == 0b00_00_0001) {
             self.reg.WZ.Lo = try self.fetchPC();
@@ -368,6 +368,11 @@ pub const Cpu = struct {
         if (self.reg.IR & 0b11111111 == 0b11111000) {
             self.reg.WZ.Lo = try self.fetchPC();
             return SelfRefCpuMethod.init(Cpu.loadHLfromAdjustedSP2);
+        }
+
+        // NOP
+        if (self.reg.IR & 0b11111111 == 0b00000000) {
+            return self.fetchOpcode();
         }
 
         return CpuError.IllegalInstruction;
@@ -506,20 +511,11 @@ pub const Cpu = struct {
     }
 
     fn loadHLfromAdjustedSP2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
-        const SPLlo: u4 = @intCast(self.reg.SP.Lo & 0xF);
-        const Zlo: u4 = @intCast(self.reg.WZ.Lo & 0xF);
-        const SPLhi: u4 = @intCast((self.reg.SP.Lo & 0xF0) >> 4);
-        const Zhi: u4 = @intCast((self.reg.WZ.Lo & 0xF0) >> 4);
-
-        const Llo, const halfcarry = @addWithOverflow(SPLlo, Zlo);
-        const Lhi_tmp, const carry_tmp = @addWithOverflow(SPLhi, halfcarry);
-        const Lhi, const carry = @addWithOverflow(Lhi_tmp, Zhi);
-
-        self.reg.HL.Lo = (@as(u8, Lhi) << 4) | Llo;
+        const res = alu.Add8BitUnsigned.apply(self.reg.SP.Lo, self.reg.WZ.Lo);
+        self.reg.HL.Lo = res.result;
         self.reg.AF.Lo.setAll(0);
-        self.reg.AF.Lo.C = carry | carry_tmp;
-        self.reg.AF.Lo.H = halfcarry;
-
+        self.reg.AF.Lo.C = res.carry;
+        self.reg.AF.Lo.H = res.halfcarry;
         return SelfRefCpuMethod.init(Cpu.loadHLfromAdjustedSP3);
     }
 

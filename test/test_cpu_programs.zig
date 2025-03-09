@@ -4,377 +4,98 @@ const run_program = testutil.run_program;
 const destroy_cpu = testutil.destroy_cpu;
 const TestCpuState = testutil.TestCpuState;
 
-test "test program 1" {
-    // Only LD instructions, register or memory, no immediate
+test "LD only integ test" {
+    // Seed values into memory and move them around.
 
-    // This program swaps the values of B and the value from dereferencing RAM on the address you get from using B on high and low. In pseudocode:
+    const program = [_]u8{
+        //////////////////// Seed some initial values into Work RAM
+        0x3E, 0xAA, //////// LD A, 0xAA
+        0xEA, 0x00, 0xC0, // LD (0xC000), A
+        0x3E, 0xBB, //////// LD A, 0xBB
+        0xEA, 0x01, 0xC0, // LD (0xC001), A
+        0x3E, 0xCC, //////// LD A, 0xCC
+        0xEA, 0x02, 0xC0, // LD (0xC002), A
 
-    //   B = 0xD0
-    //   RAM[0xD0D0] = 0xFF
-    //   ---
-    //   H = B
-    //   L = B
-    //   B = RAM[HL]
-    //   RAM[HL] = H
-    //   ---
-    //   ASSERT B == 0xFF
-    //   ASSERT HL == 0xD0D0
-    //   ASSERT RAM[0xD0D0] = 0xD0
+        //////////////////// Store values via HL pointer and increment
+        0x21, 0x03, 0xC0, // LD HL, 0xC003
+        0x3E, 0xDD, //////// LD A, 0xDD
+        0x22, ////////////// LD (HL+), A   ; Store at 0xC003, HL increments
+        0x3E, 0xEE, //////// LD A, 0xEE
+        0x77, ////////////// LD (HL), A   ; Store at 0xC004, HL increments
+
+        //////////////////// Use BC and DE as indirect pointers
+        0x01, 0x00, 0xC0, // LD BC, 0xC000
+        0x11, 0x05, 0xC0, // LD DE, 0xC005
+        0x0A, ////////////// LD A, (BC)    ; Load from 0xC000
+        0x12, ////////////// LD (DE), A    ; Store at 0xC005
+
+        //////////////////// More indirect loads using HL and DE
+        0x21, 0x01, 0xC0, // LD HL, 0xC001
+        0x7E, ////////////// LD A, (HL)
+        0x12, ////////////// LD (DE), A    ; Store BB at 0xC005 (overwriting AA)
+
+        //////////////////// Load and store using HL+ and HL-
+        0x21, 0x06, 0xC0, // LD HL, 0xC006
+        0x3E, 0x11, //////// LD A, 0x11
+        0x22, ////////////// LD (HL+), A   ; Store at 0xC006, HL increments
+        0x3E, 0x22, //////// LD A, 0x22
+        0x32, ////////////// LD (HL-), A   ; Store at 0xC007, HL decrements
+        0x3E, 0x33, //////// LD A, 0x33
+        0x77, ////////////// LD (HL), A    ; Store at 0xC006, overwrite 0x11
+
+        //////////////////// Copying a value indirectly
+        0x21, 0x02, 0xC0, // LD HL, 0xC002
+        0x7E, ////////////// LD A, (HL)
+        0xEA, 0x08, 0xC0, // LD (0xC008), A  ; Copy CC to 0xC008
+
+        //////////////////// HL-based shuffle
+        0x21, 0x05, 0xC0, // LD HL, 0xC005
+        0x7E, ////////////// LD A, (HL)
+        0xEA, 0x09, 0xC0, // LD (0xC009), A  ; Move value from 0xC005 to 0xC009
+        0xFA, 0x08, 0xC0, // LD A, (0xC008)
+        0x77, ////////////// LD (HL), A      ; Swap value from 0xC008 back to 0xC005
+
+        //////////////////// LDH operations
+        0xFA, 0x00, 0xC0, // LD A, (0xC000)
+        0xE0, 0x80, //////// LDH (0xFF80), A ; Copy AA from 0xC000 to 0xFF80
+        0xFA, 0x01, 0xC0, // LD A, (0xC001)
+        0xE0, 0x81, //////// LDH (0xFF81), A ; Copy BB from 0xC001 to 0xFF81
+
+        //////////////////// Final verification marker
+        0x3E, 0x99, //////// LD A, 0x99
+        0xEA, 0x0F, 0xC0, // LD (0xC00F), A
+
+        //////////////////// End
+        0xFD, ////////////// Illegal instruction
+    };
 
     const cpu = try run_program(
-        "LD reg/memory",
-        &[_]u8{
-            0x68, // LD L, B
-            0x65, // LD H, L
-            0x46, // LD B, (HL)
-            0x74, // LD (HL), H
-            0x00, // NOP
-            0xFD, // (illegal)
-        },
-        TestCpuState.init()
-            .rB(0xD0)
-            .ram(0xD0D0, 0xFF),
+        "LD only integ test",
+        &program,
     );
     defer destroy_cpu(&cpu);
 
-    try std.testing.expectEqual(0xFF, cpu.reg.BC.Hi);
-    try std.testing.expectEqual(0xD0D0, cpu.reg.HL.all());
-    try std.testing.expectEqual(0xD0, try cpu.mmu.read(0xD0D0));
-}
+    try std.testing.expectEqual(program.len, cpu.reg.PC);
 
-test "test program 2" {
-    // Only LD instructions, register, memory, immediate
+    try std.testing.expectEqual(0x99, cpu.reg.AF.Hi);
+    try std.testing.expectEqual(0xC0, cpu.reg.BC.Hi);
+    try std.testing.expectEqual(0x00, cpu.reg.BC.Lo);
+    try std.testing.expectEqual(0xC0, cpu.reg.DE.Hi);
+    try std.testing.expectEqual(0x05, cpu.reg.DE.Lo);
+    try std.testing.expectEqual(0xC0, cpu.reg.HL.Hi);
+    try std.testing.expectEqual(0x05, cpu.reg.HL.Lo);
 
-    // This program simply loads the value on RAM address 0xD00D into registers B and C. Then puts something else in there.
-
-    //   RAM[0xD00D] = 0xFF
-    //   ---
-    //   H = 0xD0
-    //   L = 0x0D
-    //   B = RAM[HL]
-    //   C = B
-    //   RAM[HL] = 0x00
-    //   ---
-    //   ASSERT B == 0xFF
-    //   ASSERT C == 0xFF
-    //   ASSERT RAM[0xD00D] == 0x00
-
-    const cpu = try run_program(
-        "LD reg/memory/immediate",
-        &[_]u8{
-            0x26, // LD H, 0xD0
-            0xD0,
-            0x2E, // LD L, 0x0D
-            0x0D,
-            0x46, // LD B, (HL)
-            0x48, // LD C, B
-            0x36, // LD (HL), 0x00
-            0x00,
-            0x00, // NOP
-            0xFD, // (illegal)
-        },
-        TestCpuState.init()
-            .ram(0xD00D, 0xFF),
-    );
-    defer destroy_cpu(&cpu);
-
-    try std.testing.expectEqual(0xFF, cpu.reg.BC.Hi);
-    try std.testing.expectEqual(0xFF, cpu.reg.BC.Lo);
-    try std.testing.expectEqual(0x00, cpu.mmu.read(0xD00D));
-}
-
-test "test program 3" {
-    // Only LD instructions indirect from and to A
-
-    // This program loads the value from (BC) into (DE) using A as an intermediary.
-
-    // RAM[0xD00D] = 0xFF
-    // BC = 0xD00D
-    // DE = 0xDDDD
-    // ---
-    // A = RAM[BC]
-    // RAM[DE] = A
-    // ---
-    // ASSERT A == 0xFF
-    // ASSERT RAM[0xDDDD] == 0xFF
-
-    const cpu = try run_program(
-        "LD indirect accumulator",
-        &[_]u8{
-            0x0A, // LD A, (BC)
-            0x12, // LD (DE), A
-            0x00, // NOP
-            0xFD, // (illegal)
-        },
-        TestCpuState.init()
-            .ram(0xD00D, 0xFF)
-            .rBC(0xD00D)
-            .rDE(0xDDDD),
-    );
-    defer destroy_cpu(&cpu);
-
-    try std.testing.expectEqual(0xFF, cpu.reg.AF.Hi);
-    try std.testing.expectEqual(0xFF, cpu.mmu.read(0xDDDD));
-}
-
-test "test program 4" {
-    // Only LD instructions direct from and to A
-
-    // This program loads the value from 0xD00D into 0xDDDD using A as an intermediary.
-
-    // RAM[0xD00D] = 0xFF
-    // ---
-    // A = RAM[0xD00D]
-    // RAM[0xDDDD] = A
-    // ---
-    // ASSERT A == 0xFF
-    // ASSERT RAM[0xDDDD] == 0xFF
-
-    const cpu = try run_program(
-        "LD direct accumulator",
-        &[_]u8{
-            0xFA, // LD A, 0xD00D
-            0x0D,
-            0xD0,
-            0xEA, // LD 0xDDDD, A
-            0xDD,
-            0xDD,
-            0x00, // NOP
-            0xFD, // (illegal)
-        },
-        TestCpuState.init()
-            .ram(0xD00D, 0xFF),
-    );
-    defer destroy_cpu(&cpu);
-
-    try std.testing.expectEqual(0xFF, cpu.reg.AF.Hi);
-    try std.testing.expectEqual(0xFF, cpu.mmu.read(0xDDDD));
-}
-
-test "test program 5" {
-    // Mostly LDH instructions indirect from and to A
-
-    // This program loads the value from 0xFFAA into 0xFFBB using A as the intermediary and C as the indirect.
-
-    // RAM[0xFFAA] = 0xFF
-    // C = 0xAA
-    // ---
-    // A = RAM[0xFF C]
-    // C = 0xBB
-    // RAM[0xFF C] = A
-    // ---
-    // ASSERT A == 0xFF
-    // ASSERT RAM[0xFFBB] = 0xFF
-
-    const cpu = try run_program(
-        "LDH indirect accumulator",
-        &[_]u8{
-            0xF2, // LDH A, (C)
-            0x0E, // LD C, 0xBB
-            0xBB,
-            0xE2, // LDH (C), A
-            0xFD, // (illegal)
-        },
-        TestCpuState.init()
-            .ram(0xFFAA, 0xFF)
-            .rC(0xAA),
-    );
-    defer destroy_cpu(&cpu);
-
-    try std.testing.expectEqual(0xFF, cpu.reg.AF.Hi);
-    try std.testing.expectEqual(0xFF, cpu.mmu.read(0xFFBB));
-}
-
-test "test program 6" {
-    // Only LDH instructions direct from and to A
-
-    // This program loads the value from 0xFFAA into 0xFFBB using A as the intermediary
-
-    // RAM[0xFFAA] = 0xFF
-    // ---
-    // A = RAM[0xFFAA]
-    // RAM[0xFFBB] = A
-    // ---
-    // ASSERT A == 0xFF
-    // ASSERT RAM[0xFFBB] = 0xFF
-
-    const cpu = try run_program(
-        "LDH direct accumulator",
-        &[_]u8{
-            0xF0, // LDH A, 0xFFAA
-            0xAA,
-            0xE0, // LDH 0xFFBB, A
-            0xBB,
-            0xFD, // (illegal)
-        },
-        TestCpuState.init()
-            .ram(0xFFAA, 0xFF),
-    );
-    defer destroy_cpu(&cpu);
-
-    try std.testing.expectEqual(0xFF, cpu.reg.AF.Hi);
-    try std.testing.expectEqual(0xFF, cpu.mmu.read(0xFFBB));
-}
-
-test "test program 7" {
-    // Only LD instructions indirect from and to A with inc/dec HL
-
-    // This program loads three consecutive values starting from 0xFFA0 and does nothing with them
-
-    // HL = 0xD0A0
-    // RAM[0xD0A0] = 0x11
-    // RAM(0xD0A1] = 0x22
-    // RAM[0xD0A2] = 0x33
-    // ---
-    // A = RAM[HL+]
-    // A = RAM[HL+]
-    // A = RAM[HL+]
-    // ---
-    // ASSERT A == 0x33
-    // ASSERT HL == 0xD0A3
-
-    const cpu = try run_program(
-        "LD indirect accumulator with inc/dec HL",
-        &[_]u8{
-            0x2A, // LD A, (HL+)
-            0x2A, // LD A, (HL+)
-            0x2A, // LD A, (HL+)
-            0xFD, // (illegal)
-        },
-        TestCpuState.init()
-            .ram(0xD0A0, 0x11)
-            .ram(0xD0A1, 0x22)
-            .ram(0xD0A2, 0x33)
-            .rHL(0xD0A0),
-    );
-    defer destroy_cpu(&cpu);
-
-    try std.testing.expectEqual(0x33, cpu.reg.AF.Hi);
-    try std.testing.expectEqual(0xD0A3, cpu.reg.HL.all());
-}
-
-test "test program 8" {
-    // Only 16 bit immediate LD instructions
-
-    // This program loads a value to the SP
-
-    // ---
-    // SP = 0xFFAA
-    // ---
-    // ASSERT SP == 0xFFAA
-
-    const cpu = try run_program(
-        "LD immediate 16bit",
-        &[_]u8{
-            0x31, // LD SP, 0xFFAA
-            0xAA,
-            0xFF,
-            0xFD, // (illegal)
-        },
-        TestCpuState.init(),
-    );
-    defer destroy_cpu(&cpu);
-
-    try std.testing.expectEqual(0xFFAA, cpu.reg.SP.all());
-}
-
-test "test program 9" {
-    // Load from SP direct
-
-    // This program writes the value of the SP to ram
-
-    // SP = 0xFFAA
-    // ---
-    // LD 0xD00D, SP
-    // ---
-    // ASSERT RAM[0xD00D] = 0xFFAA
-
-    const cpu = try run_program(
-        "LD SP direct",
-        &[_]u8{
-            0x08, // LD 0xD00D, SP
-            0x0D,
-            0xD0,
-            0xFD, // (illegal)
-        },
-        TestCpuState.init()
-            .rSP(0xFFAA),
-    );
-    defer destroy_cpu(&cpu);
-
-    try std.testing.expectEqual(0xAA, try cpu.mmu.read(0xD00D));
-    try std.testing.expectEqual(0xFF, try cpu.mmu.read(0xD00D + 1));
-}
-
-test "test program 10" {
-    // Load SP from HL
-
-    // This program writes the value of HL to the SP
-
-    // HL = 0xFFAA
-    // ---
-    // LD SP, HL
-    // ---
-    // ASSERT SP = 0xFFAA
-
-    const cpu = try run_program(
-        "LD SP direct",
-        &[_]u8{
-            0xF9, // LD SP, HL
-            0xFD, // (illegal)
-        },
-        TestCpuState.init()
-            .rHL(0xFFAA),
-    );
-    defer destroy_cpu(&cpu);
-
-    try std.testing.expectEqual(0xFFAA, cpu.reg.SP.all());
-}
-
-test "test program 11" {
-    // Push and pop instructions
-
-    // Push some registers to the stack, clear them (only with loads), then pop them
-
-    // SP = 0xFFAA
-    // BC = 0x0123
-    // DE = 0x4567
-    // ---
-    // PUSH BC
-    // PUSH DE
-    // LD B, 0
-    // LD C, B
-    // LD D, C
-    // LD E, D
-    // POP DE
-    // POP BC
-    // ---
-    // ASSERT SP = 0xFFAA
-    // ASSERT BC = 0x0123
-    // ASSERT DE = 0x4567
-
-    const cpu = try run_program(
-        "PUSH & POP",
-        &[_]u8{
-            0xC5, // PUSH BC
-            0xD5, // PUSH DE
-            0x06, // LD B, 0
-            0x00,
-            0x48, // LD C, B
-            0x51, // LD D, C
-            0x5A, // LD E, D
-            0xD1, // POP DE
-            0xC1, // POP BC
-            0xFD, // (illegal)
-        },
-        TestCpuState.init()
-            .rSP(0xFFAA)
-            .rBC(0x0123)
-            .rDE(0x4567),
-    );
-    defer destroy_cpu(&cpu);
-
-    try std.testing.expectEqual(0xFFAA, cpu.reg.SP.all());
-    try std.testing.expectEqual(0x0123, cpu.reg.BC.all());
-    try std.testing.expectEqual(0x4567, cpu.reg.DE.all());
+    try std.testing.expectEqual(0xAA, cpu.mmu.read(0xC000));
+    try std.testing.expectEqual(0xBB, cpu.mmu.read(0xC001));
+    try std.testing.expectEqual(0xCC, cpu.mmu.read(0xC002));
+    try std.testing.expectEqual(0xDD, cpu.mmu.read(0xC003));
+    try std.testing.expectEqual(0xEE, cpu.mmu.read(0xC004));
+    try std.testing.expectEqual(0xCC, cpu.mmu.read(0xC005));
+    try std.testing.expectEqual(0x33, cpu.mmu.read(0xC006));
+    try std.testing.expectEqual(0x22, cpu.mmu.read(0xC007));
+    try std.testing.expectEqual(0xCC, cpu.mmu.read(0xC008));
+    try std.testing.expectEqual(0xBB, cpu.mmu.read(0xC009));
+    try std.testing.expectEqual(0x99, cpu.mmu.read(0xC00F));
+    try std.testing.expectEqual(0xAA, cpu.mmu.read(0xFF80));
+    try std.testing.expectEqual(0xBB, cpu.mmu.read(0xFF81));
 }

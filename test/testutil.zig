@@ -276,7 +276,7 @@ pub fn run_test_case(name: []const u8, rom: []u8, exram: []u8, program: []const 
     }
 }
 
-pub fn run_program(name: []const u8, program: []const u8, initial_state: *TestCpuState) !Cpu {
+pub fn run_program(name: []const u8, program: []const u8) !Cpu {
     std.debug.print("Running program: {s}\n", .{name});
 
     var rom = try std.testing.allocator.alloc(u8, 0x8000);
@@ -291,8 +291,6 @@ pub fn run_program(name: []const u8, program: []const u8, initial_state: *TestCp
     for (program, 0..) |instr, idx| {
         rom[idx] = instr;
     }
-
-    try map_initial_state(&cpu, initial_state);
 
     while (true) {
         cpu.tick() catch |err| switch (err) {
