@@ -373,6 +373,10 @@ pub const Cpu = struct {
         // ARITHMETIC 8-BIT
 
         // Add register
+        if (self.reg.IR & 0b11111111 == 0b10000110) { // indirect HL
+            self.reg.WZ.Lo = try self.mmu.read(self.reg.HL.all());
+            return SelfRefCpuMethod.init(Cpu.addIndirectHL2);
+        }
         if (self.reg.IR & 0b11111_000 == 0b10000_000) {
             const reg: u3 = @intCast(self.reg.IR & 0b00000_111);
             const reg_ptr = self.ptrReg8Bit(reg);
@@ -534,6 +538,13 @@ pub const Cpu = struct {
         const adj: u8 = if ((self.reg.WZ.Lo & 0b1000_0000) >> 7 == 1) 0xFF else 0x00;
         const tmp, _ = @addWithOverflow(self.reg.SP.Hi, adj);
         self.reg.HL.Hi, _ = @addWithOverflow(tmp, self.reg.AF.Lo.C);
+        return self.fetchOpcode();
+    }
+
+    fn addIndirectHL2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        const res = alu.AluOp8Bit.add(self.reg.AF.Hi, self.reg.WZ.Lo);
+        self.applyFlags(res);
+        self.reg.AF.Hi = res.result;
         return self.fetchOpcode();
     }
 

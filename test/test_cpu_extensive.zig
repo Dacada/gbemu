@@ -1173,9 +1173,74 @@ test "Add (register A)" {
                 TestCpuState.init() // execute nop | read iut(PC) from ram
                     .rPC(0x0002)
                     .rA(val_u8),
-                TestCpuState.init() // execute iut: add reg to a | read (PC)
+                TestCpuState.init() // execute iut: add reg to A | read (PC)
                     .rPC(0x0003)
                     .rA(res)
+                    .fC(carry)
+                    .fH(halfcarry)
+                    .fN(0)
+                    .fZ(zero),
+            },
+        );
+    }
+}
+
+test "Add (indirect HL)" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    for (0..(0xFF + 1)) |val| {
+        const val_u8: u8 = @intCast(val);
+        const val_u4: u4 = @intCast(val_u8 & 0xF);
+
+        // Constants
+        const test_val: u8 = 0xAA;
+        const test_addr: u16 = 0xD00D;
+        const instr: u8 = 0b10000110;
+
+        const res, const carry = @addWithOverflow(test_val, val_u8);
+        _, const halfcarry = @addWithOverflow(@as(u4, test_val & 0xF), val_u4);
+        const zero: u1 = @intFromBool(res == 0);
+
+        const name = try std.fmt.allocPrint(std.testing.allocator, "Add (indirect HL) (val={x})", .{val});
+        defer std.testing.allocator.free(name);
+        try run_test_case(
+            name,
+            rom,
+            exram,
+            &[_]u8{
+                0x00,
+                instr,
+                0xFD,
+            },
+            TestCpuState.init()
+                .rA(test_val)
+                .ram(test_addr, val_u8)
+                .rHL(test_addr),
+            &[_]*TestCpuState{
+                TestCpuState.init() // read nop(PC) from ram
+                    .rPC(0x0001)
+                    .rA(test_val)
+                    .ram(test_addr, val_u8)
+                    .rHL(test_addr),
+                TestCpuState.init() // execute nop | read iut(PC) from ram
+                    .rPC(0x0002)
+                    .rA(test_val)
+                    .ram(test_addr, val_u8)
+                    .rHL(test_addr),
+                TestCpuState.init() // execute iut: read val(HL) from ram
+                    .rPC(0x0002)
+                    .rA(test_val)
+                    .ram(test_addr, val_u8)
+                    .rHL(test_addr),
+                TestCpuState.init() // execute iut: add val to A | read (PC)
+                    .rPC(0x0003)
+                    .rA(res)
+                    .ram(test_addr, val_u8)
+                    .rHL(test_addr)
                     .fC(carry)
                     .fH(halfcarry)
                     .fN(0)
