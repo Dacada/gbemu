@@ -2,6 +2,7 @@ const std = @import("std");
 const testutil = @import("testutil.zig");
 const run_test_case = testutil.run_test_case;
 const TestCpuState = testutil.TestCpuState;
+const alu = @import("lib").alu;
 
 // IUT = Instruction Under Test
 
@@ -1079,58 +1080,64 @@ test "Add (register)" {
     const rom = try std.testing.allocator.alloc(u8, 0x8000);
     defer std.testing.allocator.free(rom);
 
-    for (0..(0xFF + 1)) |val| {
-        for (0..(0b111 + 1)) |reg| {
-            if (reg == 0b110 or reg == 0b111) {
-                continue;
+    for (0..4) |with_carry| {
+        inline for (.{ 0x00, 0x01, 0x4, 0xF, 0x44, 0xFF }) |val| {
+            for (0..(0b111 + 1)) |reg| {
+                if (reg == 0b110 or reg == 0b111) {
+                    continue;
+                }
+
+                // Constants
+                const reg_u8: u8 = @intCast(reg);
+                const reg_u3: u3 = @intCast(reg_u8);
+                const val_u8: u8 = @intCast(val);
+
+                const carry_flag: u1 = @intCast(with_carry & 0b01);
+                const carry_instr: u1 = @intCast((with_carry & 0b10) >> 1);
+                const carry_for_test_add: u1 = carry_flag & carry_instr;
+
+                const instr: u8 = 0b10000000 | reg_u8 | (@as(u8, carry_instr) << 3);
+                const test_val: u8 = 0xBB;
+
+                const res = alu.AluOp8Bit.add(test_val, val_u8, carry_for_test_add);
+
+                const name = try std.fmt.allocPrint(std.testing.allocator, "Add (reg={b}) (val={x}) (with_carry={b})", .{ reg, val, with_carry });
+                defer std.testing.allocator.free(name);
+                try run_test_case(
+                    name,
+                    rom,
+                    exram,
+                    &[_]u8{
+                        0x00,
+                        instr,
+                        0xFD,
+                    },
+                    TestCpuState.init()
+                        .rA(test_val)
+                        .fC(carry_flag)
+                        .reg(reg_u3, val_u8),
+                    &[_]*TestCpuState{
+                        TestCpuState.init() // read nop(PC) from ram
+                            .rPC(0x0001)
+                            .rA(test_val)
+                            .fC(carry_flag)
+                            .reg(reg_u3, val_u8),
+                        TestCpuState.init() // execute nop | read iut(PC) from ram
+                            .rPC(0x0002)
+                            .rA(test_val)
+                            .fC(carry_flag)
+                            .reg(reg_u3, val_u8),
+                        TestCpuState.init() // execute iut: add reg to a | read (PC)
+                            .rPC(0x0003)
+                            .rA(res.result)
+                            .reg(reg_u3, val_u8)
+                            .fC(res.carry)
+                            .fH(res.halfcarry)
+                            .fN(res.subtraction)
+                            .fZ(res.zero),
+                    },
+                );
             }
-
-            const reg_u8: u8 = @intCast(reg);
-            const reg_u3: u3 = @intCast(reg_u8);
-            const val_u8: u8 = @intCast(val);
-            const val_u4: u4 = @intCast(val_u8 & 0xF);
-
-            // Constants
-            const instr: u8 = 0b10000000 | reg_u8;
-            const a_val: u8 = 0xBB;
-
-            const res, const carry = @addWithOverflow(a_val, val_u8);
-            _, const halfcarry = @addWithOverflow(@as(u4, a_val & 0xF), val_u4);
-            const zero: u1 = @intFromBool(res == 0);
-
-            const name = try std.fmt.allocPrint(std.testing.allocator, "Add (reg={b}) (val={x})", .{ reg, val });
-            defer std.testing.allocator.free(name);
-            try run_test_case(
-                name,
-                rom,
-                exram,
-                &[_]u8{
-                    0x00,
-                    instr,
-                    0xFD,
-                },
-                TestCpuState.init()
-                    .rA(a_val)
-                    .reg(reg_u3, val_u8),
-                &[_]*TestCpuState{
-                    TestCpuState.init() // read nop(PC) from ram
-                        .rPC(0x0001)
-                        .rA(a_val)
-                        .reg(reg_u3, val_u8),
-                    TestCpuState.init() // execute nop | read iut(PC) from ram
-                        .rPC(0x0002)
-                        .rA(a_val)
-                        .reg(reg_u3, val_u8),
-                    TestCpuState.init() // execute iut: add reg to a | read (PC)
-                        .rPC(0x0003)
-                        .rA(res)
-                        .reg(reg_u3, val_u8)
-                        .fC(carry)
-                        .fH(halfcarry)
-                        .fN(0)
-                        .fZ(zero),
-                },
-            );
         }
     }
 }
@@ -1142,46 +1149,52 @@ test "Add (register A)" {
     const rom = try std.testing.allocator.alloc(u8, 0x8000);
     defer std.testing.allocator.free(rom);
 
-    for (0..(0xFF + 1)) |val| {
-        const val_u8: u8 = @intCast(val);
-        const val_u4: u4 = @intCast(val_u8 & 0xF);
+    for (0..4) |with_carry| {
+        inline for (.{ 0x00, 0x01, 0x4, 0xF, 0x44, 0xFF }) |val| {
+            // Constants
+            const val_u8: u8 = @intCast(val);
 
-        // Constants
-        const instr: u8 = 0b10000111;
+            const carry_flag: u1 = @intCast(with_carry & 0b01);
+            const carry_instr: u1 = @intCast((with_carry & 0b10) >> 1);
+            const carry_for_test_add: u1 = carry_flag & carry_instr;
 
-        const res, const carry = @addWithOverflow(val_u8, val_u8);
-        _, const halfcarry = @addWithOverflow(val_u4, val_u4);
-        const zero: u1 = @intFromBool(res == 0);
+            const instr: u8 = 0b10000111 | (@as(u8, carry_instr) << 3);
 
-        const name = try std.fmt.allocPrint(std.testing.allocator, "Add (reg=111) (val={x})", .{val});
-        defer std.testing.allocator.free(name);
-        try run_test_case(
-            name,
-            rom,
-            exram,
-            &[_]u8{
-                0x00,
-                instr,
-                0xFD,
-            },
-            TestCpuState.init()
-                .rA(val_u8),
-            &[_]*TestCpuState{
-                TestCpuState.init() // read nop(PC) from ram
-                    .rPC(0x0001)
-                    .rA(val_u8),
-                TestCpuState.init() // execute nop | read iut(PC) from ram
-                    .rPC(0x0002)
-                    .rA(val_u8),
-                TestCpuState.init() // execute iut: add reg to A | read (PC)
-                    .rPC(0x0003)
-                    .rA(res)
-                    .fC(carry)
-                    .fH(halfcarry)
-                    .fN(0)
-                    .fZ(zero),
-            },
-        );
+            const res = alu.AluOp8Bit.add(val_u8, val_u8, carry_for_test_add);
+
+            const name = try std.fmt.allocPrint(std.testing.allocator, "Add (reg=111) (val={x}) (with_carry={b})", .{ val, with_carry });
+            defer std.testing.allocator.free(name);
+            try run_test_case(
+                name,
+                rom,
+                exram,
+                &[_]u8{
+                    0x00,
+                    instr,
+                    0xFD,
+                },
+                TestCpuState.init()
+                    .rA(val_u8)
+                    .fC(carry_flag),
+                &[_]*TestCpuState{
+                    TestCpuState.init() // read nop(PC) from ram
+                        .rPC(0x0001)
+                        .rA(val_u8)
+                        .fC(carry_flag),
+                    TestCpuState.init() // execute nop | read iut(PC) from ram
+                        .rPC(0x0002)
+                        .rA(val_u8)
+                        .fC(carry_flag),
+                    TestCpuState.init() // execute iut: add reg to A | read (PC)
+                        .rPC(0x0003)
+                        .rA(res.result)
+                        .fC(res.carry)
+                        .fH(res.halfcarry)
+                        .fN(res.subtraction)
+                        .fZ(res.zero),
+                },
+            );
+        }
     }
 }
 
@@ -1192,61 +1205,68 @@ test "Add (indirect HL)" {
     const rom = try std.testing.allocator.alloc(u8, 0x8000);
     defer std.testing.allocator.free(rom);
 
-    for (0..(0xFF + 1)) |val| {
-        const val_u8: u8 = @intCast(val);
-        const val_u4: u4 = @intCast(val_u8 & 0xF);
+    for (0..4) |with_carry| {
+        inline for (.{ 0x00, 0x01, 0x4, 0xF, 0x44, 0xFF }) |val| {
+            // Constants
+            const val_u8: u8 = @intCast(val);
 
-        // Constants
-        const test_val: u8 = 0xAA;
-        const test_addr: u16 = 0xD00D;
-        const instr: u8 = 0b10000110;
+            const carry_flag: u1 = @intCast(with_carry & 0b01);
+            const carry_instr: u1 = @intCast((with_carry & 0b10) >> 1);
+            const carry_for_test_add: u1 = carry_flag & carry_instr;
 
-        const res, const carry = @addWithOverflow(test_val, val_u8);
-        _, const halfcarry = @addWithOverflow(@as(u4, test_val & 0xF), val_u4);
-        const zero: u1 = @intFromBool(res == 0);
+            const test_val: u8 = 0xAA;
+            const test_addr: u16 = 0xD00D;
+            const instr: u8 = 0b10000110 | (@as(u8, carry_instr) << 3);
 
-        const name = try std.fmt.allocPrint(std.testing.allocator, "Add (indirect HL) (val={x})", .{val});
-        defer std.testing.allocator.free(name);
-        try run_test_case(
-            name,
-            rom,
-            exram,
-            &[_]u8{
-                0x00,
-                instr,
-                0xFD,
-            },
-            TestCpuState.init()
-                .rA(test_val)
-                .ram(test_addr, val_u8)
-                .rHL(test_addr),
-            &[_]*TestCpuState{
-                TestCpuState.init() // read nop(PC) from ram
-                    .rPC(0x0001)
+            const res = alu.AluOp8Bit.add(test_val, val_u8, carry_for_test_add);
+
+            const name = try std.fmt.allocPrint(std.testing.allocator, "Add (indirect HL) (val={x}) (with_carry={b})", .{ val, with_carry });
+            defer std.testing.allocator.free(name);
+            try run_test_case(
+                name,
+                rom,
+                exram,
+                &[_]u8{
+                    0x00,
+                    instr,
+                    0xFD,
+                },
+                TestCpuState.init()
                     .rA(test_val)
+                    .fC(carry_flag)
                     .ram(test_addr, val_u8)
                     .rHL(test_addr),
-                TestCpuState.init() // execute nop | read iut(PC) from ram
-                    .rPC(0x0002)
-                    .rA(test_val)
-                    .ram(test_addr, val_u8)
-                    .rHL(test_addr),
-                TestCpuState.init() // execute iut: read val(HL) from ram
-                    .rPC(0x0002)
-                    .rA(test_val)
-                    .ram(test_addr, val_u8)
-                    .rHL(test_addr),
-                TestCpuState.init() // execute iut: add val to A | read (PC)
-                    .rPC(0x0003)
-                    .rA(res)
-                    .ram(test_addr, val_u8)
-                    .rHL(test_addr)
-                    .fC(carry)
-                    .fH(halfcarry)
-                    .fN(0)
-                    .fZ(zero),
-            },
-        );
+                &[_]*TestCpuState{
+                    TestCpuState.init() // read nop(PC) from ram
+                        .rPC(0x0001)
+                        .rA(test_val)
+                        .fC(carry_flag)
+                        .ram(test_addr, val_u8)
+                        .rHL(test_addr),
+                    TestCpuState.init() // execute nop | read iut(PC) from ram
+                        .rPC(0x0002)
+                        .rA(test_val)
+                        .fC(carry_flag)
+                        .ram(test_addr, val_u8)
+                        .rHL(test_addr),
+                    TestCpuState.init() // execute iut: read val(HL) from ram
+                        .rPC(0x0002)
+                        .rA(test_val)
+                        .fC(carry_flag)
+                        .ram(test_addr, val_u8)
+                        .rHL(test_addr),
+                    TestCpuState.init() // execute iut: add val to A | read (PC)
+                        .rPC(0x0003)
+                        .rA(res.result)
+                        .ram(test_addr, val_u8)
+                        .rHL(test_addr)
+                        .fC(res.carry)
+                        .fH(res.halfcarry)
+                        .fN(res.subtraction)
+                        .fZ(res.zero),
+                },
+            );
+        }
     }
 }
 
@@ -1257,50 +1277,57 @@ test "Add (immediate)" {
     const rom = try std.testing.allocator.alloc(u8, 0x8000);
     defer std.testing.allocator.free(rom);
 
-    for (0..(0xFF + 1)) |val| {
-        const val_u8: u8 = @intCast(val);
-        const val_u4: u4 = @intCast(val_u8 & 0xF);
+    for (0..4) |with_carry| {
+        inline for (.{ 0x00, 0x01, 0x4, 0xF, 0x44, 0xFF }) |val| {
+            // Constants
+            const val_u8: u8 = @intCast(val);
 
-        // Constants
-        const test_val: u8 = 0xAA;
-        const instr: u8 = 0b11000110;
+            const carry_flag: u1 = @intCast(with_carry & 0b01);
+            const carry_instr: u1 = @intCast((with_carry & 0b10) >> 1);
+            const carry_for_test_add: u1 = carry_flag & carry_instr;
 
-        const res, const carry = @addWithOverflow(test_val, val_u8);
-        _, const halfcarry = @addWithOverflow(@as(u4, test_val & 0xF), val_u4);
-        const zero: u1 = @intFromBool(res == 0);
+            const test_val: u8 = 0xAA;
+            const instr: u8 = 0b11000110 | (@as(u8, carry_instr) << 3);
 
-        const name = try std.fmt.allocPrint(std.testing.allocator, "Add (immediate) (val={x})", .{val});
-        defer std.testing.allocator.free(name);
-        try run_test_case(
-            name,
-            rom,
-            exram,
-            &[_]u8{
-                0x00,
-                instr,
-                val_u8,
-                0xFD,
-            },
-            TestCpuState.init()
-                .rA(test_val),
-            &[_]*TestCpuState{
-                TestCpuState.init() // read nop(PC) from ram
-                    .rPC(0x0001)
-                    .rA(test_val),
-                TestCpuState.init() // execute nop | read iut(PC) from ram
-                    .rPC(0x0002)
-                    .rA(test_val),
-                TestCpuState.init() // execute iut: read val(PC) from ram
-                    .rPC(0x0003)
-                    .rA(test_val),
-                TestCpuState.init() // execute iut: add val to A | read (PC)
-                    .rPC(0x0004)
-                    .rA(res)
-                    .fC(carry)
-                    .fH(halfcarry)
-                    .fN(0)
-                    .fZ(zero),
-            },
-        );
+            const res = alu.AluOp8Bit.add(test_val, val_u8, carry_for_test_add);
+
+            const name = try std.fmt.allocPrint(std.testing.allocator, "Add (immediate) (val={x}) (with_carry={b})", .{ val, with_carry });
+            defer std.testing.allocator.free(name);
+            try run_test_case(
+                name,
+                rom,
+                exram,
+                &[_]u8{
+                    0x00,
+                    instr,
+                    val_u8,
+                    0xFD,
+                },
+                TestCpuState.init()
+                    .rA(test_val)
+                    .fC(carry_flag),
+                &[_]*TestCpuState{
+                    TestCpuState.init() // read nop(PC) from ram
+                        .rPC(0x0001)
+                        .rA(test_val)
+                        .fC(carry_flag),
+                    TestCpuState.init() // execute nop | read iut(PC) from ram
+                        .rPC(0x0002)
+                        .rA(test_val)
+                        .fC(carry_flag),
+                    TestCpuState.init() // execute iut: read val(PC) from ram
+                        .rPC(0x0003)
+                        .rA(test_val)
+                        .fC(carry_flag),
+                    TestCpuState.init() // execute iut: add val to A | read (PC)
+                        .rPC(0x0004)
+                        .rA(res.result)
+                        .fC(res.carry)
+                        .fH(res.halfcarry)
+                        .fN(res.subtraction)
+                        .fZ(res.zero),
+                },
+            );
+        }
     }
 }
