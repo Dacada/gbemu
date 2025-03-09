@@ -380,10 +380,16 @@ pub const Cpu = struct {
         if (self.reg.IR & 0b11111_000 == 0b10000_000) {
             const reg: u3 = @intCast(self.reg.IR & 0b00000_111);
             const reg_ptr = self.ptrReg8Bit(reg);
-            const res = alu.AluOp8Bit.add(self.reg.AF.Hi, reg_ptr.*);
+            const res = alu.AluOp8Bit.add(self.reg.AF.Hi, reg_ptr.*, 0);
             self.applyFlags(res);
             self.reg.AF.Hi = res.result;
             return self.fetchOpcode();
+        }
+
+        // Add immediate
+        if (self.reg.IR & 0b11111111 == 0b11000110) {
+            self.reg.WZ.Lo = try self.fetchPC();
+            return SelfRefCpuMethod.init(Cpu.addImmediate2);
         }
 
         // NOP
@@ -527,7 +533,7 @@ pub const Cpu = struct {
     }
 
     fn loadHLfromAdjustedSP2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
-        const res = alu.AluOp8Bit.add(self.reg.SP.Lo, self.reg.WZ.Lo);
+        const res = alu.AluOp8Bit.add(self.reg.SP.Lo, self.reg.WZ.Lo, 0);
         self.applyFlags(res);
         self.reg.AF.Lo.Z = 0;
         self.reg.HL.Lo = res.result;
@@ -542,7 +548,14 @@ pub const Cpu = struct {
     }
 
     fn addIndirectHL2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
-        const res = alu.AluOp8Bit.add(self.reg.AF.Hi, self.reg.WZ.Lo);
+        const res = alu.AluOp8Bit.add(self.reg.AF.Hi, self.reg.WZ.Lo, 0);
+        self.applyFlags(res);
+        self.reg.AF.Hi = res.result;
+        return self.fetchOpcode();
+    }
+
+    fn addImmediate2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        const res = alu.AluOp8Bit.add(self.reg.AF.Hi, self.reg.WZ.Lo, 0);
         self.applyFlags(res);
         self.reg.AF.Hi = res.result;
         return self.fetchOpcode();
