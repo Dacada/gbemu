@@ -50,21 +50,6 @@ pub const Mmu = struct {
         self.ie = 0;
     }
 
-    test "zeroize mmu owned memory" {
-        const rom = try std.testing.allocator.alloc(u8, 0x8000);
-        defer std.testing.allocator.free(rom);
-        const exram = try std.testing.allocator.alloc(u8, 0x2000);
-        defer std.testing.allocator.free(exram);
-        var mmu = try Mmu.init(rom, exram, std.testing.allocator);
-        defer mmu.deinit();
-        mmu.zeroize();
-        inline for (.{ mmu.vram, mmu.wram, mmu.oam, mmu.io, mmu.hram }) |slice| {
-            for (slice) |cell| {
-                try std.testing.expectEqual(0, cell);
-            }
-        }
-    }
-
     pub fn deinit(self: *const Mmu) void {
         self.allocator.free(self.vram);
         self.allocator.free(self.wram);
@@ -173,6 +158,21 @@ test "mmu" {
             try std.testing.expectError(MmuMemoryError.AccessToForbiddenMemory, mmu.write(@intCast(addr), val));
         } else {
             try std.testing.expectEqual(val, try mmu.read(@intCast(addr)));
+        }
+    }
+}
+
+test "zeroize mmu owned memory" {
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+    var mmu = try Mmu.init(rom, exram, std.testing.allocator);
+    defer mmu.deinit();
+    mmu.zeroize();
+    inline for (.{ mmu.vram, mmu.wram, mmu.oam, mmu.io, mmu.hram }) |slice| {
+        for (slice) |cell| {
+            try std.testing.expectEqual(0, cell);
         }
     }
 }

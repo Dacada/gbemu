@@ -34,84 +34,182 @@ pub const AluOp8Bit = packed struct {
         };
     }
 
-    test "0b00000001 + 0b00000001" {
-        const res = AluOp8Bit.add(0b00000001, 0b00000001, 0);
-        std.testing.expectEqual(0b00000010, res.result);
-        std.testing.expectEqual(0, res.zero);
-        std.testing.expectEqual(0, res.carry);
-        std.testing.expectEqual(0, res.halfcarry);
-        std.testing.expectEqual(0, res.subtraction);
-    }
-
-    test "0b00000001 + 0b00000001 + carry-in 1" {
-        const res = AluOp8Bit.add(0b00000001, 0b00000001, 1);
-        std.testing.expectEqual(0b00000011, res.result);
-        std.testing.expectEqual(0, res.zero);
-        std.testing.expectEqual(0, res.carry);
-        std.testing.expectEqual(0, res.halfcarry);
-        std.testing.expectEqual(0, res.subtraction);
-    }
-
-    test "0b11111111 + 0b00000001 (Zero flag case)" {
-        const res = AluOp8Bit.add(0b11111111, 0b00000001, 0);
-        std.testing.expectEqual(0b00000000, res.result);
-        std.testing.expectEqual(1, res.zero);
-        std.testing.expectEqual(1, res.carry);
-        std.testing.expectEqual(1, res.halfcarry);
-        std.testing.expectEqual(0, res.subtraction);
-    }
-
-    test "0b10000000 + 0b10000000 (Carry-out from MSB)" {
-        const res = AluOp8Bit.add(0b10000000, 0b10000000, 0);
-        std.testing.expectEqual(0b00000000, res.result);
-        std.testing.expectEqual(1, res.zero);
-        std.testing.expectEqual(1, res.carry);
-        std.testing.expectEqual(0, res.halfcarry);
-        std.testing.expectEqual(0, res.subtraction);
-    }
-
-    test "0b11111111 + 0b11111111 + carry-in 1 (Full overflow)" {
-        const res = AluOp8Bit.add(0b11111111, 0b11111111, 1);
-        std.testing.expectEqual(0b11111111, res.result);
-        std.testing.expectEqual(0, res.zero);
-        std.testing.expectEqual(1, res.carry);
-        std.testing.expectEqual(1, res.halfcarry);
-        std.testing.expectEqual(0, res.subtraction);
-    }
-
-    test "0b00001111 + 0b00000001 (Half-carry set)" {
-        const res = AluOp8Bit.add(0b00001111, 0b00000001, 0);
-        std.testing.expectEqual(0b00010000, res.result);
-        std.testing.expectEqual(0, res.zero);
-        std.testing.expectEqual(0, res.carry);
-        std.testing.expectEqual(1, res.halfcarry);
-        std.testing.expectEqual(0, res.subtraction);
-    }
-
-    test "0b11110000 + 0b00001111 (No half-carry)" {
-        const res = AluOp8Bit.add(0b11110000, 0b00001111, 0);
-        std.testing.expectEqual(0b11111111, res.result);
-        std.testing.expectEqual(0, res.zero);
-        std.testing.expectEqual(0, res.carry);
-        std.testing.expectEqual(0, res.halfcarry);
-        std.testing.expectEqual(0, res.subtraction);
-    }
-
-    test "0b10101010 + 0b01010101 (Alternating bits)" {
-        const res = AluOp8Bit.add(0b10101010, 0b01010101, 0);
-        std.testing.expectEqual(0b11111111, res.result);
-        std.testing.expectEqual(0, res.zero);
-        std.testing.expectEqual(0, res.carry);
-        std.testing.expectEqual(0, res.halfcarry);
-        std.testing.expectEqual(0, res.subtraction);
-    }
-
-    test "0b11111111 + 0b00000000 + carry-in 1 (Carry-in causes carry-out)" {
-        const res = AluOp8Bit.add(0b11111111, 0b00000000, 1);
-        std.testing.expectEqual(0b00000000, res.result);
-        std.testing.expectEqual(1, res.zero);
-        std.testing.expectEqual(1, res.carry);
-        std.testing.expectEqual(1, res.halfcarry);
-        std.testing.expectEqual(0, res.subtraction);
+    pub fn sub(op1: u8, op2: u8, c: u1) AluOp8Bit {
+        var res = AluOp8Bit.add(op1, ~op2, ~c);
+        res.subtraction = 1;
+        res.carry = ~res.carry;
+        res.halfcarry = ~res.halfcarry;
+        return res;
     }
 };
+
+test "0b00000001 + 0b00000001" {
+    const res = AluOp8Bit.add(0b00000001, 0b00000001, 0);
+    try std.testing.expectEqual(0b00000010, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(0, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(0, res.subtraction);
+}
+
+test "0b00000001 + 0b00000001 + carry-in 1" {
+    const res = AluOp8Bit.add(0b00000001, 0b00000001, 1);
+    try std.testing.expectEqual(0b00000011, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(0, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(0, res.subtraction);
+}
+
+test "0b11111111 + 0b00000001 (Zero flag case)" {
+    const res = AluOp8Bit.add(0b11111111, 0b00000001, 0);
+    try std.testing.expectEqual(0b00000000, res.result);
+    try std.testing.expectEqual(1, res.zero);
+    try std.testing.expectEqual(1, res.carry);
+    try std.testing.expectEqual(1, res.halfcarry);
+    try std.testing.expectEqual(0, res.subtraction);
+}
+
+test "0b10000000 + 0b10000000 (Carry-out from MSB)" {
+    const res = AluOp8Bit.add(0b10000000, 0b10000000, 0);
+    try std.testing.expectEqual(0b00000000, res.result);
+    try std.testing.expectEqual(1, res.zero);
+    try std.testing.expectEqual(1, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(0, res.subtraction);
+}
+
+test "0b11111111 + 0b11111111 + carry-in 1 (Full overflow)" {
+    const res = AluOp8Bit.add(0b11111111, 0b11111111, 1);
+    try std.testing.expectEqual(0b11111111, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(1, res.carry);
+    try std.testing.expectEqual(1, res.halfcarry);
+    try std.testing.expectEqual(0, res.subtraction);
+}
+
+test "0b00001111 + 0b00000001 (Half-carry set)" {
+    const res = AluOp8Bit.add(0b00001111, 0b00000001, 0);
+    try std.testing.expectEqual(0b00010000, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(0, res.carry);
+    try std.testing.expectEqual(1, res.halfcarry);
+    try std.testing.expectEqual(0, res.subtraction);
+}
+
+test "0b11110000 + 0b00001111 (No half-carry)" {
+    const res = AluOp8Bit.add(0b11110000, 0b00001111, 0);
+    try std.testing.expectEqual(0b11111111, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(0, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(0, res.subtraction);
+}
+
+test "0b10101010 + 0b01010101 (Alternating bits)" {
+    const res = AluOp8Bit.add(0b10101010, 0b01010101, 0);
+    try std.testing.expectEqual(0b11111111, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(0, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(0, res.subtraction);
+}
+
+test "0b11111111 + 0b00000000 + carry-in 1 (Carry-in causes carry-out)" {
+    const res = AluOp8Bit.add(0b11111111, 0b00000000, 1);
+    try std.testing.expectEqual(0b00000000, res.result);
+    try std.testing.expectEqual(1, res.zero);
+    try std.testing.expectEqual(1, res.carry);
+    try std.testing.expectEqual(1, res.halfcarry);
+    try std.testing.expectEqual(0, res.subtraction);
+}
+
+test "0b00000010 - 0b00000001" {
+    const res = AluOp8Bit.sub(0b00000010, 0b00000001, 0);
+    try std.testing.expectEqual(0b00000001, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(0, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(1, res.subtraction);
+}
+
+test "0b00000001 - 0b00000001" {
+    const res = AluOp8Bit.sub(0b00000001, 0b00000001, 0);
+    try std.testing.expectEqual(0b00000000, res.result);
+    try std.testing.expectEqual(1, res.zero);
+    try std.testing.expectEqual(0, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(1, res.subtraction);
+}
+
+test "0b00000000 - 0b00000001 (underflow)" {
+    const res = AluOp8Bit.sub(0b00000000, 0b00000001, 0);
+    try std.testing.expectEqual(0b11111111, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(1, res.carry);
+    try std.testing.expectEqual(1, res.halfcarry);
+    try std.testing.expectEqual(1, res.subtraction);
+}
+
+test "0b00010000 - 0b00000001 (half carry borrow)" {
+    const res = AluOp8Bit.sub(0b00010000, 0b00000001, 0);
+    try std.testing.expectEqual(0b00001111, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(0, res.carry);
+    try std.testing.expectEqual(1, res.halfcarry);
+    try std.testing.expectEqual(1, res.subtraction);
+}
+
+test "0b00010000 - 0b00001000 (half carry triggered)" {
+    const res = AluOp8Bit.sub(0b00010000, 0b00001000, 0);
+    try std.testing.expectEqual(0b00001000, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(0, res.carry);
+    try std.testing.expectEqual(1, res.halfcarry);
+    try std.testing.expectEqual(1, res.subtraction);
+}
+
+test "0b11111111 - 0b00000001 (no carry, decrement by 1)" {
+    const res = AluOp8Bit.sub(0b11111111, 0b00000001, 0);
+    try std.testing.expectEqual(0b11111110, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(0, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(1, res.subtraction);
+}
+
+test "0b00000000 - 0b00000000 (zero result, no carry)" {
+    const res = AluOp8Bit.sub(0b00000000, 0b00000000, 0);
+    try std.testing.expectEqual(0b00000000, res.result);
+    try std.testing.expectEqual(1, res.zero);
+    try std.testing.expectEqual(0, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(1, res.subtraction);
+}
+
+test "0b00000001 - 0b00000001 with carry in" {
+    const res = AluOp8Bit.sub(0b00000001, 0b00000001, 1);
+    try std.testing.expectEqual(0b11111111, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(1, res.carry);
+    try std.testing.expectEqual(1, res.halfcarry);
+    try std.testing.expectEqual(1, res.subtraction);
+}
+
+test "0b10000000 - 0b00000001 (no carry, regular subtraction)" {
+    const res = AluOp8Bit.sub(0b10000000, 0b00000001, 0);
+    try std.testing.expectEqual(0b01111111, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(0, res.carry);
+    try std.testing.expectEqual(1, res.halfcarry);
+    try std.testing.expectEqual(1, res.subtraction);
+}
+
+test "0b10000000 - 0b10000000 (zero result, no carry)" {
+    const res = AluOp8Bit.sub(0b10000000, 0b10000000, 0);
+    try std.testing.expectEqual(0b00000000, res.result);
+    try std.testing.expectEqual(1, res.zero);
+    try std.testing.expectEqual(0, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(1, res.subtraction);
+}

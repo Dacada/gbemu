@@ -394,6 +394,28 @@ pub const Cpu = struct {
             return SelfRefCpuMethod.init(Cpu.addImmediate2);
         }
 
+        // Subtract register
+        if (self.reg.IR & 0b1111_0_111 == 0b1001_0_110) {
+            self.reg.WZ.Lo = try self.mmu.read(self.reg.HL.all());
+            return SelfRefCpuMethod.init(Cpu.subIndirectHL2);
+        }
+        if (self.reg.IR & 0b1111_0_000 == 0b1001_0_000) {
+            const reg: u3 = @intCast(self.reg.IR & 0b0000_0_111);
+            const with_carry: u1 = @intCast((self.reg.IR & 0b0000_1_000) >> 3);
+            const reg_ptr = self.ptrReg8Bit(reg);
+            const carry: u1 = if (with_carry == 1) self.reg.AF.Lo.C else 0;
+            const res = alu.AluOp8Bit.sub(self.reg.AF.Hi, reg_ptr.*, carry);
+            self.applyFlags(res);
+            self.reg.AF.Hi = res.result;
+            return self.fetchOpcode();
+        }
+
+        // Subtract immediate
+        if (self.reg.IR & 0b1111_0_111 == 0b1101_0_110) {
+            self.reg.WZ.Lo = try self.fetchPC();
+            return SelfRefCpuMethod.init(Cpu.subImmediate2);
+        }
+
         // NOP
         if (self.reg.IR & 0b11111111 == 0b00000000) {
             return self.fetchOpcode();
@@ -562,6 +584,24 @@ pub const Cpu = struct {
         const with_carry: u1 = @intCast((self.reg.IR & 0b0000_1_000) >> 3);
         const carry: u1 = if (with_carry == 1) self.reg.AF.Lo.C else 0;
         const res = alu.AluOp8Bit.add(self.reg.AF.Hi, self.reg.WZ.Lo, carry);
+        self.applyFlags(res);
+        self.reg.AF.Hi = res.result;
+        return self.fetchOpcode();
+    }
+
+    fn subIndirectHL2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        const with_carry: u1 = @intCast((self.reg.IR & 0b0000_1_000) >> 3);
+        const carry: u1 = if (with_carry == 1) self.reg.AF.Lo.C else 0;
+        const res = alu.AluOp8Bit.sub(self.reg.AF.Hi, self.reg.WZ.Lo, carry);
+        self.applyFlags(res);
+        self.reg.AF.Hi = res.result;
+        return self.fetchOpcode();
+    }
+
+    fn subImmediate2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        const with_carry: u1 = @intCast((self.reg.IR & 0b0000_1_000) >> 3);
+        const carry: u1 = if (with_carry == 1) self.reg.AF.Lo.C else 0;
+        const res = alu.AluOp8Bit.sub(self.reg.AF.Hi, self.reg.WZ.Lo, carry);
         self.applyFlags(res);
         self.reg.AF.Hi = res.result;
         return self.fetchOpcode();
