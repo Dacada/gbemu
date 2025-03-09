@@ -370,6 +370,18 @@ pub const Cpu = struct {
             return SelfRefCpuMethod.init(Cpu.loadHLfromAdjustedSP2);
         }
 
+        // ARITHMETIC 8-BIT
+
+        // Add register
+        if (self.reg.IR & 0b11111_000 == 0b10000_000) {
+            const reg: u3 = @intCast(self.reg.IR & 0b00000_111);
+            const reg_ptr = self.ptrReg8Bit(reg);
+            const res = alu.AluOp8Bit.add(self.reg.AF.Hi, reg_ptr.*);
+            self.applyFlags(res);
+            self.reg.AF.Hi = res.result;
+            return self.fetchOpcode();
+        }
+
         // NOP
         if (self.reg.IR & 0b11111111 == 0b00000000) {
             return self.fetchOpcode();
@@ -511,11 +523,10 @@ pub const Cpu = struct {
     }
 
     fn loadHLfromAdjustedSP2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
-        const res = alu.Add8BitUnsigned.apply(self.reg.SP.Lo, self.reg.WZ.Lo);
+        const res = alu.AluOp8Bit.add(self.reg.SP.Lo, self.reg.WZ.Lo);
+        self.applyFlags(res);
+        self.reg.AF.Lo.Z = 0;
         self.reg.HL.Lo = res.result;
-        self.reg.AF.Lo.setAll(0);
-        self.reg.AF.Lo.C = res.carry;
-        self.reg.AF.Lo.H = res.halfcarry;
         return SelfRefCpuMethod.init(Cpu.loadHLfromAdjustedSP3);
     }
 
@@ -555,5 +566,12 @@ pub const Cpu = struct {
             0b10 => Register{ .RegisterWithHalves = &self.reg.HL },
             0b11 => Register{ .RegisterWithFlags = &self.reg.AF },
         };
+    }
+
+    fn applyFlags(self: *Cpu, res: alu.AluOp8Bit) void {
+        self.reg.AF.Lo.Z = res.zero;
+        self.reg.AF.Lo.C = res.carry;
+        self.reg.AF.Lo.H = res.halfcarry;
+        self.reg.AF.Lo.N = res.subtraction;
     }
 };

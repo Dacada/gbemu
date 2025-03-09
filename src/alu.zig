@@ -1,10 +1,11 @@
-pub const Add8BitUnsigned = packed struct {
+pub const AluOp8Bit = packed struct {
     result: u8,
     zero: u1,
     carry: u1,
     halfcarry: u1,
+    subtraction: u1,
 
-    pub fn apply(op1: u8, op2: u8) Add8BitUnsigned {
+    pub fn add(op1: u8, op2: u8) AluOp8Bit {
         const op1_lo: u4 = @intCast(op1 & 0x0F);
         const op2_lo: u4 = @intCast(op2 & 0x0F);
 
@@ -19,11 +20,12 @@ pub const Add8BitUnsigned = packed struct {
         const zero: u1 = @intFromBool(res == 0);
         const carry: u1 = carry_1 | carry_2;
 
-        return Add8BitUnsigned{
+        return AluOp8Bit{
             .result = res,
             .zero = zero,
             .carry = carry,
             .halfcarry = halfcarry,
+            .subtraction = 0,
         };
     }
 };

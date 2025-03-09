@@ -1018,17 +1018,18 @@ test "Load HL from adjusted SP" {
     const rom = try std.testing.allocator.alloc(u8, 0x8000);
     defer std.testing.allocator.free(rom);
 
-    inline for (0..(0xFF + 1)) |e| {
+    for (0..(0xFF + 1)) |e| {
         // Constants
         const instr: u8 = 0b11111000;
         const test_value: u16 = 0x100D;
 
-        const signed_e: i8 = @bitCast(@as(u8, e));
+        const unsigned_e: u8 = @intCast(e);
+        const signed_e: i8 = @bitCast(unsigned_e);
         const test_value_after_second_add_signed, _ = @addWithOverflow(@as(i16, test_value), signed_e);
         const test_value_after_second_add: u16 = @bitCast(test_value_after_second_add_signed);
         const test_value_after_first_add: u16 = test_value_after_second_add & 0x00FF;
-        _, const halfcarry_flag = @addWithOverflow(@as(u4, test_value & 0x000F), @as(u4, e & 0x0F));
-        _, const carry_flag = @addWithOverflow(@as(u8, test_value & 0x00FF), @as(u8, e));
+        _, const halfcarry_flag = @addWithOverflow(@as(u4, test_value & 0x000F), @as(u4, @intCast(unsigned_e & 0x0F)));
+        _, const carry_flag = @addWithOverflow(@as(u8, test_value & 0x00FF), @as(u8, unsigned_e));
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "Load HL from adjusted SP (e={d})", .{e});
         defer std.testing.allocator.free(name);
@@ -1039,7 +1040,7 @@ test "Load HL from adjusted SP" {
             &[_]u8{
                 0x00,
                 instr,
-                e,
+                unsigned_e,
                 0xFD,
             },
             TestCpuState.init()
@@ -1066,6 +1067,119 @@ test "Load HL from adjusted SP" {
                     .fH(halfcarry_flag)
                     .rSP(test_value)
                     .rHL(test_value_after_second_add),
+            },
+        );
+    }
+}
+
+test "Add (register)" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    for (0..(0xFF + 1)) |val| {
+        for (0..(0b111 + 1)) |reg| {
+            if (reg == 0b110 or reg == 0b111) {
+                continue;
+            }
+
+            const reg_u8: u8 = @intCast(reg);
+            const reg_u3: u3 = @intCast(reg_u8);
+            const val_u8: u8 = @intCast(val);
+            const val_u4: u4 = @intCast(val_u8 & 0xF);
+
+            // Constants
+            const instr: u8 = 0b10000000 | reg_u8;
+            const a_val: u8 = 0xBB;
+
+            const res, const carry = @addWithOverflow(a_val, val_u8);
+            _, const halfcarry = @addWithOverflow(@as(u4, a_val & 0xF), val_u4);
+            const zero: u1 = @intFromBool(res == 0);
+
+            const name = try std.fmt.allocPrint(std.testing.allocator, "Add (reg={b}) (val={x})", .{ reg, val });
+            defer std.testing.allocator.free(name);
+            try run_test_case(
+                name,
+                rom,
+                exram,
+                &[_]u8{
+                    0x00,
+                    instr,
+                    0xFD,
+                },
+                TestCpuState.init()
+                    .rA(a_val)
+                    .reg(reg_u3, val_u8),
+                &[_]*TestCpuState{
+                    TestCpuState.init() // read nop(PC) from ram
+                        .rPC(0x0001)
+                        .rA(a_val)
+                        .reg(reg_u3, val_u8),
+                    TestCpuState.init() // execute nop | read iut(PC) from ram
+                        .rPC(0x0002)
+                        .rA(a_val)
+                        .reg(reg_u3, val_u8),
+                    TestCpuState.init() // execute iut: add reg to a | read (PC)
+                        .rPC(0x0003)
+                        .rA(res)
+                        .reg(reg_u3, val_u8)
+                        .fC(carry)
+                        .fH(halfcarry)
+                        .fN(0)
+                        .fZ(zero),
+                },
+            );
+        }
+    }
+}
+
+test "Add (register A)" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    for (0..(0xFF + 1)) |val| {
+        const val_u8: u8 = @intCast(val);
+        const val_u4: u4 = @intCast(val_u8 & 0xF);
+
+        // Constants
+        const instr: u8 = 0b10000111;
+
+        const res, const carry = @addWithOverflow(val_u8, val_u8);
+        _, const halfcarry = @addWithOverflow(val_u4, val_u4);
+        const zero: u1 = @intFromBool(res == 0);
+
+        const name = try std.fmt.allocPrint(std.testing.allocator, "Add (reg=111) (val={x})", .{val});
+        defer std.testing.allocator.free(name);
+        try run_test_case(
+            name,
+            rom,
+            exram,
+            &[_]u8{
+                0x00,
+                instr,
+                0xFD,
+            },
+            TestCpuState.init()
+                .rA(val_u8),
+            &[_]*TestCpuState{
+                TestCpuState.init() // read nop(PC) from ram
+                    .rPC(0x0001)
+                    .rA(val_u8),
+                TestCpuState.init() // execute nop | read iut(PC) from ram
+                    .rPC(0x0002)
+                    .rA(val_u8),
+                TestCpuState.init() // execute iut: add reg to a | read (PC)
+                    .rPC(0x0003)
+                    .rA(res)
+                    .fC(carry)
+                    .fH(halfcarry)
+                    .fN(0)
+                    .fZ(zero),
             },
         );
     }
