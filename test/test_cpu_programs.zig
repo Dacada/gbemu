@@ -99,3 +99,66 @@ test "LD only integ test" {
     try std.testing.expectEqual(0xAA, cpu.mmu.read(0xFF80));
     try std.testing.expectEqual(0xBB, cpu.mmu.read(0xFF81));
 }
+
+test "LD only integ test (16-bit)" {
+    // Seed values into memory and move them around.
+
+    const program = [_]u8{
+        //////////////////// Initialize 16-bit registers
+        0x21, 0x00, 0xC0, // LD HL, 0xC000    ; Set HL to start of Work RAM
+        0x11, 0x00, 0xC1, // LD DE, 0xC100    ; Set DE to another location in Work RAM
+        0x01, 0x34, 0x12, // LD BC, 0x1234    ; Set BC to a test value
+        0x31, 0xF0, 0xFF, // LD SP, 0xFFF0    ; Set SP to high RAM (safe for stack operations)
+
+        //////////////////// Store SP into memory for verification
+        0x08, 0x10, 0xC0, // LD (0xC010), SP  ; Store initial SP (0xFFF0) at address 0xC010
+
+        //////////////////// Push and Pop values
+        0xC5, ////////////// PUSH BC          ; Push BC onto the stack
+        0xE5, ////////////// PUSH HL          ; Push HL onto the stack
+        0xD1, ////////////// POP DE           ; Pop into DE (DE should now hold HL's value)
+        0xC1, ////////////// POP BC           ; Pop into BC (BC should now hold its original value)
+
+        //////////////////// Modify Stack Pointer
+        0xF8, 0x08, //////// LD HL, SP+8      ; Load HL with SP + 8 (should be 0xFFF8)
+
+        //////////////////// Store adjusted HL value into memory
+        0x7D, ////////////// LD A, L  ; Store HL (adjusted SP)
+        0xEA, 0x12, 0xC0, // LD (0xC012), A
+        0x7C, ////////////// LD A, H
+        0xEA, 0x13, 0xC0, // LD (0xC013), A
+
+        //////////////////// Store SP from HL and verify
+        0xF9, ////////////// LD SP, HL        ; Move HL (adjusted) into SP
+        0x08, 0x14, 0xC0, // LD (0xC014), SP  ; Store new SP value into memory
+
+        //////////////////// Final verification marker
+        0x3E, 0x99, //////// LD A, 0x99
+        0xEA, 0x1F, 0xC0, // LD (0xC01F), A
+
+        //////////////////// End
+        0xFD, ////////////// Illegal instruction
+    };
+
+    const cpu = try run_program(
+        "LD only integ test (16-bit)",
+        &program,
+    );
+    defer destroy_cpu(&cpu);
+
+    try std.testing.expectEqual(program.len, cpu.reg.PC);
+
+    try std.testing.expectEqual(0x99, cpu.reg.AF.Hi);
+    try std.testing.expectEqual(0x1234, cpu.reg.BC.all());
+    try std.testing.expectEqual(0xC000, cpu.reg.DE.all());
+    try std.testing.expectEqual(0xFFF8, cpu.reg.HL.all());
+    try std.testing.expectEqual(0xFFF8, cpu.reg.SP.all());
+
+    try std.testing.expectEqual(0xF0, cpu.mmu.read(0xC010));
+    try std.testing.expectEqual(0xFF, cpu.mmu.read(0xC011));
+    try std.testing.expectEqual(0xF8, cpu.mmu.read(0xC012));
+    try std.testing.expectEqual(0xFF, cpu.mmu.read(0xC013));
+    try std.testing.expectEqual(0xF8, cpu.mmu.read(0xC014));
+    try std.testing.expectEqual(0xFF, cpu.mmu.read(0xC015));
+    try std.testing.expectEqual(0x99, cpu.mmu.read(0xC01F));
+}
