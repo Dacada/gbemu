@@ -395,7 +395,7 @@ pub const Cpu = struct {
         }
 
         // Subtract register
-        if (self.reg.IR & 0b1111_0_111 == 0b1001_0_110) {
+        if (self.reg.IR & 0b1111_0_111 == 0b1001_0_110) { // indirect HL
             self.reg.WZ.Lo = try self.mmu.read(self.reg.HL.all());
             return SelfRefCpuMethod.init(Cpu.subIndirectHL2);
         }
@@ -414,6 +414,25 @@ pub const Cpu = struct {
         if (self.reg.IR & 0b1111_0_111 == 0b1101_0_110) {
             self.reg.WZ.Lo = try self.fetchPC();
             return SelfRefCpuMethod.init(Cpu.subImmediate2);
+        }
+
+        // Compare register
+        if (self.reg.IR & 0b11111111 == 0b10111110) { // indirect HL
+            self.reg.WZ.Lo = try self.mmu.read(self.reg.HL.all());
+            return SelfRefCpuMethod.init(Cpu.compareIndirectHL2);
+        }
+        if (self.reg.IR & 0b11111000 == 0b10111000) {
+            const reg: u3 = @intCast(self.reg.IR & 0b0000_0_111);
+            const reg_ptr = self.ptrReg8Bit(reg);
+            const res = alu.AluOp8Bit.sub(self.reg.AF.Hi, reg_ptr.*, 0);
+            self.applyFlags(res);
+            return self.fetchOpcode();
+        }
+
+        // Compare immediate
+        if (self.reg.IR & 0b11111111 == 0b11111110) {
+            self.reg.WZ.Lo = try self.fetchPC();
+            return SelfRefCpuMethod.init(Cpu.compareImmediate2);
         }
 
         // NOP
@@ -604,6 +623,18 @@ pub const Cpu = struct {
         const res = alu.AluOp8Bit.sub(self.reg.AF.Hi, self.reg.WZ.Lo, carry);
         self.applyFlags(res);
         self.reg.AF.Hi = res.result;
+        return self.fetchOpcode();
+    }
+
+    fn compareIndirectHL2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        const res = alu.AluOp8Bit.sub(self.reg.AF.Hi, self.reg.WZ.Lo, 0);
+        self.applyFlags(res);
+        return self.fetchOpcode();
+    }
+
+    fn compareImmediate2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        const res = alu.AluOp8Bit.sub(self.reg.AF.Hi, self.reg.WZ.Lo, 0);
+        self.applyFlags(res);
         return self.fetchOpcode();
     }
 

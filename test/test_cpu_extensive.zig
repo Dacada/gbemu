@@ -1185,7 +1185,7 @@ test "Add (register A)" {
                         .rPC(0x0002)
                         .rA(val_u8)
                         .fC(carry_flag),
-                    TestCpuState.init() // execute iut: add reg to A | read (PC)
+                    TestCpuState.init() // execute iut: add A to itself | read (PC)
                         .rPC(0x0003)
                         .rA(res.result)
                         .fC(res.carry)
@@ -1386,7 +1386,7 @@ test "Sub (register)" {
                             .rA(test_val)
                             .fC(carry_flag)
                             .reg(reg_u3, val_u8),
-                        TestCpuState.init() // execute iut: add reg to a | read (PC)
+                        TestCpuState.init() // execute iut: sub reg from a | read (PC)
                             .rPC(0x0003)
                             .rA(res.result)
                             .reg(reg_u3, val_u8)
@@ -1444,7 +1444,7 @@ test "Sub (register A)" {
                         .rPC(0x0002)
                         .rA(val_u8)
                         .fC(carry_flag),
-                    TestCpuState.init() // execute iut: add reg to A | read (PC)
+                    TestCpuState.init() // execute iut: sub A from itself | read (PC)
                         .rPC(0x0003)
                         .rA(res.result)
                         .fC(res.carry)
@@ -1514,7 +1514,7 @@ test "Sub (indirect HL)" {
                         .fC(carry_flag)
                         .ram(test_addr, val_u8)
                         .rHL(test_addr),
-                    TestCpuState.init() // execute iut: add val to A | read (PC)
+                    TestCpuState.init() // execute iut: sub val from A | read (PC)
                         .rPC(0x0003)
                         .rA(res.result)
                         .ram(test_addr, val_u8)
@@ -1578,7 +1578,7 @@ test "Sub (immediate)" {
                         .rPC(0x0003)
                         .rA(test_val)
                         .fC(carry_flag),
-                    TestCpuState.init() // execute iut: add val to A | read (PC)
+                    TestCpuState.init() // execute iut: sub val from A | read (PC)
                         .rPC(0x0004)
                         .rA(res.result)
                         .fC(res.carry)
@@ -1588,5 +1588,228 @@ test "Sub (immediate)" {
                 },
             );
         }
+    }
+}
+
+test "CP (register)" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    inline for (.{ 0x00, 0x01, 0xC, 0xF, 0xCC, 0xFF }) |val| {
+        for (0..(0b111 + 1)) |reg| {
+            if (reg == 0b110 or reg == 0b111) {
+                continue;
+            }
+
+            // Constants
+            const reg_u8: u8 = @intCast(reg);
+            const reg_u3: u3 = @intCast(reg_u8);
+            const val_u8: u8 = @intCast(val);
+
+            const instr: u8 = 0b10111000 | reg_u8;
+            const test_val: u8 = 0xBB;
+
+            const res = alu.AluOp8Bit.sub(test_val, val_u8, 0);
+
+            const name = try std.fmt.allocPrint(std.testing.allocator, "CP (reg={b}) (val={x})", .{ reg, val });
+            defer std.testing.allocator.free(name);
+            try run_test_case(
+                name,
+                rom,
+                exram,
+                &[_]u8{
+                    0x00,
+                    instr,
+                    0xFD,
+                },
+                TestCpuState.init()
+                    .rA(test_val)
+                    .reg(reg_u3, val_u8),
+                &[_]*TestCpuState{
+                    TestCpuState.init() // read nop(PC) from ram
+                        .rPC(0x0001)
+                        .rA(test_val)
+                        .reg(reg_u3, val_u8),
+                    TestCpuState.init() // execute nop | read iut(PC) from ram
+                        .rPC(0x0002)
+                        .rA(test_val)
+                        .reg(reg_u3, val_u8),
+                    TestCpuState.init() // execute iut: sub reg from a, store flags only | read (PC)
+                        .rPC(0x0003)
+                        .rA(test_val)
+                        .reg(reg_u3, val_u8)
+                        .fC(res.carry)
+                        .fH(res.halfcarry)
+                        .fN(res.subtraction)
+                        .fZ(res.zero),
+                },
+            );
+        }
+    }
+}
+
+test "CP (register A)" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    inline for (.{ 0x00, 0x01, 0xC, 0xF, 0xCC, 0xFF }) |val| {
+        // Constants
+        const val_u8: u8 = @intCast(val);
+
+        const instr: u8 = 0b10111111;
+
+        const res = alu.AluOp8Bit.sub(val_u8, val_u8, 0);
+
+        const name = try std.fmt.allocPrint(std.testing.allocator, "CP (reg=111) (val={x})", .{val});
+        defer std.testing.allocator.free(name);
+        try run_test_case(
+            name,
+            rom,
+            exram,
+            &[_]u8{
+                0x00,
+                instr,
+                0xFD,
+            },
+            TestCpuState.init()
+                .rA(val_u8),
+            &[_]*TestCpuState{
+                TestCpuState.init() // read nop(PC) from ram
+                    .rPC(0x0001)
+                    .rA(val_u8),
+                TestCpuState.init() // execute nop | read iut(PC) from ram
+                    .rPC(0x0002)
+                    .rA(val_u8),
+                TestCpuState.init() // execute iut: sub A from itself, store flags only | read (PC)
+                    .rPC(0x0003)
+                    .rA(val_u8)
+                    .fC(res.carry)
+                    .fH(res.halfcarry)
+                    .fN(res.subtraction)
+                    .fZ(res.zero),
+            },
+        );
+    }
+}
+
+test "CP (indirect HL)" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    inline for (.{ 0x00, 0x01, 0x4, 0xF, 0x44, 0xFF }) |val| {
+        // Constants
+        const val_u8: u8 = @intCast(val);
+
+        const test_val: u8 = 0xAA;
+        const test_addr: u16 = 0xD00D;
+        const instr: u8 = 0b10111110;
+
+        const res = alu.AluOp8Bit.sub(test_val, val_u8, 0);
+
+        const name = try std.fmt.allocPrint(std.testing.allocator, "CP (indirect HL) (val={x})", .{
+            val,
+        });
+        defer std.testing.allocator.free(name);
+        try run_test_case(
+            name,
+            rom,
+            exram,
+            &[_]u8{
+                0x00,
+                instr,
+                0xFD,
+            },
+            TestCpuState.init()
+                .rA(test_val)
+                .ram(test_addr, val_u8)
+                .rHL(test_addr),
+            &[_]*TestCpuState{
+                TestCpuState.init() // read nop(PC) from ram
+                    .rPC(0x0001)
+                    .rA(test_val)
+                    .ram(test_addr, val_u8)
+                    .rHL(test_addr),
+                TestCpuState.init() // execute nop | read iut(PC) from ram
+                    .rPC(0x0002)
+                    .rA(test_val)
+                    .ram(test_addr, val_u8)
+                    .rHL(test_addr),
+                TestCpuState.init() // execute iut: read val(HL) from ram
+                    .rPC(0x0002)
+                    .rA(test_val)
+                    .ram(test_addr, val_u8)
+                    .rHL(test_addr),
+                TestCpuState.init() // execute iut: sub val from A, store flags only | read (PC)
+                    .rPC(0x0003)
+                    .rA(test_val)
+                    .ram(test_addr, val_u8)
+                    .rHL(test_addr)
+                    .fC(res.carry)
+                    .fH(res.halfcarry)
+                    .fN(res.subtraction)
+                    .fZ(res.zero),
+            },
+        );
+    }
+}
+
+test "CP (immediate)" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    inline for (.{ 0x00, 0x01, 0x4, 0xF, 0x44, 0xFF }) |val| {
+        // Constants
+        const val_u8: u8 = @intCast(val);
+
+        const test_val: u8 = 0xAA;
+        const instr: u8 = 0b11111110;
+
+        const res = alu.AluOp8Bit.sub(test_val, val_u8, 0);
+
+        const name = try std.fmt.allocPrint(std.testing.allocator, "CP (immediate) (val={x})", .{val});
+        defer std.testing.allocator.free(name);
+        try run_test_case(
+            name,
+            rom,
+            exram,
+            &[_]u8{
+                0x00,
+                instr,
+                val_u8,
+                0xFD,
+            },
+            TestCpuState.init()
+                .rA(test_val),
+            &[_]*TestCpuState{
+                TestCpuState.init() // read nop(PC) from ram
+                    .rPC(0x0001)
+                    .rA(test_val),
+                TestCpuState.init() // execute nop | read iut(PC) from ram
+                    .rPC(0x0002)
+                    .rA(test_val),
+                TestCpuState.init() // execute iut: read val(PC) from ram
+                    .rPC(0x0003)
+                    .rA(test_val),
+                TestCpuState.init() // execute iut: sub val from A, store flags only | read (PC)
+                    .rPC(0x0004)
+                    .rA(test_val)
+                    .fC(res.carry)
+                    .fH(res.halfcarry)
+                    .fN(res.subtraction)
+                    .fZ(res.zero),
+            },
+        );
     }
 }
