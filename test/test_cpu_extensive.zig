@@ -1813,3 +1813,126 @@ test "CP (immediate)" {
         );
     }
 }
+
+test "INC/DEC Register" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    inline for (.{ 0, 1 }) |incdec| {
+        inline for (.{ 0x00, 0xFF, 0xF0, 0x0F, 0xAA }) |test_val| {
+            inline for (0..(0b111 + 1)) |reg| {
+                if (reg == 0b110) {
+                    continue;
+                }
+
+                // Constants
+                const instr: u8 = 0b00_000_10_0 | (reg << 3) | incdec;
+
+                const res = if (incdec == 0)
+                    alu.AluOp8Bit.add(test_val, 1, 0)
+                else
+                    alu.AluOp8Bit.sub(test_val, 1, 0);
+
+                const name = try std.fmt.allocPrint(std.testing.allocator, "INC/DEC (inc/dec={b}) (test_val={x}) (reg={b})", .{ incdec, test_val, reg });
+                defer std.testing.allocator.free(name);
+                try run_test_case(
+                    name,
+                    rom,
+                    exram,
+                    &[_]u8{
+                        0x00,
+                        instr,
+                        0xFD,
+                    },
+                    TestCpuState.init()
+                        .reg(reg, test_val),
+                    &[_]*TestCpuState{
+                        TestCpuState.init() // read nop(PC) from ram
+                            .rPC(0x0001)
+                            .reg(reg, test_val),
+                        TestCpuState.init() // execute nop | read iut(PC) from ram
+                            .rPC(0x0002)
+                            .reg(reg, test_val),
+                        TestCpuState.init() // execute iut: inc/dec reg | read (PC)
+                            .rPC(0x0003)
+                            .reg(reg, res.result)
+                            .fC(0)
+                            .fN(incdec)
+                            .fH(res.halfcarry)
+                            .fZ(res.zero),
+                    },
+                );
+            }
+        }
+    }
+}
+
+test "INC/DEC Indirect" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    inline for (.{ 0, 1 }) |incdec| {
+        inline for (.{ 0x00, 0xFF, 0x0F, 0xF0, 0xAA }) |test_val| {
+            // Constants
+            const instr: u8 = 0b00_110_10_0 | incdec;
+            const test_addr = 0xD00D;
+
+            const res = if (incdec == 0)
+                alu.AluOp8Bit.add(test_val, 1, 0)
+            else
+                alu.AluOp8Bit.sub(test_val, 1, 0);
+
+            const name = try std.fmt.allocPrint(std.testing.allocator, "INC/DEC Indirect (inc/dec={b}) (test_val={x})", .{ incdec, test_val });
+            defer std.testing.allocator.free(name);
+            try run_test_case(
+                name,
+                rom,
+                exram,
+                &[_]u8{
+                    0x00,
+                    instr,
+                    0xFD,
+                },
+                TestCpuState.init()
+                    .rHL(test_addr)
+                    .ram(test_addr, test_val),
+                &[_]*TestCpuState{
+                    TestCpuState.init() // read nop(PC) from ram
+                        .rPC(0x0001)
+                        .rHL(test_addr)
+                        .ram(test_addr, test_val),
+                    TestCpuState.init() // execute nop | read iut(PC) from ram
+                        .rPC(0x0002)
+                        .rHL(test_addr)
+                        .ram(test_addr, test_val),
+                    TestCpuState.init() // execute iut: read val(HL) from ram
+                        .rPC(0x0002)
+                        .rHL(test_addr)
+                        .ram(test_addr, test_val),
+                    TestCpuState.init() // execute iut: inc/dec val | write val(HL) to ram
+                        .rPC(0x0002)
+                        .rHL(test_addr)
+                        .ram(test_addr, res.result)
+                        .fC(0)
+                        .fH(res.halfcarry)
+                        .fN(incdec)
+                        .fZ(res.zero),
+                    TestCpuState.init() // read (PC)
+                        .rPC(0x0003)
+                        .rHL(test_addr)
+                        .ram(test_addr, res.result)
+                        .fC(0)
+                        .fH(res.halfcarry)
+                        .fN(incdec)
+                        .fZ(res.zero),
+                },
+            );
+        }
+    }
+}

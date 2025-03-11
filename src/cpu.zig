@@ -435,6 +435,38 @@ pub const Cpu = struct {
             return SelfRefCpuMethod.init(Cpu.compareImmediate2);
         }
 
+        // Increment register
+        if (self.reg.IR & 0b11111111 == 0b00110100) { // indirect HL
+            self.reg.WZ.Lo = try self.mmu.read(self.reg.HL.all());
+            return SelfRefCpuMethod.init(Cpu.incrementRegisterHL2);
+        }
+        if (self.reg.IR & 0b11_000_111 == 0b00_000_100) {
+            const reg: u3 = @intCast((self.reg.IR & 0b00_111_000) >> 3);
+            const reg_ptr = self.ptrReg8Bit(reg);
+            const res = alu.AluOp8Bit.add(reg_ptr.*, 1, 0);
+            const c = self.reg.AF.Lo.C;
+            self.applyFlags(res);
+            self.reg.AF.Lo.C = c;
+            reg_ptr.* = res.result;
+            return self.fetchOpcode();
+        }
+
+        // Decrement register
+        if (self.reg.IR & 0b11111111 == 0b00110101) { // indirect HL
+            self.reg.WZ.Lo = try self.mmu.read(self.reg.HL.all());
+            return SelfRefCpuMethod.init(Cpu.decrementRegisterHL2);
+        }
+        if (self.reg.IR & 0b11_000_111 == 0b00_000_101) {
+            const reg: u3 = @intCast((self.reg.IR & 0b00_111_000) >> 3);
+            const reg_ptr = self.ptrReg8Bit(reg);
+            const res = alu.AluOp8Bit.sub(reg_ptr.*, 1, 0);
+            const c = self.reg.AF.Lo.C;
+            self.applyFlags(res);
+            self.reg.AF.Lo.C = c;
+            reg_ptr.* = res.result;
+            return self.fetchOpcode();
+        }
+
         // NOP
         if (self.reg.IR & 0b11111111 == 0b00000000) {
             return self.fetchOpcode();
@@ -636,6 +668,24 @@ pub const Cpu = struct {
         const res = alu.AluOp8Bit.sub(self.reg.AF.Hi, self.reg.WZ.Lo, 0);
         self.applyFlags(res);
         return self.fetchOpcode();
+    }
+
+    fn incrementRegisterHL2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        const res = alu.AluOp8Bit.add(self.reg.WZ.Lo, 1, 0);
+        const c = self.reg.AF.Lo.C;
+        self.applyFlags(res);
+        self.reg.AF.Lo.C = c;
+        try self.mmu.write(self.reg.HL.all(), res.result);
+        return SelfRefCpuMethod.init(Cpu.fetchOpcode);
+    }
+
+    fn decrementRegisterHL2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        const res = alu.AluOp8Bit.sub(self.reg.WZ.Lo, 1, 0);
+        const c = self.reg.AF.Lo.C;
+        self.applyFlags(res);
+        self.reg.AF.Lo.C = c;
+        try self.mmu.write(self.reg.HL.all(), res.result);
+        return SelfRefCpuMethod.init(Cpu.fetchOpcode);
     }
 
     fn ptrReg8Bit(self: *Cpu, idx: u3) *u8 {
