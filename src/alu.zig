@@ -52,6 +52,28 @@ pub const AluOp8Bit = packed struct {
             .carry = 0,
         };
     }
+
+    pub fn or_(op1: u8, op2: u8) AluOp8Bit {
+        const res = op1 | op2;
+        return AluOp8Bit{
+            .result = res,
+            .zero = @intFromBool(res == 0),
+            .subtraction = 0,
+            .halfcarry = 0,
+            .carry = 0,
+        };
+    }
+
+    pub fn xor_(op1: u8, op2: u8) AluOp8Bit {
+        const res = op1 ^ op2;
+        return AluOp8Bit{
+            .result = res,
+            .zero = @intFromBool(res == 0),
+            .subtraction = 0,
+            .halfcarry = 0,
+            .carry = 0,
+        };
+    }
 };
 
 test "0b00000001 + 0b00000001" {

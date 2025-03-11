@@ -487,6 +487,46 @@ pub const Cpu = struct {
             return SelfRefCpuMethod.init(Cpu.andImmediate2);
         }
 
+        // OR register
+        if (self.reg.IR & 0b11111111 == 0b10110110) { // indirect HL
+            self.reg.WZ.Lo = try self.mmu.read(self.reg.HL.all());
+            return SelfRefCpuMethod.init(Cpu.orRegisterHL2);
+        }
+        if (self.reg.IR & 0b11111_000 == 0b10110_000) {
+            const reg: u3 = @intCast(self.reg.IR & 0b00000_111);
+            const reg_ptr = self.ptrReg8Bit(reg);
+            const res = alu.AluOp8Bit.or_(self.reg.AF.Hi, reg_ptr.*);
+            self.applyFlags(res);
+            self.reg.AF.Hi = res.result;
+            return self.fetchOpcode();
+        }
+
+        // OR immediate
+        if (self.reg.IR & 0b11111111 == 0b11110110) {
+            self.reg.WZ.Lo = try self.fetchPC();
+            return SelfRefCpuMethod.init(Cpu.orImmediate2);
+        }
+
+        // XOR register
+        if (self.reg.IR & 0b11111111 == 0b10101110) { // indirect HL
+            self.reg.WZ.Lo = try self.mmu.read(self.reg.HL.all());
+            return SelfRefCpuMethod.init(Cpu.xorRegisterHL2);
+        }
+        if (self.reg.IR & 0b11111_000 == 0b10101_000) {
+            const reg: u3 = @intCast(self.reg.IR & 0b00000_111);
+            const reg_ptr = self.ptrReg8Bit(reg);
+            const res = alu.AluOp8Bit.xor_(self.reg.AF.Hi, reg_ptr.*);
+            self.applyFlags(res);
+            self.reg.AF.Hi = res.result;
+            return self.fetchOpcode();
+        }
+
+        // XOR immediate
+        if (self.reg.IR & 0b11111111 == 0b11101110) {
+            self.reg.WZ.Lo = try self.fetchPC();
+            return SelfRefCpuMethod.init(Cpu.xorImmediate2);
+        }
+
         // NOP
         if (self.reg.IR & 0b11111111 == 0b00000000) {
             return self.fetchOpcode();
@@ -717,6 +757,34 @@ pub const Cpu = struct {
 
     fn andImmediate2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
         const res = alu.AluOp8Bit.and_(self.reg.AF.Hi, self.reg.WZ.Lo);
+        self.applyFlags(res);
+        self.reg.AF.Hi = res.result;
+        return self.fetchOpcode();
+    }
+
+    fn orRegisterHL2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        const res = alu.AluOp8Bit.or_(self.reg.AF.Hi, self.reg.WZ.Lo);
+        self.applyFlags(res);
+        self.reg.AF.Hi = res.result;
+        return self.fetchOpcode();
+    }
+
+    fn orImmediate2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        const res = alu.AluOp8Bit.or_(self.reg.AF.Hi, self.reg.WZ.Lo);
+        self.applyFlags(res);
+        self.reg.AF.Hi = res.result;
+        return self.fetchOpcode();
+    }
+
+    fn xorRegisterHL2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        const res = alu.AluOp8Bit.xor_(self.reg.AF.Hi, self.reg.WZ.Lo);
+        self.applyFlags(res);
+        self.reg.AF.Hi = res.result;
+        return self.fetchOpcode();
+    }
+
+    fn xorImmediate2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        const res = alu.AluOp8Bit.xor_(self.reg.AF.Hi, self.reg.WZ.Lo);
         self.applyFlags(res);
         self.reg.AF.Hi = res.result;
         return self.fetchOpcode();
