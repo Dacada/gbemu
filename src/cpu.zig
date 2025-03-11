@@ -467,6 +467,26 @@ pub const Cpu = struct {
             return self.fetchOpcode();
         }
 
+        // AND register
+        if (self.reg.IR & 0b11111111 == 0b10100110) { // indirect HL
+            self.reg.WZ.Lo = try self.mmu.read(self.reg.HL.all());
+            return SelfRefCpuMethod.init(Cpu.andRegisterHL2);
+        }
+        if (self.reg.IR & 0b11111_000 == 0b10100_000) {
+            const reg: u3 = @intCast(self.reg.IR & 0b00000_111);
+            const reg_ptr = self.ptrReg8Bit(reg);
+            const res = alu.AluOp8Bit.and_(self.reg.AF.Hi, reg_ptr.*);
+            self.applyFlags(res);
+            self.reg.AF.Hi = res.result;
+            return self.fetchOpcode();
+        }
+
+        // AND immediate
+        if (self.reg.IR & 0b11111111 == 0b11100110) {
+            self.reg.WZ.Lo = try self.fetchPC();
+            return SelfRefCpuMethod.init(Cpu.andImmediate2);
+        }
+
         // NOP
         if (self.reg.IR & 0b11111111 == 0b00000000) {
             return self.fetchOpcode();
@@ -686,6 +706,20 @@ pub const Cpu = struct {
         self.reg.AF.Lo.C = c;
         try self.mmu.write(self.reg.HL.all(), res.result);
         return SelfRefCpuMethod.init(Cpu.fetchOpcode);
+    }
+
+    fn andRegisterHL2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        const res = alu.AluOp8Bit.and_(self.reg.AF.Hi, self.reg.WZ.Lo);
+        self.applyFlags(res);
+        self.reg.AF.Hi = res.result;
+        return self.fetchOpcode();
+    }
+
+    fn andImmediate2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        const res = alu.AluOp8Bit.and_(self.reg.AF.Hi, self.reg.WZ.Lo);
+        self.applyFlags(res);
+        self.reg.AF.Hi = res.result;
+        return self.fetchOpcode();
     }
 
     fn ptrReg8Bit(self: *Cpu, idx: u3) *u8 {

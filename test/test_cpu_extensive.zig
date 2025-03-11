@@ -1936,3 +1936,213 @@ test "INC/DEC Indirect" {
         }
     }
 }
+
+test "AND register" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    inline for (0..(0b111 + 1)) |reg| {
+        if (reg == 0b110 or reg == 0b111) {
+            continue;
+        }
+        inline for (.{ 0x00, 0xFF, 0x0F, 0xF0, 0xAA }) |test_val| {
+            // Constants
+            const instr: u8 = 0b10100_000 | reg;
+
+            const reg_val = 0xAA;
+            const res = alu.AluOp8Bit.and_(reg_val, test_val);
+
+            const name = try std.fmt.allocPrint(std.testing.allocator, "AND register (reg={b}) (test_val={x})", .{ reg, test_val });
+            defer std.testing.allocator.free(name);
+            try run_test_case(
+                name,
+                rom,
+                exram,
+                &[_]u8{
+                    0x00,
+                    instr,
+                    0xFD,
+                },
+                TestCpuState.init()
+                    .reg(reg, reg_val)
+                    .rA(test_val),
+                &[_]*TestCpuState{
+                    TestCpuState.init() // read nop(PC) from ram
+                        .rPC(0x0001)
+                        .reg(reg, reg_val)
+                        .rA(test_val),
+                    TestCpuState.init() // execute nop | read iut(PC) from ram
+                        .rPC(0x0002)
+                        .reg(reg, reg_val)
+                        .rA(test_val),
+                    TestCpuState.init() // execute iut: and reg to A | read (PC) from ram
+                        .rPC(0x0003)
+                        .reg(reg, reg_val)
+                        .rA(res.result)
+                        .fC(0)
+                        .fH(1)
+                        .fN(0)
+                        .fZ(res.zero),
+                },
+            );
+        }
+    }
+}
+
+test "AND register A" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    inline for (.{ 0x00, 0xFF, 0x0F, 0xF0, 0xAA }) |test_val| {
+        // Constants
+        const instr: u8 = 0b10100_111;
+
+        const res = alu.AluOp8Bit.and_(test_val, test_val);
+
+        const name = try std.fmt.allocPrint(std.testing.allocator, "AND register A (test_val={x})", .{test_val});
+        defer std.testing.allocator.free(name);
+        try run_test_case(
+            name,
+            rom,
+            exram,
+            &[_]u8{
+                0x00,
+                instr,
+                0xFD,
+            },
+            TestCpuState.init()
+                .rA(test_val),
+            &[_]*TestCpuState{
+                TestCpuState.init() // read nop(PC) from ram
+                    .rPC(0x0001)
+                    .rA(test_val),
+                TestCpuState.init() // execute nop | read iut(PC) from ram
+                    .rPC(0x0002)
+                    .rA(test_val),
+                TestCpuState.init() // execute iut: and reg to A | read (PC) from ram
+                    .rPC(0x0003)
+                    .rA(res.result)
+                    .fC(0)
+                    .fH(1)
+                    .fN(0)
+                    .fZ(res.zero),
+            },
+        );
+    }
+}
+
+test "AND indirect HL" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    inline for (.{ 0x00, 0xFF, 0x0F, 0xF0, 0xAA }) |test_val| {
+        // Constants
+        const instr: u8 = 0b10100_110;
+
+        const test_addr = 0xD00D;
+        const reg_val = 0xAA;
+        const res = alu.AluOp8Bit.and_(reg_val, test_val);
+
+        const name = try std.fmt.allocPrint(std.testing.allocator, "AND indirect HL (test_val={x})", .{test_val});
+        defer std.testing.allocator.free(name);
+        try run_test_case(
+            name,
+            rom,
+            exram,
+            &[_]u8{
+                0x00,
+                instr,
+                0xFD,
+            },
+            TestCpuState.init()
+                .rA(reg_val)
+                .rHL(test_addr)
+                .ram(test_addr, test_val),
+            &[_]*TestCpuState{
+                TestCpuState.init() // read nop(PC) from ram
+                    .rPC(0x0001)
+                    .rA(reg_val)
+                    .rHL(test_addr)
+                    .ram(test_addr, test_val),
+                TestCpuState.init() // execute nop | read iut(PC) from ram
+                    .rPC(0x0002)
+                    .rA(reg_val)
+                    .rHL(test_addr)
+                    .ram(test_addr, test_val),
+                TestCpuState.init() // execute iut: read val from ram(HL)
+                    .rPC(0x0002)
+                    .rA(reg_val)
+                    .rHL(test_addr)
+                    .ram(test_addr, test_val),
+                TestCpuState.init() // execute iut: and val to A | read (PC) from ram
+                    .rPC(0x0003)
+                    .rA(res.result)
+                    .fC(0)
+                    .fH(1)
+                    .fN(0)
+                    .fZ(res.zero)
+                    .rHL(test_addr)
+                    .ram(test_addr, test_val),
+            },
+        );
+    }
+}
+
+test "AND immediate" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    inline for (.{ 0x00, 0xFF, 0x0F, 0xF0, 0xAA }) |test_val| {
+        // Constants
+        const instr: u8 = 0b11100110;
+
+        const reg_val = 0xAA;
+        const res = alu.AluOp8Bit.and_(reg_val, test_val);
+
+        const name = try std.fmt.allocPrint(std.testing.allocator, "AND immediate (test_val={x})", .{test_val});
+        defer std.testing.allocator.free(name);
+        try run_test_case(
+            name,
+            rom,
+            exram,
+            &[_]u8{
+                0x00,
+                instr,
+                test_val,
+                0xFD,
+            },
+            TestCpuState.init()
+                .rA(reg_val),
+            &[_]*TestCpuState{
+                TestCpuState.init() // read nop(PC) from ram
+                    .rPC(0x0001)
+                    .rA(reg_val),
+                TestCpuState.init() // execute nop | read iut(PC) from ram
+                    .rPC(0x0002)
+                    .rA(reg_val),
+                TestCpuState.init() // execute iut: read val from ram(PC)
+                    .rPC(0x0003)
+                    .rA(reg_val),
+                TestCpuState.init() // execute iut: and val to A | read (PC) from ram
+                    .rPC(0x0004)
+                    .rA(res.result)
+                    .fC(0)
+                    .fH(1)
+                    .fN(0)
+                    .fZ(res.zero),
+            },
+        );
+    }
+}
