@@ -2623,3 +2623,60 @@ test "Complement carry flag" {
         }
     }
 }
+
+test "Set carry flag" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    inline for (0..2) |carry| {
+        inline for (0..2) |halfcarry| {
+            inline for (0..2) |subtract| {
+                inline for (0..2) |zero| {
+                    // Constants
+                    const instr: u8 = 0b00110111;
+
+                    const name = try std.fmt.allocPrint(std.testing.allocator, "Set carry flag (C={b}) (H={b}) (N={b})", .{ carry, halfcarry, subtract });
+                    defer std.testing.allocator.free(name);
+                    try run_test_case(
+                        name,
+                        rom,
+                        exram,
+                        &[_]u8{
+                            0x00,
+                            instr,
+                            0xFD,
+                        },
+                        TestCpuState.init()
+                            .fC(carry)
+                            .fH(halfcarry)
+                            .fN(subtract)
+                            .fZ(zero),
+                        &[_]*TestCpuState{
+                            TestCpuState.init() // read nop(PC) from ram
+                                .rPC(0x0001)
+                                .fC(carry)
+                                .fH(halfcarry)
+                                .fN(subtract)
+                                .fZ(zero),
+                            TestCpuState.init() // execute nop | read iut(PC) from ram
+                                .rPC(0x0002)
+                                .fC(carry)
+                                .fH(halfcarry)
+                                .fN(subtract)
+                                .fZ(zero),
+                            TestCpuState.init() // execute iut: set flags | read (PC) from ram
+                                .rPC(0x0003)
+                                .fC(1)
+                                .fH(0)
+                                .fN(0)
+                                .fZ(zero),
+                        },
+                    );
+                }
+            }
+        }
+    }
+}
