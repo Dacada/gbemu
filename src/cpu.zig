@@ -543,6 +543,14 @@ pub const Cpu = struct {
             return self.fetchOpcode();
         }
 
+        // Decimal adjust accumulator
+        if (self.reg.IR & 0b00100111 == 0b00100111) {
+            const res = alu.AluOp8Bit.daa(self.reg.AF.Hi, self.reg.AF.Lo.C, self.reg.AF.Lo.H, self.reg.AF.Lo.N);
+            self.reg.AF.Hi = res.result;
+            self.applyFlags(res);
+            return self.fetchOpcode();
+        }
+
         // NOP
         if (self.reg.IR & 0b11111111 == 0b00000000) {
             return self.fetchOpcode();

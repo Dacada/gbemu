@@ -2680,3 +2680,58 @@ test "Set carry flag" {
         }
     }
 }
+
+test "Decimal adjust accumulator" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    // Constants
+    const instr: u8 = 0b00100111;
+
+    const test_value: u8 = 0x2F;
+    const test_carry: u1 = 0;
+    const test_halfcarry: u1 = 1;
+    const test_subtraction: u1 = 1;
+
+    const res = alu.AluOp8Bit.daa(test_value, test_carry, test_halfcarry, test_subtraction);
+
+    try run_test_case(
+        "Decimal adjust accumulator",
+        rom,
+        exram,
+        &[_]u8{
+            0x00,
+            instr,
+            0xFD,
+        },
+        TestCpuState.init()
+            .rA(test_value)
+            .fC(test_carry)
+            .fH(test_halfcarry)
+            .fN(test_subtraction),
+        &[_]*TestCpuState{
+            TestCpuState.init() // read nop(PC) from ram
+                .rPC(0x0001)
+                .rA(test_value)
+                .fC(test_carry)
+                .fH(test_halfcarry)
+                .fN(test_subtraction),
+            TestCpuState.init() // execute nop | read iut(PC) from ram
+                .rPC(0x0002)
+                .rA(test_value)
+                .fC(test_carry)
+                .fH(test_halfcarry)
+                .fN(test_subtraction),
+            TestCpuState.init() // execute iut: set flags | read (PC) from ram
+                .rPC(0x0003)
+                .rA(res.result)
+                .fC(res.carry)
+                .fH(res.halfcarry)
+                .fN(res.subtraction)
+                .fZ(res.zero),
+        },
+    );
+}

@@ -74,6 +74,39 @@ pub const AluOp8Bit = packed struct {
             .carry = 0,
         };
     }
+
+    pub fn daa(op: u8, c: u1, h: u1, n: u1) AluOp8Bit {
+        var carry: u1 = 0;
+        var res: u8 = undefined;
+
+        if (n == 0) {
+            var adj: u8 = 0;
+            if (h == 1 or op & 0x0F > 9) {
+                adj |= 0x06;
+            }
+            if (c == 1 or op > 0x99) {
+                adj |= 0x60;
+            }
+            res, carry = @addWithOverflow(op, adj);
+        } else {
+            var adj: u8 = 0;
+            if (h == 1) {
+                adj |= 0x06;
+            }
+            if (c == 1) {
+                adj |= 0x60;
+            }
+            res = op - adj;
+        }
+
+        return AluOp8Bit{
+            .result = res,
+            .zero = @intFromBool(op == 0),
+            .carry = carry,
+            .halfcarry = 0,
+            .subtraction = n,
+        };
+    }
 };
 
 test "0b00000001 + 0b00000001" {
