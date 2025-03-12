@@ -2735,3 +2735,43 @@ test "Decimal adjust accumulator" {
         },
     );
 }
+
+test "Complement accumulator" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    // Constants
+    const instr: u8 = 0b00101111;
+    const test_value = 0xAA;
+
+    const res = alu.AluOp8Bit.cpl(test_value);
+
+    try run_test_case(
+        "Complement accumulator",
+        rom,
+        exram,
+        &[_]u8{
+            0x00,
+            instr,
+            0xFD,
+        },
+        TestCpuState.init()
+            .rA(test_value),
+        &[_]*TestCpuState{
+            TestCpuState.init() // read nop(PC) from ram
+                .rPC(0x0001)
+                .rA(test_value),
+            TestCpuState.init() // execute nop | read iut(PC) from ram
+                .rPC(0x0002)
+                .rA(test_value),
+            TestCpuState.init() // execute iut: complement A | read (PC) from ram
+                .rPC(0x0003)
+                .rA(res.result)
+                .fH(res.halfcarry)
+                .fN(res.subtraction),
+        },
+    );
+}

@@ -544,10 +544,22 @@ pub const Cpu = struct {
         }
 
         // Decimal adjust accumulator
-        if (self.reg.IR & 0b00100111 == 0b00100111) {
+        if (self.reg.IR & 0b11111111 == 0b00100111) {
             const res = alu.AluOp8Bit.daa(self.reg.AF.Hi, self.reg.AF.Lo.C, self.reg.AF.Lo.H, self.reg.AF.Lo.N);
             self.reg.AF.Hi = res.result;
             self.applyFlags(res);
+            return self.fetchOpcode();
+        }
+
+        // Complement accumulator
+        if (self.reg.IR & 0b11111111 == 0b00101111) {
+            const res = alu.AluOp8Bit.cpl(self.reg.AF.Hi);
+            self.reg.AF.Hi = res.result;
+            const z = self.reg.AF.Lo.Z;
+            const c = self.reg.AF.Lo.C;
+            self.applyFlags(res);
+            self.reg.AF.Lo.Z = z;
+            self.reg.AF.Lo.C = c;
             return self.fetchOpcode();
         }
 

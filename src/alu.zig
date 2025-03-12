@@ -75,6 +75,17 @@ pub const AluOp8Bit = packed struct {
         };
     }
 
+    pub fn cpl(op: u8) AluOp8Bit {
+        const res = ~op;
+        return AluOp8Bit{
+            .result = res,
+            .zero = undefined,
+            .carry = undefined,
+            .subtraction = 1,
+            .halfcarry = 1,
+        };
+    }
+
     pub fn daa(op: u8, c: u1, h: u1, n: u1) AluOp8Bit {
         var adj: u8 = 0;
         var carry: u1 = 0;
