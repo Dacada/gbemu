@@ -76,32 +76,24 @@ pub const AluOp8Bit = packed struct {
     }
 
     pub fn daa(op: u8, c: u1, h: u1, n: u1) AluOp8Bit {
+        var adj: u8 = 0;
         var carry: u1 = 0;
-        var res: u8 = undefined;
-
-        if (n == 0) {
-            var adj: u8 = 0;
-            if (h == 1 or op & 0x0F > 9) {
-                adj |= 0x06;
-            }
-            if (c == 1 or op > 0x99) {
-                adj |= 0x60;
-            }
-            res, carry = @addWithOverflow(op, adj);
-        } else {
-            var adj: u8 = 0;
-            if (h == 1) {
-                adj |= 0x06;
-            }
-            if (c == 1) {
-                adj |= 0x60;
-            }
-            res = op - adj;
+        if ((n == 0 and op & 0x0F > 0x09) or h == 1) {
+            adj |= 0x06;
         }
+        if ((n == 0 and op > 0x99) or c == 1) {
+            adj |= 0x60;
+            carry = 1;
+        }
+
+        const res, _ = if (n == 0)
+            @addWithOverflow(op, adj)
+        else
+            @subWithOverflow(op, adj);
 
         return AluOp8Bit{
             .result = res,
-            .zero = @intFromBool(op == 0),
+            .zero = @intFromBool(res == 0),
             .carry = carry,
             .halfcarry = 0,
             .subtraction = n,
@@ -314,4 +306,238 @@ test "DAA a=0x00 n=0 h=0 c=0" {
     try std.testing.expectEqual(0, res.carry);
     try std.testing.expectEqual(0, res.halfcarry);
     try std.testing.expectEqual(0, res.subtraction);
+}
+
+test "DAA a=0x09, n=0, h=0, c=0" {
+    const res = AluOp8Bit.daa(0x09, 0, 0, 0);
+    try std.testing.expectEqual(0x09, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(0, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(0, res.subtraction);
+}
+
+test "DAA a=0x0A, n=0, h=0, c=0" {
+    const res = AluOp8Bit.daa(0x0A, 0, 0, 0);
+    try std.testing.expectEqual(0x10, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(0, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(0, res.subtraction);
+}
+
+test "DAA a=0x19, n=0, h=0, c=0" {
+    const res = AluOp8Bit.daa(0x19, 0, 0, 0);
+    try std.testing.expectEqual(0x19, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(0, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(0, res.subtraction);
+}
+
+test "DAA a=0x1A, n=0, h=0, c=0" {
+    const res = AluOp8Bit.daa(0x1A, 0, 0, 0);
+    try std.testing.expectEqual(0x20, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(0, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(0, res.subtraction);
+}
+
+test "DAA a=0x29, n=0, h=0, c=0" {
+    const res = AluOp8Bit.daa(0x29, 0, 0, 0);
+    try std.testing.expectEqual(0x29, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(0, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(0, res.subtraction);
+}
+
+test "DAA a=0x2A, n=0, h=0, c=0" {
+    const res = AluOp8Bit.daa(0x2A, 0, 0, 0);
+    try std.testing.expectEqual(0x30, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(0, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(0, res.subtraction);
+}
+
+test "DAA a=0x39, n=0, h=0, c=0" {
+    const res = AluOp8Bit.daa(0x39, 0, 0, 0);
+    try std.testing.expectEqual(0x39, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(0, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(0, res.subtraction);
+}
+
+test "DAA a=0x3A, n=0, h=0, c=0" {
+    const res = AluOp8Bit.daa(0x3A, 0, 0, 0);
+    try std.testing.expectEqual(0x40, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(0, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(0, res.subtraction);
+}
+
+test "DAA a=0x40, n=0, h=0, c=0" {
+    const res = AluOp8Bit.daa(0x40, 0, 0, 0);
+    try std.testing.expectEqual(0x40, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(0, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(0, res.subtraction);
+}
+
+test "DAA a=0x45, n=0, h=0, c=0" {
+    const res = AluOp8Bit.daa(0x45, 0, 0, 0);
+    try std.testing.expectEqual(0x45, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(0, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(0, res.subtraction);
+}
+
+test "DAA a=0x99, n=0, h=0, c=0" {
+    const res = AluOp8Bit.daa(0x99, 0, 0, 0);
+    try std.testing.expectEqual(0x99, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(0, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(0, res.subtraction);
+}
+
+test "DAA a=0x9A, n=0, h=0, c=0" {
+    const res = AluOp8Bit.daa(0x9A, 0, 0, 0);
+    try std.testing.expectEqual(0x00, res.result);
+    try std.testing.expectEqual(1, res.zero);
+    try std.testing.expectEqual(1, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(0, res.subtraction);
+}
+
+test "DAA a=0xA0, n=0, h=0, c=0" {
+    const res = AluOp8Bit.daa(0xA0, 0, 0, 0);
+    try std.testing.expectEqual(0x00, res.result);
+    try std.testing.expectEqual(1, res.zero);
+    try std.testing.expectEqual(1, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(0, res.subtraction);
+}
+
+test "DAA a=0xA5, n=0, h=0, c=0" {
+    const res = AluOp8Bit.daa(0xA5, 0, 0, 0);
+    try std.testing.expectEqual(0x05, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(1, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(0, res.subtraction);
+}
+
+test "DAA a=0xFF, n=0, h=0, c=0" {
+    const res = AluOp8Bit.daa(0xFF, 0, 0, 0);
+    try std.testing.expectEqual(0x65, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(1, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(0, res.subtraction);
+}
+
+test "DAA a=0x05, n=0, h=1, c=0" {
+    const res = AluOp8Bit.daa(0x05, 0, 1, 0);
+    try std.testing.expectEqual(0x0B, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(0, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(0, res.subtraction);
+}
+
+test "DAA a=0x15, n=0, h=1, c=0" {
+    const res = AluOp8Bit.daa(0x15, 0, 1, 0);
+    try std.testing.expectEqual(0x1B, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(0, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(0, res.subtraction);
+}
+
+test "DAA a=0x25, n=0, h=1, c=0" {
+    const res = AluOp8Bit.daa(0x25, 0, 1, 0);
+    try std.testing.expectEqual(0x2B, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(0, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(0, res.subtraction);
+}
+
+test "DAA a=0x35, n=0, h=1, c=0" {
+    const res = AluOp8Bit.daa(0x35, 0, 1, 0);
+    try std.testing.expectEqual(0x3B, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(0, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(0, res.subtraction);
+}
+
+test "DAA a=0x3F, n=0, h=1, c=0" {
+    const res = AluOp8Bit.daa(0x3F, 0, 1, 0);
+    try std.testing.expectEqual(0x45, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(0, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(0, res.subtraction);
+}
+
+test "DAA a=0x9A, n=0, h=1, c=0" {
+    const res = AluOp8Bit.daa(0x9A, 0, 1, 0);
+    try std.testing.expectEqual(0x00, res.result);
+    try std.testing.expectEqual(1, res.zero);
+    try std.testing.expectEqual(1, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(0, res.subtraction);
+}
+
+test "DAA a=0x2F, n=1, h=1, c=0" {
+    const res = AluOp8Bit.daa(0x2F, 0, 1, 1);
+    try std.testing.expectEqual(0x29, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(0, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(1, res.subtraction);
+}
+
+test "DAA a=0x42, n=1, h=1, c=0" {
+    const res = AluOp8Bit.daa(0x42, 0, 1, 1);
+    try std.testing.expectEqual(0x3C, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(0, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(1, res.subtraction);
+}
+
+test "DAA a=0x9A, n=1, h=1, c=0" {
+    const res = AluOp8Bit.daa(0x9A, 0, 1, 1);
+    try std.testing.expectEqual(0x94, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(0, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(1, res.subtraction);
+}
+
+test "DAA a=0x99, n=1, h=1, c=1" {
+    const res = AluOp8Bit.daa(0x99, 1, 1, 1);
+    try std.testing.expectEqual(0x33, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(1, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(1, res.subtraction);
+}
+
+test "DAA a=0xFF, n=1, h=1, c=1" {
+    const res = AluOp8Bit.daa(0xFF, 1, 1, 1);
+    try std.testing.expectEqual(0x99, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(1, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(1, res.subtraction);
 }
