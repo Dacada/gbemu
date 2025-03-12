@@ -279,3 +279,39 @@ test "0b10000000 - 0b10000000 (zero result, no carry)" {
     try std.testing.expectEqual(0, res.halfcarry);
     try std.testing.expectEqual(1, res.subtraction);
 }
+
+test "0b11110000 & 0b11001100" {
+    const res = AluOp8Bit.and_(0b11110000, 0b11001100);
+    try std.testing.expectEqual(0b11000000, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(0, res.carry);
+    try std.testing.expectEqual(1, res.halfcarry);
+    try std.testing.expectEqual(0, res.subtraction);
+}
+
+test "0b11110000 | 0b11001100" {
+    const res = AluOp8Bit.or_(0b11110000, 0b11001100);
+    try std.testing.expectEqual(0b11111100, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(0, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(0, res.subtraction);
+}
+
+test "0b11110000 ^ 0b11001100" {
+    const res = AluOp8Bit.xor_(0b11110000, 0b11001100);
+    try std.testing.expectEqual(0b00111100, res.result);
+    try std.testing.expectEqual(0, res.zero);
+    try std.testing.expectEqual(0, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(0, res.subtraction);
+}
+
+test "DAA a=0x00 n=0 h=0 c=0" {
+    const res = AluOp8Bit.daa(0x00, 0, 0, 0);
+    try std.testing.expectEqual(0x00, res.result);
+    try std.testing.expectEqual(1, res.zero);
+    try std.testing.expectEqual(0, res.carry);
+    try std.testing.expectEqual(0, res.halfcarry);
+    try std.testing.expectEqual(0, res.subtraction);
+}
