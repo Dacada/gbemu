@@ -527,6 +527,14 @@ pub const Cpu = struct {
             return SelfRefCpuMethod.init(Cpu.xorImmediate2);
         }
 
+        // Complement carry flag
+        if (self.reg.IR & 0b11111111 == 0b00111111) {
+            self.reg.AF.Lo.C = ~self.reg.AF.Lo.C;
+            self.reg.AF.Lo.N = 0;
+            self.reg.AF.Lo.H = 0;
+            return self.fetchOpcode();
+        }
+
         // NOP
         if (self.reg.IR & 0b11111111 == 0b00000000) {
             return self.fetchOpcode();
