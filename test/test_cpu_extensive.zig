@@ -1094,12 +1094,21 @@ test "Add (register)" {
 
                 const carry_flag: u1 = @intCast(with_carry & 0b01);
                 const carry_instr: u1 = @intCast((with_carry & 0b10) >> 1);
-                const carry_for_test_add: u1 = carry_flag & carry_instr;
 
                 const instr: u8 = 0b10000000 | reg_u8 | (@as(u8, carry_instr) << 3);
                 const test_val: u8 = 0xBB;
 
-                const res = alu.AluOp8Bit.add(test_val, val_u8, carry_for_test_add);
+                var res = alu.AluRegister{
+                    .Hi = test_val,
+                    .Lo = alu.RegisterFlags{
+                        .C = carry_flag,
+                        .H = 0,
+                        .N = 0,
+                        .Z = 0,
+                        .rest = 0,
+                    },
+                };
+                res.add(val_u8, carry_instr);
 
                 const name = try std.fmt.allocPrint(std.testing.allocator, "Add (reg={b}) (val={x}) (with_carry={b})", .{ reg, val, with_carry });
                 defer std.testing.allocator.free(name);
@@ -1129,12 +1138,8 @@ test "Add (register)" {
                             .reg(reg_u3, val_u8),
                         TestCpuState.init() // execute iut: add reg to a | read (PC)
                             .rPC(0x0003)
-                            .rA(res.result)
                             .reg(reg_u3, val_u8)
-                            .fC(res.carry)
-                            .fH(res.halfcarry)
-                            .fN(res.subtraction)
-                            .fZ(res.zero),
+                            .rAF(res.all()),
                     },
                 );
             }
@@ -1156,11 +1161,20 @@ test "Add (register A)" {
 
             const carry_flag: u1 = @intCast(with_carry & 0b01);
             const carry_instr: u1 = @intCast((with_carry & 0b10) >> 1);
-            const carry_for_test_add: u1 = carry_flag & carry_instr;
 
             const instr: u8 = 0b10000111 | (@as(u8, carry_instr) << 3);
 
-            const res = alu.AluOp8Bit.add(val_u8, val_u8, carry_for_test_add);
+            var res = alu.AluRegister{
+                .Hi = val_u8,
+                .Lo = alu.RegisterFlags{
+                    .C = carry_flag,
+                    .H = 0,
+                    .N = 0,
+                    .Z = 0,
+                    .rest = 0,
+                },
+            };
+            res.add(val_u8, carry_instr);
 
             const name = try std.fmt.allocPrint(std.testing.allocator, "Add (reg=111) (val={x}) (with_carry={b})", .{ val, with_carry });
             defer std.testing.allocator.free(name);
@@ -1187,11 +1201,7 @@ test "Add (register A)" {
                         .fC(carry_flag),
                     TestCpuState.init() // execute iut: add A to itself | read (PC)
                         .rPC(0x0003)
-                        .rA(res.result)
-                        .fC(res.carry)
-                        .fH(res.halfcarry)
-                        .fN(res.subtraction)
-                        .fZ(res.zero),
+                        .rAF(res.all()),
                 },
             );
         }
@@ -1212,13 +1222,22 @@ test "Add (indirect HL)" {
 
             const carry_flag: u1 = @intCast(with_carry & 0b01);
             const carry_instr: u1 = @intCast((with_carry & 0b10) >> 1);
-            const carry_for_test_add: u1 = carry_flag & carry_instr;
 
             const test_val: u8 = 0xAA;
             const test_addr: u16 = 0xD00D;
             const instr: u8 = 0b10000110 | (@as(u8, carry_instr) << 3);
 
-            const res = alu.AluOp8Bit.add(test_val, val_u8, carry_for_test_add);
+            var res = alu.AluRegister{
+                .Hi = test_val,
+                .Lo = alu.RegisterFlags{
+                    .C = carry_flag,
+                    .H = 0,
+                    .N = 0,
+                    .Z = 0,
+                    .rest = 0,
+                },
+            };
+            res.add(val_u8, carry_instr);
 
             const name = try std.fmt.allocPrint(std.testing.allocator, "Add (indirect HL) (val={x}) (with_carry={b})", .{ val, with_carry });
             defer std.testing.allocator.free(name);
@@ -1257,13 +1276,9 @@ test "Add (indirect HL)" {
                         .rHL(test_addr),
                     TestCpuState.init() // execute iut: add val to A | read (PC)
                         .rPC(0x0003)
-                        .rA(res.result)
                         .ram(test_addr, val_u8)
                         .rHL(test_addr)
-                        .fC(res.carry)
-                        .fH(res.halfcarry)
-                        .fN(res.subtraction)
-                        .fZ(res.zero),
+                        .rAF(res.all()),
                 },
             );
         }
@@ -1284,12 +1299,21 @@ test "Add (immediate)" {
 
             const carry_flag: u1 = @intCast(with_carry & 0b01);
             const carry_instr: u1 = @intCast((with_carry & 0b10) >> 1);
-            const carry_for_test_add: u1 = carry_flag & carry_instr;
 
             const test_val: u8 = 0xAA;
             const instr: u8 = 0b11000110 | (@as(u8, carry_instr) << 3);
 
-            const res = alu.AluOp8Bit.add(test_val, val_u8, carry_for_test_add);
+            var res = alu.AluRegister{
+                .Hi = test_val,
+                .Lo = alu.RegisterFlags{
+                    .C = carry_flag,
+                    .H = 0,
+                    .N = 0,
+                    .Z = 0,
+                    .rest = 0,
+                },
+            };
+            res.add(val_u8, carry_instr);
 
             const name = try std.fmt.allocPrint(std.testing.allocator, "Add (immediate) (val={x}) (with_carry={b})", .{ val, with_carry });
             defer std.testing.allocator.free(name);
@@ -1321,11 +1345,7 @@ test "Add (immediate)" {
                         .fC(carry_flag),
                     TestCpuState.init() // execute iut: add val to A | read (PC)
                         .rPC(0x0004)
-                        .rA(res.result)
-                        .fC(res.carry)
-                        .fH(res.halfcarry)
-                        .fN(res.subtraction)
-                        .fZ(res.zero),
+                        .rAF(res.all()),
                 },
             );
         }
@@ -1353,12 +1373,21 @@ test "Sub (register)" {
 
                 const carry_flag: u1 = @intCast(with_carry & 0b01);
                 const carry_instr: u1 = @intCast((with_carry & 0b10) >> 1);
-                const carry_for_test_sub: u1 = carry_flag & carry_instr;
 
                 const instr: u8 = 0b10010000 | reg_u8 | (@as(u8, carry_instr) << 3);
                 const test_val: u8 = 0xBB;
 
-                const res = alu.AluOp8Bit.sub(test_val, val_u8, carry_for_test_sub);
+                var res = alu.AluRegister{
+                    .Hi = test_val,
+                    .Lo = alu.RegisterFlags{
+                        .C = carry_flag,
+                        .H = 0,
+                        .N = 0,
+                        .Z = 0,
+                        .rest = 0,
+                    },
+                };
+                res.sub(val_u8, carry_instr);
 
                 const name = try std.fmt.allocPrint(std.testing.allocator, "Sub (reg={b}) (val={x}) (with_carry={b})", .{ reg, val, with_carry });
                 defer std.testing.allocator.free(name);
@@ -1388,12 +1417,8 @@ test "Sub (register)" {
                             .reg(reg_u3, val_u8),
                         TestCpuState.init() // execute iut: sub reg from a | read (PC)
                             .rPC(0x0003)
-                            .rA(res.result)
                             .reg(reg_u3, val_u8)
-                            .fC(res.carry)
-                            .fH(res.halfcarry)
-                            .fN(res.subtraction)
-                            .fZ(res.zero),
+                            .rAF(res.all()),
                     },
                 );
             }
@@ -1415,11 +1440,20 @@ test "Sub (register A)" {
 
             const carry_flag: u1 = @intCast(with_carry & 0b01);
             const carry_instr: u1 = @intCast((with_carry & 0b10) >> 1);
-            const carry_for_test_sub: u1 = carry_flag & carry_instr;
 
             const instr: u8 = 0b10010111 | (@as(u8, carry_instr) << 3);
 
-            const res = alu.AluOp8Bit.sub(val_u8, val_u8, carry_for_test_sub);
+            var res = alu.AluRegister{
+                .Hi = val_u8,
+                .Lo = alu.RegisterFlags{
+                    .C = carry_flag,
+                    .H = 0,
+                    .N = 0,
+                    .Z = 0,
+                    .rest = 0,
+                },
+            };
+            res.sub(val_u8, carry_instr);
 
             const name = try std.fmt.allocPrint(std.testing.allocator, "Sub (reg=111) (val={x}) (with_carry={b})", .{ val, with_carry });
             defer std.testing.allocator.free(name);
@@ -1446,11 +1480,7 @@ test "Sub (register A)" {
                         .fC(carry_flag),
                     TestCpuState.init() // execute iut: sub A from itself | read (PC)
                         .rPC(0x0003)
-                        .rA(res.result)
-                        .fC(res.carry)
-                        .fH(res.halfcarry)
-                        .fN(res.subtraction)
-                        .fZ(res.zero),
+                        .rAF(res.all()),
                 },
             );
         }
@@ -1471,13 +1501,22 @@ test "Sub (indirect HL)" {
 
             const carry_flag: u1 = @intCast(with_carry & 0b01);
             const carry_instr: u1 = @intCast((with_carry & 0b10) >> 1);
-            const carry_for_test_sub: u1 = carry_flag & carry_instr;
 
             const test_val: u8 = 0xAA;
             const test_addr: u16 = 0xD00D;
             const instr: u8 = 0b10010110 | (@as(u8, carry_instr) << 3);
 
-            const res = alu.AluOp8Bit.sub(test_val, val_u8, carry_for_test_sub);
+            var res = alu.AluRegister{
+                .Hi = test_val,
+                .Lo = alu.RegisterFlags{
+                    .C = carry_flag,
+                    .H = 0,
+                    .N = 0,
+                    .Z = 0,
+                    .rest = 0,
+                },
+            };
+            res.sub(val_u8, carry_instr);
 
             const name = try std.fmt.allocPrint(std.testing.allocator, "Sub (indirect HL) (val={x}) (with_carry={b})", .{ val, with_carry });
             defer std.testing.allocator.free(name);
@@ -1516,13 +1555,9 @@ test "Sub (indirect HL)" {
                         .rHL(test_addr),
                     TestCpuState.init() // execute iut: sub val from A | read (PC)
                         .rPC(0x0003)
-                        .rA(res.result)
                         .ram(test_addr, val_u8)
                         .rHL(test_addr)
-                        .fC(res.carry)
-                        .fH(res.halfcarry)
-                        .fN(res.subtraction)
-                        .fZ(res.zero),
+                        .rAF(res.all()),
                 },
             );
         }
@@ -1543,12 +1578,21 @@ test "Sub (immediate)" {
 
             const carry_flag: u1 = @intCast(with_carry & 0b01);
             const carry_instr: u1 = @intCast((with_carry & 0b10) >> 1);
-            const carry_for_test_sub: u1 = carry_flag & carry_instr;
 
             const test_val: u8 = 0xAA;
             const instr: u8 = 0b11010110 | (@as(u8, carry_instr) << 3);
 
-            const res = alu.AluOp8Bit.sub(test_val, val_u8, carry_for_test_sub);
+            var res = alu.AluRegister{
+                .Hi = test_val,
+                .Lo = alu.RegisterFlags{
+                    .C = carry_flag,
+                    .H = 0,
+                    .N = 0,
+                    .Z = 0,
+                    .rest = 0,
+                },
+            };
+            res.sub(val_u8, carry_instr);
 
             const name = try std.fmt.allocPrint(std.testing.allocator, "Sub (immediate) (val={x}) (with_carry={b})", .{ val, with_carry });
             defer std.testing.allocator.free(name);
@@ -1580,11 +1624,7 @@ test "Sub (immediate)" {
                         .fC(carry_flag),
                     TestCpuState.init() // execute iut: sub val from A | read (PC)
                         .rPC(0x0004)
-                        .rA(res.result)
-                        .fC(res.carry)
-                        .fH(res.halfcarry)
-                        .fN(res.subtraction)
-                        .fZ(res.zero),
+                        .rAF(res.all()),
                 },
             );
         }
@@ -1612,7 +1652,17 @@ test "CP (register)" {
             const instr: u8 = 0b10111000 | reg_u8;
             const test_val: u8 = 0xBB;
 
-            const res = alu.AluOp8Bit.sub(test_val, val_u8, 0);
+            var res = alu.AluRegister{
+                .Hi = test_val,
+                .Lo = alu.RegisterFlags{
+                    .C = 0,
+                    .H = 0,
+                    .N = 0,
+                    .Z = 0,
+                    .rest = 0,
+                },
+            };
+            res.sub(val_u8, 0);
 
             const name = try std.fmt.allocPrint(std.testing.allocator, "CP (reg={b}) (val={x})", .{ reg, val });
             defer std.testing.allocator.free(name);
@@ -1639,12 +1689,9 @@ test "CP (register)" {
                         .reg(reg_u3, val_u8),
                     TestCpuState.init() // execute iut: sub reg from a, store flags only | read (PC)
                         .rPC(0x0003)
-                        .rA(test_val)
                         .reg(reg_u3, val_u8)
-                        .fC(res.carry)
-                        .fH(res.halfcarry)
-                        .fN(res.subtraction)
-                        .fZ(res.zero),
+                        .rA(test_val)
+                        .rF(res.Lo.all()),
                 },
             );
         }
@@ -1664,7 +1711,17 @@ test "CP (register A)" {
 
         const instr: u8 = 0b10111111;
 
-        const res = alu.AluOp8Bit.sub(val_u8, val_u8, 0);
+        var res = alu.AluRegister{
+            .Hi = val_u8,
+            .Lo = alu.RegisterFlags{
+                .C = 0,
+                .H = 0,
+                .N = 0,
+                .Z = 0,
+                .rest = 0,
+            },
+        };
+        res.sub(val_u8, 0);
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "CP (reg=111) (val={x})", .{val});
         defer std.testing.allocator.free(name);
@@ -1689,10 +1746,7 @@ test "CP (register A)" {
                 TestCpuState.init() // execute iut: sub A from itself, store flags only | read (PC)
                     .rPC(0x0003)
                     .rA(val_u8)
-                    .fC(res.carry)
-                    .fH(res.halfcarry)
-                    .fN(res.subtraction)
-                    .fZ(res.zero),
+                    .rF(res.Lo.all()),
             },
         );
     }
@@ -1713,7 +1767,17 @@ test "CP (indirect HL)" {
         const test_addr: u16 = 0xD00D;
         const instr: u8 = 0b10111110;
 
-        const res = alu.AluOp8Bit.sub(test_val, val_u8, 0);
+        var res = alu.AluRegister{
+            .Hi = test_val,
+            .Lo = alu.RegisterFlags{
+                .C = 0,
+                .H = 0,
+                .N = 0,
+                .Z = 0,
+                .rest = 0,
+            },
+        };
+        res.sub(val_u8, 0);
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "CP (indirect HL) (val={x})", .{
             val,
@@ -1750,13 +1814,10 @@ test "CP (indirect HL)" {
                     .rHL(test_addr),
                 TestCpuState.init() // execute iut: sub val from A, store flags only | read (PC)
                     .rPC(0x0003)
-                    .rA(test_val)
                     .ram(test_addr, val_u8)
                     .rHL(test_addr)
-                    .fC(res.carry)
-                    .fH(res.halfcarry)
-                    .fN(res.subtraction)
-                    .fZ(res.zero),
+                    .rA(test_val)
+                    .rF(res.Lo.all()),
             },
         );
     }
@@ -1776,7 +1837,17 @@ test "CP (immediate)" {
         const test_val: u8 = 0xAA;
         const instr: u8 = 0b11111110;
 
-        const res = alu.AluOp8Bit.sub(test_val, val_u8, 0);
+        var res = alu.AluRegister{
+            .Hi = test_val,
+            .Lo = alu.RegisterFlags{
+                .C = 0,
+                .H = 0,
+                .N = 0,
+                .Z = 0,
+                .rest = 0,
+            },
+        };
+        res.sub(val_u8, 0);
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "CP (immediate) (val={x})", .{val});
         defer std.testing.allocator.free(name);
@@ -1805,10 +1876,7 @@ test "CP (immediate)" {
                 TestCpuState.init() // execute iut: sub val from A, store flags only | read (PC)
                     .rPC(0x0004)
                     .rA(test_val)
-                    .fC(res.carry)
-                    .fH(res.halfcarry)
-                    .fN(res.subtraction)
-                    .fZ(res.zero),
+                    .rF(res.Lo.all()),
             },
         );
     }
@@ -1831,10 +1899,20 @@ test "INC/DEC Register" {
                 // Constants
                 const instr: u8 = 0b00_000_10_0 | (reg << 3) | incdec;
 
+                var rreg = alu.AluRegister{
+                    .Hi = test_val,
+                    .Lo = alu.RegisterFlags{
+                        .C = 0,
+                        .H = 0,
+                        .N = 0,
+                        .Z = 0,
+                        .rest = 0,
+                    },
+                };
                 const res = if (incdec == 0)
-                    alu.AluOp8Bit.add(test_val, 1, 0)
+                    rreg.inc(test_val)
                 else
-                    alu.AluOp8Bit.sub(test_val, 1, 0);
+                    rreg.dec(test_val);
 
                 const name = try std.fmt.allocPrint(std.testing.allocator, "INC/DEC (inc/dec={b}) (test_val={x}) (reg={b})", .{ incdec, test_val, reg });
                 defer std.testing.allocator.free(name);
@@ -1858,11 +1936,8 @@ test "INC/DEC Register" {
                             .reg(reg, test_val),
                         TestCpuState.init() // execute iut: inc/dec reg | read (PC)
                             .rPC(0x0003)
-                            .reg(reg, res.result)
-                            .fC(0)
-                            .fN(incdec)
-                            .fH(res.halfcarry)
-                            .fZ(res.zero),
+                            .reg(reg, res)
+                            .rF(rreg.Lo.all()),
                     },
                 );
             }
@@ -1883,10 +1958,20 @@ test "INC/DEC Indirect" {
             const instr: u8 = 0b00_110_10_0 | incdec;
             const test_addr = 0xD00D;
 
+            var reg = alu.AluRegister{
+                .Hi = test_val,
+                .Lo = alu.RegisterFlags{
+                    .C = 0,
+                    .H = 0,
+                    .N = 0,
+                    .Z = 0,
+                    .rest = 0,
+                },
+            };
             const res = if (incdec == 0)
-                alu.AluOp8Bit.add(test_val, 1, 0)
+                reg.inc(test_val)
             else
-                alu.AluOp8Bit.sub(test_val, 1, 0);
+                reg.dec(test_val);
 
             const name = try std.fmt.allocPrint(std.testing.allocator, "INC/DEC Indirect (inc/dec={b}) (test_val={x})", .{ incdec, test_val });
             defer std.testing.allocator.free(name);
@@ -1918,19 +2003,13 @@ test "INC/DEC Indirect" {
                     TestCpuState.init() // execute iut: inc/dec val | write val(HL) to ram
                         .rPC(0x0002)
                         .rHL(test_addr)
-                        .ram(test_addr, res.result)
-                        .fC(0)
-                        .fH(res.halfcarry)
-                        .fN(incdec)
-                        .fZ(res.zero),
+                        .ram(test_addr, res)
+                        .rF(reg.Lo.all()),
                     TestCpuState.init() // read (PC)
                         .rPC(0x0003)
                         .rHL(test_addr)
-                        .ram(test_addr, res.result)
-                        .fC(0)
-                        .fH(res.halfcarry)
-                        .fN(incdec)
-                        .fZ(res.zero),
+                        .ram(test_addr, res)
+                        .rF(reg.Lo.all()),
                 },
             );
         }
@@ -1953,7 +2032,17 @@ test "AND register" {
             const instr: u8 = 0b10100_000 | reg;
 
             const reg_val = 0xAA;
-            const res = alu.AluOp8Bit.and_(reg_val, test_val);
+            var res = alu.AluRegister{
+                .Hi = reg_val,
+                .Lo = alu.RegisterFlags{
+                    .C = 0,
+                    .H = 0,
+                    .N = 0,
+                    .Z = 0,
+                    .rest = 0,
+                },
+            };
+            res.and_(test_val);
 
             const name = try std.fmt.allocPrint(std.testing.allocator, "AND register (reg={b}) (test_val={x})", .{ reg, test_val });
             defer std.testing.allocator.free(name);
@@ -1981,11 +2070,7 @@ test "AND register" {
                     TestCpuState.init() // execute iut: and reg to A | read (PC) from ram
                         .rPC(0x0003)
                         .reg(reg, reg_val)
-                        .rA(res.result)
-                        .fC(0)
-                        .fH(1)
-                        .fN(0)
-                        .fZ(res.zero),
+                        .rAF(res.all()),
                 },
             );
         }
@@ -2003,7 +2088,17 @@ test "AND register A" {
         // Constants
         const instr: u8 = 0b10100_111;
 
-        const res = alu.AluOp8Bit.and_(test_val, test_val);
+        var res = alu.AluRegister{
+            .Hi = test_val,
+            .Lo = alu.RegisterFlags{
+                .C = 0,
+                .H = 0,
+                .N = 0,
+                .Z = 0,
+                .rest = 0,
+            },
+        };
+        res.and_(test_val);
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "AND register A (test_val={x})", .{test_val});
         defer std.testing.allocator.free(name);
@@ -2027,11 +2122,7 @@ test "AND register A" {
                     .rA(test_val),
                 TestCpuState.init() // execute iut: and reg to A | read (PC) from ram
                     .rPC(0x0003)
-                    .rA(res.result)
-                    .fC(0)
-                    .fH(1)
-                    .fN(0)
-                    .fZ(res.zero),
+                    .rAF(res.all()),
             },
         );
     }
@@ -2050,7 +2141,17 @@ test "AND indirect HL" {
 
         const test_addr = 0xD00D;
         const reg_val = 0xAA;
-        const res = alu.AluOp8Bit.and_(reg_val, test_val);
+        var res = alu.AluRegister{
+            .Hi = reg_val,
+            .Lo = alu.RegisterFlags{
+                .C = 0,
+                .H = 0,
+                .N = 0,
+                .Z = 0,
+                .rest = 0,
+            },
+        };
+        res.and_(test_val);
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "AND indirect HL (test_val={x})", .{test_val});
         defer std.testing.allocator.free(name);
@@ -2085,11 +2186,7 @@ test "AND indirect HL" {
                     .ram(test_addr, test_val),
                 TestCpuState.init() // execute iut: and val to A | read (PC) from ram
                     .rPC(0x0003)
-                    .rA(res.result)
-                    .fC(0)
-                    .fH(1)
-                    .fN(0)
-                    .fZ(res.zero)
+                    .rAF(res.all())
                     .rHL(test_addr)
                     .ram(test_addr, test_val),
             },
@@ -2109,7 +2206,17 @@ test "AND immediate" {
         const instr: u8 = 0b11100110;
 
         const reg_val = 0xAA;
-        const res = alu.AluOp8Bit.and_(reg_val, test_val);
+        var res = alu.AluRegister{
+            .Hi = reg_val,
+            .Lo = alu.RegisterFlags{
+                .C = 0,
+                .H = 0,
+                .N = 0,
+                .Z = 0,
+                .rest = 0,
+            },
+        };
+        res.and_(test_val);
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "AND immediate (test_val={x})", .{test_val});
         defer std.testing.allocator.free(name);
@@ -2137,11 +2244,7 @@ test "AND immediate" {
                     .rA(reg_val),
                 TestCpuState.init() // execute iut: and val to A | read (PC) from ram
                     .rPC(0x0004)
-                    .rA(res.result)
-                    .fC(0)
-                    .fH(1)
-                    .fN(0)
-                    .fZ(res.zero),
+                    .rAF(res.all()),
             },
         );
     }
@@ -2163,7 +2266,17 @@ test "OR register" {
             const instr: u8 = 0b10110_000 | reg;
 
             const reg_val = 0xAA;
-            const res = alu.AluOp8Bit.or_(reg_val, test_val);
+            var res = alu.AluRegister{
+                .Hi = reg_val,
+                .Lo = alu.RegisterFlags{
+                    .C = 0,
+                    .H = 0,
+                    .N = 0,
+                    .Z = 0,
+                    .rest = 0,
+                },
+            };
+            res.or_(test_val);
 
             const name = try std.fmt.allocPrint(std.testing.allocator, "OR register (reg={b}) (test_val={x})", .{ reg, test_val });
             defer std.testing.allocator.free(name);
@@ -2191,11 +2304,7 @@ test "OR register" {
                     TestCpuState.init() // execute iut: or reg to A | read (PC) from ram
                         .rPC(0x0003)
                         .reg(reg, reg_val)
-                        .rA(res.result)
-                        .fC(0)
-                        .fH(0)
-                        .fN(0)
-                        .fZ(res.zero),
+                        .rAF(res.all()),
                 },
             );
         }
@@ -2213,7 +2322,17 @@ test "OR register A" {
         // Constants
         const instr: u8 = 0b10110_111;
 
-        const res = alu.AluOp8Bit.or_(test_val, test_val);
+        var res = alu.AluRegister{
+            .Hi = test_val,
+            .Lo = alu.RegisterFlags{
+                .C = 0,
+                .H = 0,
+                .N = 0,
+                .Z = 0,
+                .rest = 0,
+            },
+        };
+        res.or_(test_val);
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "OR register A (test_val={x})", .{test_val});
         defer std.testing.allocator.free(name);
@@ -2237,11 +2356,7 @@ test "OR register A" {
                     .rA(test_val),
                 TestCpuState.init() // execute iut: or reg to A | read (PC) from ram
                     .rPC(0x0003)
-                    .rA(res.result)
-                    .fC(0)
-                    .fH(0)
-                    .fN(0)
-                    .fZ(res.zero),
+                    .rAF(res.all()),
             },
         );
     }
@@ -2260,7 +2375,17 @@ test "OR indirect HL" {
 
         const test_addr = 0xD00D;
         const reg_val = 0xAA;
-        const res = alu.AluOp8Bit.or_(reg_val, test_val);
+        var res = alu.AluRegister{
+            .Hi = reg_val,
+            .Lo = alu.RegisterFlags{
+                .C = 0,
+                .H = 0,
+                .N = 0,
+                .Z = 0,
+                .rest = 0,
+            },
+        };
+        res.or_(test_val);
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "OR indirect HL (test_val={x})", .{test_val});
         defer std.testing.allocator.free(name);
@@ -2295,11 +2420,7 @@ test "OR indirect HL" {
                     .ram(test_addr, test_val),
                 TestCpuState.init() // execute iut: or val to A | read (PC) from ram
                     .rPC(0x0003)
-                    .rA(res.result)
-                    .fC(0)
-                    .fH(0)
-                    .fN(0)
-                    .fZ(res.zero)
+                    .rAF(res.all())
                     .rHL(test_addr)
                     .ram(test_addr, test_val),
             },
@@ -2319,7 +2440,17 @@ test "OR immediate" {
         const instr: u8 = 0b11110110;
 
         const reg_val = 0xAA;
-        const res = alu.AluOp8Bit.or_(reg_val, test_val);
+        var res = alu.AluRegister{
+            .Hi = reg_val,
+            .Lo = alu.RegisterFlags{
+                .C = 0,
+                .H = 0,
+                .N = 0,
+                .Z = 0,
+                .rest = 0,
+            },
+        };
+        res.or_(test_val);
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "OR immediate (test_val={x})", .{test_val});
         defer std.testing.allocator.free(name);
@@ -2347,11 +2478,7 @@ test "OR immediate" {
                     .rA(reg_val),
                 TestCpuState.init() // execute iut: or val to A | read (PC) from ram
                     .rPC(0x0004)
-                    .rA(res.result)
-                    .fC(0)
-                    .fH(0)
-                    .fN(0)
-                    .fZ(res.zero),
+                    .rAF(res.all()),
             },
         );
     }
@@ -2373,7 +2500,17 @@ test "XOR register" {
             const instr: u8 = 0b10101_000 | reg;
 
             const reg_val = 0xAA;
-            const res = alu.AluOp8Bit.xor_(reg_val, test_val);
+            var res = alu.AluRegister{
+                .Hi = reg_val,
+                .Lo = alu.RegisterFlags{
+                    .C = 0,
+                    .H = 0,
+                    .N = 0,
+                    .Z = 0,
+                    .rest = 0,
+                },
+            };
+            res.xor(test_val);
 
             const name = try std.fmt.allocPrint(std.testing.allocator, "XOR register (reg={b}) (test_val={x})", .{ reg, test_val });
             defer std.testing.allocator.free(name);
@@ -2401,11 +2538,7 @@ test "XOR register" {
                     TestCpuState.init() // execute iut: xor reg to A | read (PC) from ram
                         .rPC(0x0003)
                         .reg(reg, reg_val)
-                        .rA(res.result)
-                        .fC(0)
-                        .fH(0)
-                        .fN(0)
-                        .fZ(res.zero),
+                        .rAF(res.all()),
                 },
             );
         }
@@ -2423,7 +2556,17 @@ test "XOR register A" {
         // Constants
         const instr: u8 = 0b10101_111;
 
-        const res = alu.AluOp8Bit.xor_(test_val, test_val);
+        var res = alu.AluRegister{
+            .Hi = test_val,
+            .Lo = alu.RegisterFlags{
+                .C = 0,
+                .H = 0,
+                .N = 0,
+                .Z = 0,
+                .rest = 0,
+            },
+        };
+        res.xor(test_val);
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "XOR register A (test_val={x})", .{test_val});
         defer std.testing.allocator.free(name);
@@ -2447,11 +2590,7 @@ test "XOR register A" {
                     .rA(test_val),
                 TestCpuState.init() // execute iut: xor reg to A | read (PC) from ram
                     .rPC(0x0003)
-                    .rA(res.result)
-                    .fC(0)
-                    .fH(0)
-                    .fN(0)
-                    .fZ(res.zero),
+                    .rAF(res.all()),
             },
         );
     }
@@ -2470,7 +2609,17 @@ test "XOR indirect HL" {
 
         const test_addr = 0xD00D;
         const reg_val = 0xAA;
-        const res = alu.AluOp8Bit.xor_(reg_val, test_val);
+        var res = alu.AluRegister{
+            .Hi = reg_val,
+            .Lo = alu.RegisterFlags{
+                .C = 0,
+                .H = 0,
+                .N = 0,
+                .Z = 0,
+                .rest = 0,
+            },
+        };
+        res.xor(test_val);
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "XOR indirect HL (test_val={x})", .{test_val});
         defer std.testing.allocator.free(name);
@@ -2505,11 +2654,7 @@ test "XOR indirect HL" {
                     .ram(test_addr, test_val),
                 TestCpuState.init() // execute iut: xor val to A | read (PC) from ram
                     .rPC(0x0003)
-                    .rA(res.result)
-                    .fC(0)
-                    .fH(0)
-                    .fN(0)
-                    .fZ(res.zero)
+                    .rAF(res.all())
                     .rHL(test_addr)
                     .ram(test_addr, test_val),
             },
@@ -2529,7 +2674,17 @@ test "XOR immediate" {
         const instr: u8 = 0b11101110;
 
         const reg_val = 0xAA;
-        const res = alu.AluOp8Bit.xor_(reg_val, test_val);
+        var res = alu.AluRegister{
+            .Hi = reg_val,
+            .Lo = alu.RegisterFlags{
+                .C = 0,
+                .H = 0,
+                .N = 0,
+                .Z = 0,
+                .rest = 0,
+            },
+        };
+        res.xor(test_val);
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "XOR immediate (test_val={x})", .{test_val});
         defer std.testing.allocator.free(name);
@@ -2557,11 +2712,7 @@ test "XOR immediate" {
                     .rA(reg_val),
                 TestCpuState.init() // execute iut: xor val to A | read (PC) from ram
                     .rPC(0x0004)
-                    .rA(res.result)
-                    .fC(0)
-                    .fH(0)
-                    .fN(0)
-                    .fZ(res.zero),
+                    .rAF(res.all()),
             },
         );
     }
@@ -2696,7 +2847,17 @@ test "Decimal adjust accumulator" {
     const test_halfcarry: u1 = 1;
     const test_subtraction: u1 = 1;
 
-    const res = alu.AluOp8Bit.daa(test_value, test_carry, test_halfcarry, test_subtraction);
+    var res = alu.AluRegister{
+        .Hi = test_value,
+        .Lo = alu.RegisterFlags{
+            .C = test_carry,
+            .H = test_halfcarry,
+            .N = test_subtraction,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    res.daa();
 
     try run_test_case(
         "Decimal adjust accumulator",
@@ -2727,11 +2888,7 @@ test "Decimal adjust accumulator" {
                 .fN(test_subtraction),
             TestCpuState.init() // execute iut: set flags | read (PC) from ram
                 .rPC(0x0003)
-                .rA(res.result)
-                .fC(res.carry)
-                .fH(res.halfcarry)
-                .fN(res.subtraction)
-                .fZ(res.zero),
+                .rAF(res.all()),
         },
     );
 }
@@ -2747,7 +2904,17 @@ test "Complement accumulator" {
     const instr: u8 = 0b00101111;
     const test_value = 0xAA;
 
-    const res = alu.AluOp8Bit.cpl(test_value);
+    var res = alu.AluRegister{
+        .Hi = test_value,
+        .Lo = alu.RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    res.cpl();
 
     try run_test_case(
         "Complement accumulator",
@@ -2769,9 +2936,7 @@ test "Complement accumulator" {
                 .rA(test_value),
             TestCpuState.init() // execute iut: complement A | read (PC) from ram
                 .rPC(0x0003)
-                .rA(res.result)
-                .fH(res.halfcarry)
-                .fN(res.subtraction),
+                .rAF(res.all()),
         },
     );
 }

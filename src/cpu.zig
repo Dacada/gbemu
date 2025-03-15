@@ -6,139 +6,51 @@ pub const CpuError = error{
     IllegalInstruction,
 };
 
-const RegisterFlags = packed struct {
-    Z: u1,
-    N: u1,
-    H: u1,
-    C: u1,
-    rest: u4,
-
-    pub fn all(reg: *const RegisterFlags) u8 {
-        return (@as(u8, reg.Z) << 7) | (@as(u8, reg.N) << 6) | (@as(u8, reg.H) << 5) | (@as(u8, reg.C) << 4) | reg.rest;
-    }
-
-    pub fn setAll(reg: *RegisterFlags, val: u8) void {
-        reg.Z = @intCast((val & 0b1000_0000) >> 7);
-        reg.N = @intCast((val & 0b0100_0000) >> 6);
-        reg.H = @intCast((val & 0b0010_0000) >> 5);
-        reg.C = @intCast((val & 0b0001_0000) >> 4);
-        reg.rest = @intCast(val & 0b0000_1111);
-    }
-};
-
-test "register flags" {
-    var reg: RegisterFlags = undefined;
-
-    reg.setAll(0xAA);
-    try std.testing.expectEqual(1, reg.Z);
-    try std.testing.expectEqual(0, reg.N);
-    try std.testing.expectEqual(1, reg.H);
-    try std.testing.expectEqual(0, reg.C);
-    try std.testing.expectEqual(0xA, reg.rest);
-
-    reg.Z = 0;
-    reg.N = 1;
-    reg.H = 0;
-    reg.C = 1;
-    reg.rest = 0x5;
-    try std.testing.expectEqual(0x55, reg.all());
-}
-
-const RegisterWithFlags = packed struct {
-    Hi: u8,
-    Lo: RegisterFlags,
-
-    pub fn all(reg: *const RegisterWithFlags) u16 {
-        return (@as(u16, reg.Hi) << 8) | reg.Lo.all();
-    }
-
-    pub fn setAll(reg: *RegisterWithFlags, val: u16) void {
-        reg.Hi = @intCast((val & 0xFF00) >> 8);
-        reg.Lo.setAll(@intCast(val & 0x00FF));
-    }
-};
-
-const RegisterWithHalves = packed struct {
-    Hi: u8,
-    Lo: u8,
-
-    pub fn all(reg: *const RegisterWithHalves) u16 {
-        return (@as(u16, reg.Hi) << 8) | reg.Lo;
-    }
-
-    pub fn setAll(reg: *RegisterWithHalves, val: u16) void {
-        reg.Hi = @intCast((val & 0xFF00) >> 8);
-        reg.Lo = @intCast(val & 0x00FF);
-    }
-
-    pub fn inc(reg: *RegisterWithHalves) void {
-        reg.Lo, const carry = @addWithOverflow(reg.Lo, 1);
-        reg.Hi, _ = @addWithOverflow(reg.Hi, carry);
-    }
-
-    pub fn dec(reg: *RegisterWithHalves) void {
-        reg.Lo, const carry = @subWithOverflow(reg.Lo, 1);
-        reg.Hi, _ = @subWithOverflow(reg.Hi, carry);
-    }
-};
-
 const Register = union(enum) {
-    RegisterWithFlags: *RegisterWithFlags,
-    RegisterWithHalves: *RegisterWithHalves,
+    AluRegister: *alu.AluRegister,
+    RegisterWithHalves: *alu.RegisterWithHalves,
 
     pub fn all(reg: Register) u16 {
         return switch (reg) {
-            .RegisterWithFlags => |r| r.all(),
+            .AluRegister => |r| r.all(),
             .RegisterWithHalves => |r| r.all(),
         };
     }
 
     pub fn setAll(reg: Register, val: u16) void {
         return switch (reg) {
-            .RegisterWithFlags => |r| r.setAll(val),
+            .AluRegister => |r| r.setAll(val),
             .RegisterWithHalves => |r| r.setAll(val),
         };
     }
 
     pub fn hi(reg: Register) u8 {
         return switch (reg) {
-            .RegisterWithFlags => |r| r.Hi,
+            .AluRegister => |r| r.Hi,
             .RegisterWithHalves => |r| r.Hi,
         };
     }
 
     pub fn lo(reg: Register) u8 {
         return switch (reg) {
-            .RegisterWithFlags => |r| r.Lo.all(),
+            .AluRegister => |r| r.Lo.all(),
             .RegisterWithHalves => |r| r.Lo,
         };
     }
 };
 
-test "register with halves" {
-    var reg: RegisterWithHalves = undefined;
-
-    reg.setAll(0xABCD);
-    try std.testing.expectEqual(0xAB, reg.Hi);
-    try std.testing.expectEqual(0xCD, reg.Lo);
-
-    reg.Hi = 0x12;
-    reg.Lo = 0x34;
-    try std.testing.expectEqual(0x1234, reg.all());
-}
-
 const RegisterBank = struct {
-    AF: RegisterWithFlags,
-    BC: RegisterWithHalves,
-    DE: RegisterWithHalves,
+    AF: alu.AluRegister,
+    BC: alu.RegisterWithHalves,
+    DE: alu.RegisterWithHalves,
 
-    HL: RegisterWithHalves,
+    HL: alu.RegisterWithHalves,
 
-    SP: RegisterWithHalves,
+    SP: alu.RegisterWithHalves,
     PC: u16,
 
     IR: u8,
-    WZ: RegisterWithHalves,
+    WZ: alu.RegisterWithHalves,
 };
 
 const SelfRefCpuMethod = struct {
@@ -161,9 +73,9 @@ pub const Cpu = struct {
         return Cpu{
             .mmu = mmu_,
             .reg = RegisterBank{
-                .AF = RegisterWithFlags{
+                .AF = alu.AluRegister{
                     .Hi = 0,
-                    .Lo = RegisterFlags{
+                    .Lo = alu.RegisterFlags{
                         .Z = 0,
                         .N = 0,
                         .H = 0,
@@ -171,25 +83,25 @@ pub const Cpu = struct {
                         .rest = 0,
                     },
                 },
-                .BC = RegisterWithHalves{
+                .BC = alu.RegisterWithHalves{
                     .Hi = 0,
                     .Lo = 0,
                 },
-                .DE = RegisterWithHalves{
+                .DE = alu.RegisterWithHalves{
                     .Hi = 0,
                     .Lo = 0,
                 },
-                .HL = RegisterWithHalves{
+                .HL = alu.RegisterWithHalves{
                     .Hi = 0,
                     .Lo = 0,
                 },
-                .SP = RegisterWithHalves{
+                .SP = alu.RegisterWithHalves{
                     .Hi = 0,
                     .Lo = 0,
                 },
                 .PC = 0,
                 .IR = 0,
-                .WZ = RegisterWithHalves{
+                .WZ = alu.RegisterWithHalves{
                     .Hi = 0,
                     .Lo = 0,
                 },
@@ -375,64 +287,55 @@ pub const Cpu = struct {
         // Add register
         if (self.reg.IR & 0b1111_0_111 == 0b1000_0_110) { // indirect HL
             self.reg.WZ.Lo = try self.mmu.read(self.reg.HL.all());
-            return SelfRefCpuMethod.init(Cpu.addIndirectHL2);
+            return SelfRefCpuMethod.init(Cpu.doAdd);
         }
         if (self.reg.IR & 0b1111_0_000 == 0b1000_0_000) {
             const reg: u3 = @intCast(self.reg.IR & 0b0000_0_111);
-            const with_carry: u1 = @intCast((self.reg.IR & 0b0000_1_000) >> 3);
             const reg_ptr = self.ptrReg8Bit(reg);
-            const carry: u1 = if (with_carry == 1) self.reg.AF.Lo.C else 0;
-            const res = alu.AluOp8Bit.add(self.reg.AF.Hi, reg_ptr.*, carry);
-            self.applyFlags(res);
-            self.reg.AF.Hi = res.result;
-            return self.fetchOpcode();
+            self.reg.WZ.Lo = reg_ptr.*;
+            return self.doAdd();
         }
 
         // Add immediate
         if (self.reg.IR & 0b1111_0_111 == 0b1100_0_110) {
             self.reg.WZ.Lo = try self.fetchPC();
-            return SelfRefCpuMethod.init(Cpu.addImmediate2);
+            return SelfRefCpuMethod.init(Cpu.doAdd);
         }
 
         // Subtract register
         if (self.reg.IR & 0b1111_0_111 == 0b1001_0_110) { // indirect HL
             self.reg.WZ.Lo = try self.mmu.read(self.reg.HL.all());
-            return SelfRefCpuMethod.init(Cpu.subIndirectHL2);
+            return SelfRefCpuMethod.init(Cpu.doSub);
         }
         if (self.reg.IR & 0b1111_0_000 == 0b1001_0_000) {
             const reg: u3 = @intCast(self.reg.IR & 0b0000_0_111);
-            const with_carry: u1 = @intCast((self.reg.IR & 0b0000_1_000) >> 3);
             const reg_ptr = self.ptrReg8Bit(reg);
-            const carry: u1 = if (with_carry == 1) self.reg.AF.Lo.C else 0;
-            const res = alu.AluOp8Bit.sub(self.reg.AF.Hi, reg_ptr.*, carry);
-            self.applyFlags(res);
-            self.reg.AF.Hi = res.result;
-            return self.fetchOpcode();
+            self.reg.WZ.Lo = reg_ptr.*;
+            return self.doSub();
         }
 
         // Subtract immediate
         if (self.reg.IR & 0b1111_0_111 == 0b1101_0_110) {
             self.reg.WZ.Lo = try self.fetchPC();
-            return SelfRefCpuMethod.init(Cpu.subImmediate2);
+            return SelfRefCpuMethod.init(Cpu.doSub);
         }
 
         // Compare register
         if (self.reg.IR & 0b11111111 == 0b10111110) { // indirect HL
             self.reg.WZ.Lo = try self.mmu.read(self.reg.HL.all());
-            return SelfRefCpuMethod.init(Cpu.compareIndirectHL2);
+            return SelfRefCpuMethod.init(Cpu.doCmp);
         }
         if (self.reg.IR & 0b11111000 == 0b10111000) {
             const reg: u3 = @intCast(self.reg.IR & 0b0000_0_111);
             const reg_ptr = self.ptrReg8Bit(reg);
-            const res = alu.AluOp8Bit.sub(self.reg.AF.Hi, reg_ptr.*, 0);
-            self.applyFlags(res);
-            return self.fetchOpcode();
+            self.reg.WZ.Lo = reg_ptr.*;
+            return self.doCmp();
         }
 
         // Compare immediate
         if (self.reg.IR & 0b11111111 == 0b11111110) {
             self.reg.WZ.Lo = try self.fetchPC();
-            return SelfRefCpuMethod.init(Cpu.compareImmediate2);
+            return SelfRefCpuMethod.init(Cpu.doCmp);
         }
 
         // Increment register
@@ -443,11 +346,7 @@ pub const Cpu = struct {
         if (self.reg.IR & 0b11_000_111 == 0b00_000_100) {
             const reg: u3 = @intCast((self.reg.IR & 0b00_111_000) >> 3);
             const reg_ptr = self.ptrReg8Bit(reg);
-            const res = alu.AluOp8Bit.add(reg_ptr.*, 1, 0);
-            const c = self.reg.AF.Lo.C;
-            self.applyFlags(res);
-            self.reg.AF.Lo.C = c;
-            reg_ptr.* = res.result;
+            reg_ptr.* = self.reg.AF.inc(reg_ptr.*);
             return self.fetchOpcode();
         }
 
@@ -459,107 +358,85 @@ pub const Cpu = struct {
         if (self.reg.IR & 0b11_000_111 == 0b00_000_101) {
             const reg: u3 = @intCast((self.reg.IR & 0b00_111_000) >> 3);
             const reg_ptr = self.ptrReg8Bit(reg);
-            const res = alu.AluOp8Bit.sub(reg_ptr.*, 1, 0);
-            const c = self.reg.AF.Lo.C;
-            self.applyFlags(res);
-            self.reg.AF.Lo.C = c;
-            reg_ptr.* = res.result;
+            reg_ptr.* = self.reg.AF.dec(reg_ptr.*);
             return self.fetchOpcode();
         }
 
         // AND register
         if (self.reg.IR & 0b11111111 == 0b10100110) { // indirect HL
             self.reg.WZ.Lo = try self.mmu.read(self.reg.HL.all());
-            return SelfRefCpuMethod.init(Cpu.andRegisterHL2);
+            return SelfRefCpuMethod.init(Cpu.doAnd);
         }
         if (self.reg.IR & 0b11111_000 == 0b10100_000) {
             const reg: u3 = @intCast(self.reg.IR & 0b00000_111);
             const reg_ptr = self.ptrReg8Bit(reg);
-            const res = alu.AluOp8Bit.and_(self.reg.AF.Hi, reg_ptr.*);
-            self.applyFlags(res);
-            self.reg.AF.Hi = res.result;
-            return self.fetchOpcode();
+            self.reg.WZ.Lo = reg_ptr.*;
+            return self.doAnd();
         }
 
         // AND immediate
         if (self.reg.IR & 0b11111111 == 0b11100110) {
             self.reg.WZ.Lo = try self.fetchPC();
-            return SelfRefCpuMethod.init(Cpu.andImmediate2);
+            return SelfRefCpuMethod.init(Cpu.doAnd);
         }
 
         // OR register
         if (self.reg.IR & 0b11111111 == 0b10110110) { // indirect HL
             self.reg.WZ.Lo = try self.mmu.read(self.reg.HL.all());
-            return SelfRefCpuMethod.init(Cpu.orRegisterHL2);
+            return SelfRefCpuMethod.init(Cpu.doOr);
         }
         if (self.reg.IR & 0b11111_000 == 0b10110_000) {
             const reg: u3 = @intCast(self.reg.IR & 0b00000_111);
             const reg_ptr = self.ptrReg8Bit(reg);
-            const res = alu.AluOp8Bit.or_(self.reg.AF.Hi, reg_ptr.*);
-            self.applyFlags(res);
-            self.reg.AF.Hi = res.result;
-            return self.fetchOpcode();
+            self.reg.WZ.Lo = reg_ptr.*;
+            return self.doOr();
         }
 
         // OR immediate
         if (self.reg.IR & 0b11111111 == 0b11110110) {
             self.reg.WZ.Lo = try self.fetchPC();
-            return SelfRefCpuMethod.init(Cpu.orImmediate2);
+            return SelfRefCpuMethod.init(Cpu.doOr);
         }
 
         // XOR register
         if (self.reg.IR & 0b11111111 == 0b10101110) { // indirect HL
             self.reg.WZ.Lo = try self.mmu.read(self.reg.HL.all());
-            return SelfRefCpuMethod.init(Cpu.xorRegisterHL2);
+            return SelfRefCpuMethod.init(Cpu.doXor);
         }
         if (self.reg.IR & 0b11111_000 == 0b10101_000) {
             const reg: u3 = @intCast(self.reg.IR & 0b00000_111);
             const reg_ptr = self.ptrReg8Bit(reg);
-            const res = alu.AluOp8Bit.xor_(self.reg.AF.Hi, reg_ptr.*);
-            self.applyFlags(res);
-            self.reg.AF.Hi = res.result;
-            return self.fetchOpcode();
+            self.reg.WZ.Lo = reg_ptr.*;
+            return self.doXor();
         }
 
         // XOR immediate
         if (self.reg.IR & 0b11111111 == 0b11101110) {
             self.reg.WZ.Lo = try self.fetchPC();
-            return SelfRefCpuMethod.init(Cpu.xorImmediate2);
+            return SelfRefCpuMethod.init(Cpu.doXor);
         }
 
         // Complement carry flag
         if (self.reg.IR & 0b11111111 == 0b00111111) {
-            self.reg.AF.Lo.C = ~self.reg.AF.Lo.C;
-            self.reg.AF.Lo.N = 0;
-            self.reg.AF.Lo.H = 0;
+            self.reg.AF.ccf();
             return self.fetchOpcode();
         }
 
         // Set carry flag
         if (self.reg.IR & 0b11111111 == 0b00110111) {
-            self.reg.AF.Lo.C = 1;
-            self.reg.AF.Lo.N = 0;
-            self.reg.AF.Lo.H = 0;
+            self.reg.AF.scf();
             return self.fetchOpcode();
         }
 
         // Decimal adjust accumulator
         if (self.reg.IR & 0b11111111 == 0b00100111) {
-            const res = alu.AluOp8Bit.daa(self.reg.AF.Hi, self.reg.AF.Lo.C, self.reg.AF.Lo.H, self.reg.AF.Lo.N);
-            self.reg.AF.Hi = res.result;
-            self.applyFlags(res);
+            self.reg.AF.daa();
             return self.fetchOpcode();
         }
 
         // Complement accumulator
         if (self.reg.IR & 0b11111111 == 0b00101111) {
-            const res = alu.AluOp8Bit.cpl(self.reg.AF.Hi);
-            self.reg.AF.Hi = res.result;
-            const z = self.reg.AF.Lo.Z;
-            const c = self.reg.AF.Lo.C;
-            self.applyFlags(res);
-            self.reg.AF.Lo.Z = z;
-            self.reg.AF.Lo.C = c;
+            self.reg.AF.cpl();
             return self.fetchOpcode();
         }
 
@@ -704,10 +581,12 @@ pub const Cpu = struct {
     }
 
     fn loadHLfromAdjustedSP2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
-        const res = alu.AluOp8Bit.add(self.reg.SP.Lo, self.reg.WZ.Lo, 0);
-        self.applyFlags(res);
+        const tmp = self.reg.AF.Hi;
+        self.reg.AF.Hi = self.reg.SP.Lo;
+        self.reg.AF.add(self.reg.WZ.Lo, 0);
+        self.reg.HL.Lo = self.reg.AF.Hi;
+        self.reg.AF.Hi = tmp;
         self.reg.AF.Lo.Z = 0;
-        self.reg.HL.Lo = res.result;
         return SelfRefCpuMethod.init(Cpu.loadHLfromAdjustedSP3);
     }
 
@@ -718,111 +597,49 @@ pub const Cpu = struct {
         return self.fetchOpcode();
     }
 
-    fn addIndirectHL2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
-        const with_carry: u1 = @intCast((self.reg.IR & 0b0000_1_000) >> 3);
-        const carry: u1 = if (with_carry == 1) self.reg.AF.Lo.C else 0;
-        const res = alu.AluOp8Bit.add(self.reg.AF.Hi, self.reg.WZ.Lo, carry);
-        self.applyFlags(res);
-        self.reg.AF.Hi = res.result;
-        return self.fetchOpcode();
-    }
-
-    fn addImmediate2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
-        const with_carry: u1 = @intCast((self.reg.IR & 0b0000_1_000) >> 3);
-        const carry: u1 = if (with_carry == 1) self.reg.AF.Lo.C else 0;
-        const res = alu.AluOp8Bit.add(self.reg.AF.Hi, self.reg.WZ.Lo, carry);
-        self.applyFlags(res);
-        self.reg.AF.Hi = res.result;
-        return self.fetchOpcode();
-    }
-
-    fn subIndirectHL2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
-        const with_carry: u1 = @intCast((self.reg.IR & 0b0000_1_000) >> 3);
-        const carry: u1 = if (with_carry == 1) self.reg.AF.Lo.C else 0;
-        const res = alu.AluOp8Bit.sub(self.reg.AF.Hi, self.reg.WZ.Lo, carry);
-        self.applyFlags(res);
-        self.reg.AF.Hi = res.result;
-        return self.fetchOpcode();
-    }
-
-    fn subImmediate2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
-        const with_carry: u1 = @intCast((self.reg.IR & 0b0000_1_000) >> 3);
-        const carry: u1 = if (with_carry == 1) self.reg.AF.Lo.C else 0;
-        const res = alu.AluOp8Bit.sub(self.reg.AF.Hi, self.reg.WZ.Lo, carry);
-        self.applyFlags(res);
-        self.reg.AF.Hi = res.result;
-        return self.fetchOpcode();
-    }
-
-    fn compareIndirectHL2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
-        const res = alu.AluOp8Bit.sub(self.reg.AF.Hi, self.reg.WZ.Lo, 0);
-        self.applyFlags(res);
-        return self.fetchOpcode();
-    }
-
-    fn compareImmediate2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
-        const res = alu.AluOp8Bit.sub(self.reg.AF.Hi, self.reg.WZ.Lo, 0);
-        self.applyFlags(res);
-        return self.fetchOpcode();
-    }
-
     fn incrementRegisterHL2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
-        const res = alu.AluOp8Bit.add(self.reg.WZ.Lo, 1, 0);
-        const c = self.reg.AF.Lo.C;
-        self.applyFlags(res);
-        self.reg.AF.Lo.C = c;
-        try self.mmu.write(self.reg.HL.all(), res.result);
+        const res = self.reg.AF.inc(self.reg.WZ.Lo);
+        try self.mmu.write(self.reg.HL.all(), res);
         return SelfRefCpuMethod.init(Cpu.fetchOpcode);
     }
 
     fn decrementRegisterHL2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
-        const res = alu.AluOp8Bit.sub(self.reg.WZ.Lo, 1, 0);
-        const c = self.reg.AF.Lo.C;
-        self.applyFlags(res);
-        self.reg.AF.Lo.C = c;
-        try self.mmu.write(self.reg.HL.all(), res.result);
+        const res = self.reg.AF.dec(self.reg.WZ.Lo);
+        try self.mmu.write(self.reg.HL.all(), res);
         return SelfRefCpuMethod.init(Cpu.fetchOpcode);
     }
 
-    fn andRegisterHL2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
-        const res = alu.AluOp8Bit.and_(self.reg.AF.Hi, self.reg.WZ.Lo);
-        self.applyFlags(res);
-        self.reg.AF.Hi = res.result;
+    fn doAdd(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        const with_carry: u1 = @intCast((self.reg.IR & 0b0000_1_000) >> 3);
+        self.reg.AF.add(self.reg.WZ.Lo, with_carry);
         return self.fetchOpcode();
     }
 
-    fn andImmediate2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
-        const res = alu.AluOp8Bit.and_(self.reg.AF.Hi, self.reg.WZ.Lo);
-        self.applyFlags(res);
-        self.reg.AF.Hi = res.result;
+    fn doSub(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        const with_carry: u1 = @intCast((self.reg.IR & 0b0000_1_000) >> 3);
+        self.reg.AF.sub(self.reg.WZ.Lo, with_carry);
         return self.fetchOpcode();
     }
 
-    fn orRegisterHL2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
-        const res = alu.AluOp8Bit.or_(self.reg.AF.Hi, self.reg.WZ.Lo);
-        self.applyFlags(res);
-        self.reg.AF.Hi = res.result;
+    fn doCmp(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        const a = self.reg.AF.Hi;
+        self.reg.AF.sub(self.reg.WZ.Lo, 0);
+        self.reg.AF.Hi = a;
         return self.fetchOpcode();
     }
 
-    fn orImmediate2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
-        const res = alu.AluOp8Bit.or_(self.reg.AF.Hi, self.reg.WZ.Lo);
-        self.applyFlags(res);
-        self.reg.AF.Hi = res.result;
+    fn doAnd(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        self.reg.AF.and_(self.reg.WZ.Lo);
         return self.fetchOpcode();
     }
 
-    fn xorRegisterHL2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
-        const res = alu.AluOp8Bit.xor_(self.reg.AF.Hi, self.reg.WZ.Lo);
-        self.applyFlags(res);
-        self.reg.AF.Hi = res.result;
+    fn doOr(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        self.reg.AF.or_(self.reg.WZ.Lo);
         return self.fetchOpcode();
     }
 
-    fn xorImmediate2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
-        const res = alu.AluOp8Bit.xor_(self.reg.AF.Hi, self.reg.WZ.Lo);
-        self.applyFlags(res);
-        self.reg.AF.Hi = res.result;
+    fn doXor(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        self.reg.AF.xor(self.reg.WZ.Lo);
         return self.fetchOpcode();
     }
 
@@ -839,7 +656,7 @@ pub const Cpu = struct {
         };
     }
 
-    fn ptrReg16Bit(self: *Cpu, idx: u2) *RegisterWithHalves {
+    fn ptrReg16Bit(self: *Cpu, idx: u2) *alu.RegisterWithHalves {
         return switch (idx) {
             0b00 => &self.reg.BC,
             0b01 => &self.reg.DE,
@@ -853,14 +670,7 @@ pub const Cpu = struct {
             0b00 => Register{ .RegisterWithHalves = &self.reg.BC },
             0b01 => Register{ .RegisterWithHalves = &self.reg.DE },
             0b10 => Register{ .RegisterWithHalves = &self.reg.HL },
-            0b11 => Register{ .RegisterWithFlags = &self.reg.AF },
+            0b11 => Register{ .AluRegister = &self.reg.AF },
         };
-    }
-
-    fn applyFlags(self: *Cpu, res: alu.AluOp8Bit) void {
-        self.reg.AF.Lo.Z = res.zero;
-        self.reg.AF.Lo.C = res.carry;
-        self.reg.AF.Lo.H = res.halfcarry;
-        self.reg.AF.Lo.N = res.subtraction;
     }
 };

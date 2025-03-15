@@ -1,554 +1,1343 @@
 const std = @import("std");
 
-pub const AluOp8Bit = packed struct {
-    result: u8,
-    zero: u1,
-    carry: u1,
-    halfcarry: u1,
-    subtraction: u1,
+pub const RegisterFlags = packed struct {
+    Z: u1,
+    N: u1,
+    H: u1,
+    C: u1,
+    rest: u4,
 
-    pub fn add(op1: u8, op2: u8, c: u1) AluOp8Bit {
-        const op1_lo: u4 = @intCast(op1 & 0x0F);
-        const op2_lo: u4 = @intCast(op2 & 0x0F);
-
-        const op1_hi: u4 = @intCast((op1 & 0xF0) >> 4);
-        const op2_hi: u4 = @intCast((op2 & 0xF0) >> 4);
-
-        const res_lo_tmp: u4, const halfcarry_1: u1 = @addWithOverflow(op1_lo, c);
-        const res_lo: u4, const halfcarry_2: u1 = @addWithOverflow(res_lo_tmp, op2_lo);
-        const halfcarry = halfcarry_1 | halfcarry_2;
-
-        const res_hi_tmp: u4, const carry_1: u1 = @addWithOverflow(op1_hi, halfcarry);
-        const res_hi: u4, const carry_2: u1 = @addWithOverflow(res_hi_tmp, op2_hi);
-
-        const res: u8 = (@as(u8, res_hi) << 4) | res_lo;
-        const zero: u1 = @intFromBool(res == 0);
-        const carry: u1 = carry_1 | carry_2;
-
-        return AluOp8Bit{
-            .result = res,
-            .zero = zero,
-            .carry = carry,
-            .halfcarry = halfcarry,
-            .subtraction = 0,
-        };
+    pub fn all(reg: *const RegisterFlags) u8 {
+        return (@as(u8, reg.Z) << 7) | (@as(u8, reg.N) << 6) | (@as(u8, reg.H) << 5) | (@as(u8, reg.C) << 4) | reg.rest;
     }
 
-    pub fn sub(op1: u8, op2: u8, c: u1) AluOp8Bit {
-        var res = AluOp8Bit.add(op1, ~op2, ~c);
-        res.subtraction = 1;
-        res.carry = ~res.carry;
-        res.halfcarry = ~res.halfcarry;
+    pub fn setAll(reg: *RegisterFlags, val: u8) void {
+        reg.Z = @intCast((val & 0b1000_0000) >> 7);
+        reg.N = @intCast((val & 0b0100_0000) >> 6);
+        reg.H = @intCast((val & 0b0010_0000) >> 5);
+        reg.C = @intCast((val & 0b0001_0000) >> 4);
+        reg.rest = @intCast(val & 0b0000_1111);
+    }
+};
+
+test "register flags" {
+    var reg: RegisterFlags = undefined;
+
+    reg.setAll(0xAA);
+    try std.testing.expectEqual(1, reg.Z);
+    try std.testing.expectEqual(0, reg.N);
+    try std.testing.expectEqual(1, reg.H);
+    try std.testing.expectEqual(0, reg.C);
+    try std.testing.expectEqual(0xA, reg.rest);
+
+    reg.Z = 0;
+    reg.N = 1;
+    reg.H = 0;
+    reg.C = 1;
+    reg.rest = 0x5;
+    try std.testing.expectEqual(0x55, reg.all());
+}
+
+pub const RegisterWithHalves = packed struct {
+    Hi: u8,
+    Lo: u8,
+
+    pub fn all(reg: *const RegisterWithHalves) u16 {
+        return (@as(u16, reg.Hi) << 8) | reg.Lo;
+    }
+
+    pub fn setAll(reg: *RegisterWithHalves, val: u16) void {
+        reg.Hi = @intCast((val & 0xFF00) >> 8);
+        reg.Lo = @intCast(val & 0x00FF);
+    }
+
+    pub fn inc(reg: *RegisterWithHalves) void {
+        reg.Lo, const carry = @addWithOverflow(reg.Lo, 1);
+        reg.Hi, _ = @addWithOverflow(reg.Hi, carry);
+    }
+
+    pub fn dec(reg: *RegisterWithHalves) void {
+        reg.Lo, const carry = @subWithOverflow(reg.Lo, 1);
+        reg.Hi, _ = @subWithOverflow(reg.Hi, carry);
+    }
+};
+
+test "register with halves" {
+    var reg: RegisterWithHalves = undefined;
+
+    reg.setAll(0xABCD);
+    try std.testing.expectEqual(0xAB, reg.Hi);
+    try std.testing.expectEqual(0xCD, reg.Lo);
+
+    reg.Hi = 0x12;
+    reg.Lo = 0x34;
+    try std.testing.expectEqual(0x1234, reg.all());
+}
+
+pub const AluRegister = packed struct {
+    Hi: u8,
+    Lo: RegisterFlags,
+
+    pub fn all(reg: *const AluRegister) u16 {
+        return (@as(u16, reg.Hi) << 8) | reg.Lo.all();
+    }
+
+    pub fn setAll(reg: *AluRegister, val: u16) void {
+        reg.Hi = @intCast((val & 0xFF00) >> 8);
+        reg.Lo.setAll(@intCast(val & 0x00FF));
+    }
+
+    fn adder_u4(val1: u4, val2: u4, carry_in: u1) struct { u4, u1 } {
+        const tmp, const carry_out_1 = @addWithOverflow(val1, carry_in);
+        const res, const carry_out_2 = @addWithOverflow(tmp, val2);
+        const carry_out = carry_out_1 | carry_out_2;
+        return .{ res, carry_out };
+    }
+
+    fn add_values(self: *AluRegister, val1: u8, val2: u8, with_carry: u1) u8 {
+        const val1_lo: u4 = @intCast(val1 & 0x0F);
+        const val2_lo: u4 = @intCast(val2 & 0x0F);
+
+        const val1_hi: u4 = @intCast((val1 & 0xF0) >> 4);
+        const val2_hi: u4 = @intCast((val2 & 0xF0) >> 4);
+
+        const carry_in = self.Lo.C & with_carry;
+
+        const res_lo, const halfcarry_out = AluRegister.adder_u4(val1_lo, val2_lo, carry_in);
+        const res_hi, const carry_out = AluRegister.adder_u4(val1_hi, val2_hi, halfcarry_out);
+
+        const res: u8 = (@as(u8, res_hi) << 4) | res_lo;
+        const zero = @intFromBool(res == 0);
+
+        self.Lo.C = carry_out;
+        self.Lo.H = halfcarry_out;
+        self.Lo.Z = zero;
+        self.Lo.N = 0;
         return res;
     }
 
-    pub fn and_(op1: u8, op2: u8) AluOp8Bit {
-        const res = op1 & op2;
-        return AluOp8Bit{
-            .result = res,
-            .zero = @intFromBool(res == 0),
-            .subtraction = 0,
-            .halfcarry = 1,
-            .carry = 0,
-        };
+    pub fn add(self: *AluRegister, summand: u8, with_carry: u1) void {
+        self.Hi = self.add_values(self.Hi, summand, with_carry);
     }
 
-    pub fn or_(op1: u8, op2: u8) AluOp8Bit {
-        const res = op1 | op2;
-        return AluOp8Bit{
-            .result = res,
-            .zero = @intFromBool(res == 0),
-            .subtraction = 0,
-            .halfcarry = 0,
-            .carry = 0,
-        };
+    pub fn sub(self: *AluRegister, subtrahend: u8, with_carry: u1) void {
+        self.Lo.C = ~(with_carry & self.Lo.C);
+        self.Hi = self.add_values(self.Hi, ~subtrahend, 1);
+        self.Lo.N = 1;
+        self.Lo.C = ~self.Lo.C;
+        self.Lo.H = ~self.Lo.H;
     }
 
-    pub fn xor_(op1: u8, op2: u8) AluOp8Bit {
-        const res = op1 ^ op2;
-        return AluOp8Bit{
-            .result = res,
-            .zero = @intFromBool(res == 0),
-            .subtraction = 0,
-            .halfcarry = 0,
-            .carry = 0,
-        };
+    pub fn inc(self: *AluRegister, val: u8) u8 {
+        var tmp = self.*;
+        tmp.Hi = val;
+        tmp.add(1, 0);
+
+        self.Lo.H = tmp.Lo.H;
+        self.Lo.N = tmp.Lo.N;
+        self.Lo.Z = tmp.Lo.Z;
+
+        return tmp.Hi;
     }
 
-    pub fn cpl(op: u8) AluOp8Bit {
-        const res = ~op;
-        return AluOp8Bit{
-            .result = res,
-            .zero = undefined,
-            .carry = undefined,
-            .subtraction = 1,
-            .halfcarry = 1,
-        };
+    pub fn dec(self: *AluRegister, val: u8) u8 {
+        var tmp = self.*;
+        tmp.Hi = val;
+        tmp.sub(1, 0);
+
+        self.Lo.H = tmp.Lo.H;
+        self.Lo.N = tmp.Lo.N;
+        self.Lo.Z = tmp.Lo.Z;
+
+        return tmp.Hi;
     }
 
-    pub fn daa(op: u8, c: u1, h: u1, n: u1) AluOp8Bit {
+    pub fn and_(self: *AluRegister, arg: u8) void {
+        self.Hi &= arg;
+        self.Lo.Z = @intFromBool(self.Hi == 0);
+        self.Lo.N = 0;
+        self.Lo.C = 0;
+        self.Lo.H = 1;
+    }
+
+    pub fn or_(self: *AluRegister, arg: u8) void {
+        self.Hi |= arg;
+        self.Lo.Z = @intFromBool(self.Hi == 0);
+        self.Lo.N = 0;
+        self.Lo.C = 0;
+        self.Lo.H = 0;
+    }
+
+    pub fn xor(self: *AluRegister, arg: u8) void {
+        self.Hi ^= arg;
+        self.Lo.Z = @intFromBool(self.Hi == 0);
+        self.Lo.N = 0;
+        self.Lo.C = 0;
+        self.Lo.H = 0;
+    }
+
+    pub fn ccf(self: *AluRegister) void {
+        self.Lo.C = ~self.Lo.C;
+        self.Lo.N = 0;
+        self.Lo.H = 0;
+    }
+
+    pub fn scf(self: *AluRegister) void {
+        self.Lo.C = 1;
+        self.Lo.N = 0;
+        self.Lo.H = 0;
+    }
+
+    pub fn cpl(self: *AluRegister) void {
+        self.Hi = ~self.Hi;
+        self.Lo.N = 1;
+        self.Lo.H = 1;
+    }
+
+    pub fn daa(self: *AluRegister) void {
         var adj: u8 = 0;
         var carry: u1 = 0;
-        if ((n == 0 and op & 0x0F > 0x09) or h == 1) {
+        if ((self.Lo.N == 0 and self.Hi & 0x0F > 0x09) or self.Lo.H == 1) {
             adj |= 0x06;
         }
-        if ((n == 0 and op > 0x99) or c == 1) {
+        if ((self.Lo.N == 0 and self.Hi > 0x99) or self.Lo.C == 1) {
             adj |= 0x60;
             carry = 1;
         }
 
-        const res, _ = if (n == 0)
-            @addWithOverflow(op, adj)
+        self.Hi, _ = if (self.Lo.N == 0)
+            @addWithOverflow(self.Hi, adj)
         else
-            @subWithOverflow(op, adj);
+            @subWithOverflow(self.Hi, adj);
 
-        return AluOp8Bit{
-            .result = res,
-            .zero = @intFromBool(res == 0),
-            .carry = carry,
-            .halfcarry = 0,
-            .subtraction = n,
-        };
+        self.Lo.Z = @intFromBool(self.Hi == 0);
+        self.Lo.C = carry;
+        self.Lo.H = 0;
     }
 };
 
 test "0b00000001 + 0b00000001" {
-    const res = AluOp8Bit.add(0b00000001, 0b00000001, 0);
-    try std.testing.expectEqual(0b00000010, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(0, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(0, res.subtraction);
+    const use_carry: u1 = 0;
+    const operand: u8 = 0b00000001;
+    var reg = AluRegister{
+        .Hi = 0b00000001,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0b00000010,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+
+    reg.add(operand, use_carry);
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "0b00000001 + 0b00000001 + carry-in 1" {
-    const res = AluOp8Bit.add(0b00000001, 0b00000001, 1);
-    try std.testing.expectEqual(0b00000011, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(0, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(0, res.subtraction);
+    const use_carry: u1 = 1;
+    const operand: u8 = 0b00000001;
+    var reg = AluRegister{
+        .Hi = 0b00000001,
+        .Lo = RegisterFlags{
+            .C = 1,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0b00000011,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+
+    reg.add(operand, use_carry);
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "0b11111111 + 0b00000001 (Zero flag case)" {
-    const res = AluOp8Bit.add(0b11111111, 0b00000001, 0);
-    try std.testing.expectEqual(0b00000000, res.result);
-    try std.testing.expectEqual(1, res.zero);
-    try std.testing.expectEqual(1, res.carry);
-    try std.testing.expectEqual(1, res.halfcarry);
-    try std.testing.expectEqual(0, res.subtraction);
+    const use_carry: u1 = 0;
+    const operand: u8 = 0b00000001;
+    var reg = AluRegister{
+        .Hi = 0b11111111,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0b00000000,
+        .Lo = RegisterFlags{
+            .C = 1,
+            .H = 1,
+            .N = 0,
+            .Z = 1,
+            .rest = 0,
+        },
+    };
+
+    reg.add(operand, use_carry);
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "0b10000000 + 0b10000000 (Carry-out from MSB)" {
-    const res = AluOp8Bit.add(0b10000000, 0b10000000, 0);
-    try std.testing.expectEqual(0b00000000, res.result);
-    try std.testing.expectEqual(1, res.zero);
-    try std.testing.expectEqual(1, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(0, res.subtraction);
+    const use_carry: u1 = 0;
+    const operand: u8 = 0b10000000;
+    var reg = AluRegister{
+        .Hi = 0b10000000,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0b00000000,
+        .Lo = RegisterFlags{
+            .C = 1,
+            .H = 0,
+            .N = 0,
+            .Z = 1,
+            .rest = 0,
+        },
+    };
+
+    reg.add(operand, use_carry);
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "0b11111111 + 0b11111111 + carry-in 1 (Full overflow)" {
-    const res = AluOp8Bit.add(0b11111111, 0b11111111, 1);
-    try std.testing.expectEqual(0b11111111, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(1, res.carry);
-    try std.testing.expectEqual(1, res.halfcarry);
-    try std.testing.expectEqual(0, res.subtraction);
+    const use_carry: u1 = 1;
+    const operand: u8 = 0b11111111;
+    var reg = AluRegister{
+        .Hi = 0b11111111,
+        .Lo = RegisterFlags{
+            .C = 1,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0b11111111,
+        .Lo = RegisterFlags{
+            .C = 1,
+            .H = 1,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+
+    reg.add(operand, use_carry);
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "0b00001111 + 0b00000001 (Half-carry set)" {
-    const res = AluOp8Bit.add(0b00001111, 0b00000001, 0);
-    try std.testing.expectEqual(0b00010000, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(0, res.carry);
-    try std.testing.expectEqual(1, res.halfcarry);
-    try std.testing.expectEqual(0, res.subtraction);
-}
+    const use_carry: u1 = 0;
+    const operand: u8 = 0b00000001;
+    var reg = AluRegister{
+        .Hi = 0b00001111,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0b00010000,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 1,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
 
-test "0b11110000 + 0b00001111 (No half-carry)" {
-    const res = AluOp8Bit.add(0b11110000, 0b00001111, 0);
-    try std.testing.expectEqual(0b11111111, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(0, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(0, res.subtraction);
-}
+    reg.add(operand, use_carry);
 
-test "0b10101010 + 0b01010101 (Alternating bits)" {
-    const res = AluOp8Bit.add(0b10101010, 0b01010101, 0);
-    try std.testing.expectEqual(0b11111111, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(0, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(0, res.subtraction);
-}
-
-test "0b11111111 + 0b00000000 + carry-in 1 (Carry-in causes carry-out)" {
-    const res = AluOp8Bit.add(0b11111111, 0b00000000, 1);
-    try std.testing.expectEqual(0b00000000, res.result);
-    try std.testing.expectEqual(1, res.zero);
-    try std.testing.expectEqual(1, res.carry);
-    try std.testing.expectEqual(1, res.halfcarry);
-    try std.testing.expectEqual(0, res.subtraction);
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "0b00000010 - 0b00000001" {
-    const res = AluOp8Bit.sub(0b00000010, 0b00000001, 0);
-    try std.testing.expectEqual(0b00000001, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(0, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(1, res.subtraction);
+    const use_carry: u1 = 0;
+    const operand: u8 = 0b00000001;
+    var reg = AluRegister{
+        .Hi = 0b00000010,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 1,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0b00000001,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 1,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+
+    reg.sub(operand, use_carry);
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "0b00000001 - 0b00000001" {
-    const res = AluOp8Bit.sub(0b00000001, 0b00000001, 0);
-    try std.testing.expectEqual(0b00000000, res.result);
-    try std.testing.expectEqual(1, res.zero);
-    try std.testing.expectEqual(0, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(1, res.subtraction);
-}
+    const use_carry: u1 = 0;
+    const operand: u8 = 0b00000001;
+    var reg = AluRegister{
+        .Hi = 0b00000001,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 1,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0b00000000,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 1,
+            .Z = 1,
+            .rest = 0,
+        },
+    };
 
-test "0b00000000 - 0b00000001 (underflow)" {
-    const res = AluOp8Bit.sub(0b00000000, 0b00000001, 0);
-    try std.testing.expectEqual(0b11111111, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(1, res.carry);
-    try std.testing.expectEqual(1, res.halfcarry);
-    try std.testing.expectEqual(1, res.subtraction);
-}
+    reg.sub(operand, use_carry);
 
-test "0b00010000 - 0b00000001 (half carry borrow)" {
-    const res = AluOp8Bit.sub(0b00010000, 0b00000001, 0);
-    try std.testing.expectEqual(0b00001111, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(0, res.carry);
-    try std.testing.expectEqual(1, res.halfcarry);
-    try std.testing.expectEqual(1, res.subtraction);
-}
-
-test "0b00010000 - 0b00001000 (half carry triggered)" {
-    const res = AluOp8Bit.sub(0b00010000, 0b00001000, 0);
-    try std.testing.expectEqual(0b00001000, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(0, res.carry);
-    try std.testing.expectEqual(1, res.halfcarry);
-    try std.testing.expectEqual(1, res.subtraction);
-}
-
-test "0b11111111 - 0b00000001 (no carry, decrement by 1)" {
-    const res = AluOp8Bit.sub(0b11111111, 0b00000001, 0);
-    try std.testing.expectEqual(0b11111110, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(0, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(1, res.subtraction);
-}
-
-test "0b00000000 - 0b00000000 (zero result, no carry)" {
-    const res = AluOp8Bit.sub(0b00000000, 0b00000000, 0);
-    try std.testing.expectEqual(0b00000000, res.result);
-    try std.testing.expectEqual(1, res.zero);
-    try std.testing.expectEqual(0, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(1, res.subtraction);
-}
-
-test "0b00000001 - 0b00000001 with carry in" {
-    const res = AluOp8Bit.sub(0b00000001, 0b00000001, 1);
-    try std.testing.expectEqual(0b11111111, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(1, res.carry);
-    try std.testing.expectEqual(1, res.halfcarry);
-    try std.testing.expectEqual(1, res.subtraction);
-}
-
-test "0b10000000 - 0b00000001 (no carry, regular subtraction)" {
-    const res = AluOp8Bit.sub(0b10000000, 0b00000001, 0);
-    try std.testing.expectEqual(0b01111111, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(0, res.carry);
-    try std.testing.expectEqual(1, res.halfcarry);
-    try std.testing.expectEqual(1, res.subtraction);
-}
-
-test "0b10000000 - 0b10000000 (zero result, no carry)" {
-    const res = AluOp8Bit.sub(0b10000000, 0b10000000, 0);
-    try std.testing.expectEqual(0b00000000, res.result);
-    try std.testing.expectEqual(1, res.zero);
-    try std.testing.expectEqual(0, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(1, res.subtraction);
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "0b11110000 & 0b11001100" {
-    const res = AluOp8Bit.and_(0b11110000, 0b11001100);
-    try std.testing.expectEqual(0b11000000, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(0, res.carry);
-    try std.testing.expectEqual(1, res.halfcarry);
-    try std.testing.expectEqual(0, res.subtraction);
+    const operand: u8 = 0b11001100;
+    var reg = AluRegister{
+        .Hi = 0b11110000,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0b11000000,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 1,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+
+    reg.and_(operand);
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "0b11110000 | 0b11001100" {
-    const res = AluOp8Bit.or_(0b11110000, 0b11001100);
-    try std.testing.expectEqual(0b11111100, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(0, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(0, res.subtraction);
+    const operand: u8 = 0b11001100;
+    var reg = AluRegister{
+        .Hi = 0b11110000,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0b11111100,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+
+    reg.or_(operand);
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "0b11110000 ^ 0b11001100" {
-    const res = AluOp8Bit.xor_(0b11110000, 0b11001100);
-    try std.testing.expectEqual(0b00111100, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(0, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(0, res.subtraction);
+    const operand: u8 = 0b11001100;
+    var reg = AluRegister{
+        .Hi = 0b11110000,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0b00111100,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+
+    reg.xor(operand);
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
+}
+
+test "CCF (Complement Carry Flag)" {
+    var reg = AluRegister{
+        .Hi = 0b00000000,
+        .Lo = RegisterFlags{
+            .C = 1,
+            .H = 1,
+            .N = 1,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0b00000000,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+
+    reg.ccf();
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
+}
+
+test "SCF (Set Carry Flag)" {
+    var reg = AluRegister{
+        .Hi = 0b00000000,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 1,
+            .N = 1,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0b00000000,
+        .Lo = RegisterFlags{
+            .C = 1,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+
+    reg.scf();
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
+}
+
+test "CPL (Complement Accumulator)" {
+    var reg = AluRegister{
+        .Hi = 0b10101010,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0b01010101,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 1,
+            .N = 1,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+
+    reg.cpl();
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "DAA a=0x00 n=0 h=0 c=0" {
-    const res = AluOp8Bit.daa(0x00, 0, 0, 0);
-    try std.testing.expectEqual(0x00, res.result);
-    try std.testing.expectEqual(1, res.zero);
-    try std.testing.expectEqual(0, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(0, res.subtraction);
+    var reg = AluRegister{
+        .Hi = 0x00,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0x00,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 1,
+            .rest = 0,
+        },
+    };
+
+    reg.daa();
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "DAA a=0x09, n=0, h=0, c=0" {
-    const res = AluOp8Bit.daa(0x09, 0, 0, 0);
-    try std.testing.expectEqual(0x09, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(0, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(0, res.subtraction);
+    var reg = AluRegister{
+        .Hi = 0x09,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0x09,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+
+    reg.daa();
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "DAA a=0x0A, n=0, h=0, c=0" {
-    const res = AluOp8Bit.daa(0x0A, 0, 0, 0);
-    try std.testing.expectEqual(0x10, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(0, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(0, res.subtraction);
+    var reg = AluRegister{
+        .Hi = 0x0A,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0x10,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+
+    reg.daa();
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "DAA a=0x19, n=0, h=0, c=0" {
-    const res = AluOp8Bit.daa(0x19, 0, 0, 0);
-    try std.testing.expectEqual(0x19, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(0, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(0, res.subtraction);
+    var reg = AluRegister{
+        .Hi = 0x19,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0x19,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+
+    reg.daa();
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "DAA a=0x1A, n=0, h=0, c=0" {
-    const res = AluOp8Bit.daa(0x1A, 0, 0, 0);
-    try std.testing.expectEqual(0x20, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(0, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(0, res.subtraction);
+    var reg = AluRegister{
+        .Hi = 0x1A,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0x20,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+
+    reg.daa();
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "DAA a=0x29, n=0, h=0, c=0" {
-    const res = AluOp8Bit.daa(0x29, 0, 0, 0);
-    try std.testing.expectEqual(0x29, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(0, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(0, res.subtraction);
+    var reg = AluRegister{
+        .Hi = 0x29,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0x29,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+
+    reg.daa();
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "DAA a=0x2A, n=0, h=0, c=0" {
-    const res = AluOp8Bit.daa(0x2A, 0, 0, 0);
-    try std.testing.expectEqual(0x30, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(0, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(0, res.subtraction);
+    var reg = AluRegister{
+        .Hi = 0x2A,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0x30,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+
+    reg.daa();
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "DAA a=0x39, n=0, h=0, c=0" {
-    const res = AluOp8Bit.daa(0x39, 0, 0, 0);
-    try std.testing.expectEqual(0x39, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(0, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(0, res.subtraction);
+    var reg = AluRegister{
+        .Hi = 0x39,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0x39,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+
+    reg.daa();
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "DAA a=0x3A, n=0, h=0, c=0" {
-    const res = AluOp8Bit.daa(0x3A, 0, 0, 0);
-    try std.testing.expectEqual(0x40, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(0, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(0, res.subtraction);
+    var reg = AluRegister{
+        .Hi = 0x3A,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0x40,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+
+    reg.daa();
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "DAA a=0x40, n=0, h=0, c=0" {
-    const res = AluOp8Bit.daa(0x40, 0, 0, 0);
-    try std.testing.expectEqual(0x40, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(0, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(0, res.subtraction);
+    var reg = AluRegister{
+        .Hi = 0x40,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0x40,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+
+    reg.daa();
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "DAA a=0x45, n=0, h=0, c=0" {
-    const res = AluOp8Bit.daa(0x45, 0, 0, 0);
-    try std.testing.expectEqual(0x45, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(0, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(0, res.subtraction);
+    var reg = AluRegister{
+        .Hi = 0x45,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0x45,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+
+    reg.daa();
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "DAA a=0x99, n=0, h=0, c=0" {
-    const res = AluOp8Bit.daa(0x99, 0, 0, 0);
-    try std.testing.expectEqual(0x99, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(0, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(0, res.subtraction);
+    var reg = AluRegister{
+        .Hi = 0x99,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0x99,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+
+    reg.daa();
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "DAA a=0x9A, n=0, h=0, c=0" {
-    const res = AluOp8Bit.daa(0x9A, 0, 0, 0);
-    try std.testing.expectEqual(0x00, res.result);
-    try std.testing.expectEqual(1, res.zero);
-    try std.testing.expectEqual(1, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(0, res.subtraction);
+    var reg = AluRegister{
+        .Hi = 0x9A,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0x00,
+        .Lo = RegisterFlags{
+            .C = 1,
+            .H = 0,
+            .N = 0,
+            .Z = 1,
+            .rest = 0,
+        },
+    };
+
+    reg.daa();
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "DAA a=0xA0, n=0, h=0, c=0" {
-    const res = AluOp8Bit.daa(0xA0, 0, 0, 0);
-    try std.testing.expectEqual(0x00, res.result);
-    try std.testing.expectEqual(1, res.zero);
-    try std.testing.expectEqual(1, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(0, res.subtraction);
+    var reg = AluRegister{
+        .Hi = 0xA0,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0x00,
+        .Lo = RegisterFlags{
+            .C = 1,
+            .H = 0,
+            .N = 0,
+            .Z = 1,
+            .rest = 0,
+        },
+    };
+
+    reg.daa();
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "DAA a=0xA5, n=0, h=0, c=0" {
-    const res = AluOp8Bit.daa(0xA5, 0, 0, 0);
-    try std.testing.expectEqual(0x05, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(1, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(0, res.subtraction);
+    var reg = AluRegister{
+        .Hi = 0xA5,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0x05,
+        .Lo = RegisterFlags{
+            .C = 1,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+
+    reg.daa();
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "DAA a=0xFF, n=0, h=0, c=0" {
-    const res = AluOp8Bit.daa(0xFF, 0, 0, 0);
-    try std.testing.expectEqual(0x65, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(1, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(0, res.subtraction);
+    var reg = AluRegister{
+        .Hi = 0xFF,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0x65,
+        .Lo = RegisterFlags{
+            .C = 1,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+
+    reg.daa();
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "DAA a=0x05, n=0, h=1, c=0" {
-    const res = AluOp8Bit.daa(0x05, 0, 1, 0);
-    try std.testing.expectEqual(0x0B, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(0, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(0, res.subtraction);
+    var reg = AluRegister{
+        .Hi = 0x05,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 1,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0x0B,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+
+    reg.daa();
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "DAA a=0x15, n=0, h=1, c=0" {
-    const res = AluOp8Bit.daa(0x15, 0, 1, 0);
-    try std.testing.expectEqual(0x1B, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(0, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(0, res.subtraction);
+    var reg = AluRegister{
+        .Hi = 0x15,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 1,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0x1B,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+
+    reg.daa();
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "DAA a=0x25, n=0, h=1, c=0" {
-    const res = AluOp8Bit.daa(0x25, 0, 1, 0);
-    try std.testing.expectEqual(0x2B, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(0, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(0, res.subtraction);
+    var reg = AluRegister{
+        .Hi = 0x25,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 1,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0x2B,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+
+    reg.daa();
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "DAA a=0x35, n=0, h=1, c=0" {
-    const res = AluOp8Bit.daa(0x35, 0, 1, 0);
-    try std.testing.expectEqual(0x3B, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(0, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(0, res.subtraction);
+    var reg = AluRegister{
+        .Hi = 0x35,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 1,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0x3B,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+
+    reg.daa();
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "DAA a=0x3F, n=0, h=1, c=0" {
-    const res = AluOp8Bit.daa(0x3F, 0, 1, 0);
-    try std.testing.expectEqual(0x45, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(0, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(0, res.subtraction);
+    var reg = AluRegister{
+        .Hi = 0x3F,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 1,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0x45,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+
+    reg.daa();
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "DAA a=0x9A, n=0, h=1, c=0" {
-    const res = AluOp8Bit.daa(0x9A, 0, 1, 0);
-    try std.testing.expectEqual(0x00, res.result);
-    try std.testing.expectEqual(1, res.zero);
-    try std.testing.expectEqual(1, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(0, res.subtraction);
+    var reg = AluRegister{
+        .Hi = 0x9A,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 1,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0x00,
+        .Lo = RegisterFlags{
+            .C = 1,
+            .H = 0,
+            .N = 0,
+            .Z = 1,
+            .rest = 0,
+        },
+    };
+
+    reg.daa();
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "DAA a=0x2F, n=1, h=1, c=0" {
-    const res = AluOp8Bit.daa(0x2F, 0, 1, 1);
-    try std.testing.expectEqual(0x29, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(0, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(1, res.subtraction);
+    var reg = AluRegister{
+        .Hi = 0x2F,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 1,
+            .N = 1,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0x29,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 1,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+
+    reg.daa();
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "DAA a=0x42, n=1, h=1, c=0" {
-    const res = AluOp8Bit.daa(0x42, 0, 1, 1);
-    try std.testing.expectEqual(0x3C, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(0, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(1, res.subtraction);
+    var reg = AluRegister{
+        .Hi = 0x42,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 1,
+            .N = 1,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0x3C,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 1,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+
+    reg.daa();
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "DAA a=0x9A, n=1, h=1, c=0" {
-    const res = AluOp8Bit.daa(0x9A, 0, 1, 1);
-    try std.testing.expectEqual(0x94, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(0, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(1, res.subtraction);
+    var reg = AluRegister{
+        .Hi = 0x9A,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 1,
+            .N = 1,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0x94,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 1,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+
+    reg.daa();
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "DAA a=0x99, n=1, h=1, c=1" {
-    const res = AluOp8Bit.daa(0x99, 1, 1, 1);
-    try std.testing.expectEqual(0x33, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(1, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(1, res.subtraction);
+    var reg = AluRegister{
+        .Hi = 0x99,
+        .Lo = RegisterFlags{
+            .C = 1,
+            .H = 1,
+            .N = 1,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0x33,
+        .Lo = RegisterFlags{
+            .C = 1,
+            .H = 0,
+            .N = 1,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+
+    reg.daa();
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
 
 test "DAA a=0xFF, n=1, h=1, c=1" {
-    const res = AluOp8Bit.daa(0xFF, 1, 1, 1);
-    try std.testing.expectEqual(0x99, res.result);
-    try std.testing.expectEqual(0, res.zero);
-    try std.testing.expectEqual(1, res.carry);
-    try std.testing.expectEqual(0, res.halfcarry);
-    try std.testing.expectEqual(1, res.subtraction);
+    var reg = AluRegister{
+        .Hi = 0xFF,
+        .Lo = RegisterFlags{
+            .C = 1,
+            .H = 1,
+            .N = 1,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0x99,
+        .Lo = RegisterFlags{
+            .C = 1,
+            .H = 0,
+            .N = 1,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+
+    reg.daa();
+
+    try std.testing.expectEqual(expected_reg.all(), reg.all());
 }
