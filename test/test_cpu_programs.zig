@@ -164,3 +164,107 @@ test "LD only integ test (16-bit)" {
     try std.testing.expectEqual(0xFF, cpu.mmu.read(0xC015));
     try std.testing.expectEqual(0x99, cpu.mmu.read(0xC01F));
 }
+
+test "Arithmetic (8-bit)" {
+    // Seed values into memory and do arithmetic with them. Save flags to memory.
+
+    const code =
+        \\ ; Initialize SP
+        \\ LD SP, 0xFFFF
+        \\
+        \\ ; Setup
+        \\ LD A, 0xF0         ; A = 0xF0
+        \\ LD B, 0x30         ; B = 0x30
+        \\ ADD B              ; A = 0xF0 + 0x30 = 0x20 (C=1)
+        \\ PUSH AF            ; Save flags (Carry should be set)
+        \\
+        \\ LD C, 0x20         ; C = 0x20
+        \\ SUB C              ; A = 0x20 - 0x20 = 0x00 (Z=1)
+        \\ PUSH AF            ; Save flags (Zero should be set)
+        \\
+        \\ ; Additional standard ops
+        \\ LD A, 0x12         ; A = 0x12
+        \\ LD B, 0x34         ; B = 0x34
+        \\ ADD B              ; A = 0x12 + 0x34 = 0x46
+        \\ PUSH AF
+        \\
+        \\ LD C, 0x08
+        \\ SUB C              ; A = 0x46 - 0x08 = 0x3E
+        \\ PUSH AF
+        \\
+        \\ INC A              ; A = 0x3F
+        \\ PUSH AF
+        \\
+        \\ DEC A              ; A = 0x3E
+        \\ PUSH AF
+        \\
+        \\ LD D, 0xFF
+        \\ AND D              ; A = A & D = 0x3E
+        \\ PUSH AF
+        \\
+        \\ OR C               ; A = A | C = 0x3E
+        \\ PUSH AF
+        \\
+        \\ XOR B              ; A = 0x0A
+        \\ PUSH AF
+        \\
+        \\ CP C               ; Compare A vs C (0x0A - 0x08)
+        \\ PUSH AF
+        \\
+        \\ ; Store registers
+        \\ LD HL, 0xC000
+        \\ LD (HL), A
+        \\ INC L
+        \\ LD (HL), B
+        \\ INC L
+        \\ LD (HL), C
+        \\ INC L
+        \\ LD (HL), D
+    ;
+    var program = try lib.assembler.translate(code, std.testing.allocator);
+    defer std.testing.allocator.free(program);
+
+    program = try std.testing.allocator.realloc(program, program.len + 1);
+    program[program.len - 1] = 0xFD; // Illegal instruction signals end of program
+
+    const cpu = try run_program(
+        "Arithmetic integ test (8-bit)",
+        program,
+    );
+    defer destroy_cpu(&cpu);
+
+    try std.testing.expectEqual(program.len, cpu.reg.PC);
+
+    try std.testing.expectEqual(0x0A, cpu.reg.AF.Hi);
+    try std.testing.expectEqual(0x34, cpu.reg.BC.Hi);
+    try std.testing.expectEqual(0x08, cpu.reg.BC.Lo);
+    try std.testing.expectEqual(0xFF, cpu.reg.DE.Hi);
+    try std.testing.expectEqual(0xC003, cpu.reg.HL.all());
+    try std.testing.expectEqual(0xFFEB, cpu.reg.SP.all());
+
+    try std.testing.expectEqual(0x0A, cpu.mmu.read(0xC000));
+    try std.testing.expectEqual(0x34, cpu.mmu.read(0xC001));
+    try std.testing.expectEqual(0x08, cpu.mmu.read(0xC002));
+    try std.testing.expectEqual(0xFF, cpu.mmu.read(0xC003));
+
+    try std.testing.expectEqual(0x20, cpu.mmu.read(0xFFFE));
+    try std.testing.expectEqual(0b00010000, cpu.mmu.read(0xFFFD));
+    try std.testing.expectEqual(0x00, cpu.mmu.read(0xFFFC));
+    try std.testing.expectEqual(0b11000000, cpu.mmu.read(0xFFFB));
+    try std.testing.expectEqual(0x46, cpu.mmu.read(0xFFFA));
+    try std.testing.expectEqual(0b00000000, cpu.mmu.read(0xFFF9));
+    try std.testing.expectEqual(0x3E, cpu.mmu.read(0xFFF8));
+    try std.testing.expectEqual(0b01100000, cpu.mmu.read(0xFFF7));
+    try std.testing.expectEqual(0x3F, cpu.mmu.read(0xFFF6));
+    try std.testing.expectEqual(0b00000000, cpu.mmu.read(0xFFF5));
+    try std.testing.expectEqual(0x3E, cpu.mmu.read(0xFFF4));
+    try std.testing.expectEqual(0b01000000, cpu.mmu.read(0xFFF3));
+    try std.testing.expectEqual(0x3E, cpu.mmu.read(0xFFF2));
+    try std.testing.expectEqual(0b00100000, cpu.mmu.read(0xFFF1));
+    try std.testing.expectEqual(0x3E, cpu.mmu.read(0xFFF0));
+    try std.testing.expectEqual(0b00000000, cpu.mmu.read(0xFFEF));
+    try std.testing.expectEqual(0x0A, cpu.mmu.read(0xFFEE));
+    try std.testing.expectEqual(0b00000000, cpu.mmu.read(0xFFED));
+    try std.testing.expectEqual(0x0A, cpu.mmu.read(0xFFEC));
+    try std.testing.expectEqual(0b01000000, cpu.mmu.read(0xFFEB));
+}

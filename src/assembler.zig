@@ -977,8 +977,13 @@ const Register8BitArgumentDefinition = union(enum) {
     Register: Register8,
 };
 
+const Register16BitOffsetVariety = union(enum) {
+    LikeLD: usize,
+    LikePUSH: usize,
+};
+
 const Register16BitArgumentDefinition = union(enum) {
-    Offset: usize,
+    Offset: Register16BitOffsetVariety,
     Register: Register16,
 };
 
@@ -1027,8 +1032,11 @@ const ArgumentDefinition = union(ArgumentType) {
             },
             .Register16Bit => |x| {
                 switch (x) {
-                    .Offset => |offset| {
-                        const reg_code = try ArgumentDefinition.encodeRegister16(arg.Register16Bit);
+                    .Offset => |offset_def| {
+                        const reg_code, const offset = switch (offset_def) {
+                            .LikeLD => |off| .{ try ArgumentDefinition.encodeRegister16_1(arg.Register16Bit), off },
+                            .LikePUSH => |off| .{ try ArgumentDefinition.encodeRegister16_2(arg.Register16Bit), off },
+                        };
                         const new_opcode = opcode | (reg_code << @intCast(offset));
                         return .{ new_opcode, null, null };
                     },
@@ -1098,12 +1106,24 @@ const ArgumentDefinition = union(ArgumentType) {
         };
     }
 
-    fn encodeRegister16(r: Register16) !u8 {
+    fn encodeRegister16_1(r: Register16) !u8 {
         return switch (r) {
             Register16.BC => 0b00,
             Register16.DE => 0b01,
             Register16.HL => 0b10,
             Register16.SP => 0b11,
+            else => {
+                return AssemblerError.InvalidInstructionArguments;
+            },
+        };
+    }
+
+    fn encodeRegister16_2(r: Register16) !u8 {
+        return switch (r) {
+            Register16.BC => 0b00,
+            Register16.DE => 0b01,
+            Register16.HL => 0b10,
+            Register16.AF => 0b11,
             else => {
                 return AssemblerError.InvalidInstructionArguments;
             },
@@ -1206,10 +1226,31 @@ test "ArgumentDefinition.encode Register8Bit register failure" {
     try std.testing.expectError(AssemblerError.InvalidInstructionArguments, actual);
 }
 
-test "ArgumentDefinition.encode Register16Bit offset" {
+test "ArgumentDefinition.encode Register16Bit offset 1" {
     const definition = ArgumentDefinition{
         .Register16Bit = Register16BitArgumentDefinition{
-            .Offset = 5,
+            .Offset = Register16BitOffsetVariety{
+                .LikePUSH = 5,
+            },
+        },
+    };
+    const argument = Argument{
+        .Register16Bit = Register16.AF,
+    };
+    const opcode = 0x00;
+    const expected: struct { u8, ?u8, ?u8 } = .{ 0b01100000, null, null };
+
+    const actual = try definition.encode(opcode, argument);
+
+    try std.testing.expectEqualDeep(expected, actual);
+}
+
+test "ArgumentDefinition.encode Register16Bit offset 2" {
+    const definition = ArgumentDefinition{
+        .Register16Bit = Register16BitArgumentDefinition{
+            .Offset = Register16BitOffsetVariety{
+                .LikeLD = 5,
+            },
         },
     };
     const argument = Argument{
@@ -1747,7 +1788,9 @@ const defined_opcodes =
         .instr = Instruction.LD,
         .arg1 = ArgumentDefinition{
             .Register16Bit = Register16BitArgumentDefinition{
-                .Offset = 4,
+                .Offset = Register16BitOffsetVariety{
+                    .LikeLD = 4,
+                },
             },
         },
         .arg2 = ArgumentDefinition{
@@ -1759,7 +1802,9 @@ const defined_opcodes =
         .instr = Instruction.LD,
         .arg1 = ArgumentDefinition{
             .Register16Bit = Register16BitArgumentDefinition{
-                .Offset = 4,
+                .Offset = Register16BitOffsetVariety{
+                    .LikeLD = 4,
+                },
             },
         },
         .arg2 = ArgumentDefinition{
@@ -1771,7 +1816,9 @@ const defined_opcodes =
         .instr = Instruction.LD,
         .arg1 = ArgumentDefinition{
             .Register16Bit = Register16BitArgumentDefinition{
-                .Offset = 4,
+                .Offset = Register16BitOffsetVariety{
+                    .LikeLD = 4,
+                },
             },
         },
         .arg2 = ArgumentDefinition{
@@ -1809,7 +1856,9 @@ const defined_opcodes =
         .instr = Instruction.PUSH,
         .arg1 = ArgumentDefinition{
             .Register16Bit = Register16BitArgumentDefinition{
-                .Offset = 4,
+                .Offset = Register16BitOffsetVariety{
+                    .LikePUSH = 4,
+                },
             },
         },
         .arg2 = null,
@@ -1819,7 +1868,9 @@ const defined_opcodes =
         .instr = Instruction.POP,
         .arg1 = ArgumentDefinition{
             .Register16Bit = Register16BitArgumentDefinition{
-                .Offset = 4,
+                .Offset = Register16BitOffsetVariety{
+                    .LikePUSH = 4,
+                },
             },
         },
         .arg2 = null,
