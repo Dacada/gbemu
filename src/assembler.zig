@@ -376,38 +376,58 @@ const Argument = union(ArgumentType) {
             start = 2;
         }
 
-        const number = std.fmt.parseInt(i32, input[start..], base) catch null;
-        if (number != null) {
-            if (number.? > 0xFFFF or number.? < -128) {
+        var force_signed = false;
+        if (input[0] == 'S' and input[1] == 'P' and (input[2] == '+' or input[2] == '-')) {
+            force_signed = true;
+            if (input[2] == '+') {
+                start = 3;
+            } else {
+                start = 2;
+            }
+        }
+
+        const number = std.fmt.parseInt(i32, input[start..], base) catch {
+            return null;
+        };
+
+        if (number > 0xFFFF or number < -128) {
+            return AssemblerError.InvalidArgument;
+        }
+        if (number > 0xFF) {
+            if (force_signed) {
                 return AssemblerError.InvalidArgument;
-            }
-            if (number.? > 0xFF) {
-                if (indirect) {
-                    return Argument{
-                        .IndirectImmediate16Bit = @intCast(number.?),
-                    };
-                } else {
-                    return Argument{
-                        .Immediate16Bit = @intCast(number.?),
-                    };
-                }
-            }
-            if (number.? < 0) {
-                return Argument{
-                    .Immediate8BitSigned = @intCast(number.?),
-                };
             }
             if (indirect) {
                 return Argument{
-                    .IndirectImmediate8Bit = @intCast(number.?),
+                    .IndirectImmediate16Bit = @intCast(number),
+                };
+            } else {
+                return Argument{
+                    .Immediate16Bit = @intCast(number),
                 };
             }
+        }
+        if (number < 0) {
             return Argument{
-                .Immediate8BitUnsigned = @intCast(number.?),
+                .Immediate8BitSigned = @intCast(number),
             };
         }
-
-        return null;
+        if (indirect) {
+            if (force_signed) {
+                return AssemblerError.InvalidArgument;
+            }
+            return Argument{
+                .IndirectImmediate8Bit = @intCast(number),
+            };
+        }
+        if (force_signed) {
+            return Argument{
+                .Immediate8BitSigned = @intCast(number),
+            };
+        }
+        return Argument{
+            .Immediate8BitUnsigned = @intCast(number),
+        };
     }
 
     fn fromToken(token: *const Token, allocator: std.mem.Allocator) !Argument {
@@ -658,6 +678,50 @@ test "parseImmediate 7" {
     const indirect = false;
     const expected = Argument{
         .Immediate8BitUnsigned = 100,
+    };
+
+    const actual = Argument.parseImmediate(input, indirect);
+
+    try std.testing.expectEqual(expected, actual);
+}
+
+test "parseImmediate 8" {
+    const input = "SP+";
+    const indirect = false;
+    const expected: ?Argument = null;
+
+    const actual = Argument.parseImmediate(input, indirect);
+
+    try std.testing.expectEqual(expected, actual);
+}
+
+test "parseImmediate 9" {
+    const input = "SP+10";
+    const indirect = true;
+    const expected = AssemblerError.InvalidArgument;
+
+    const actual = Argument.parseImmediate(input, indirect);
+
+    try std.testing.expectError(expected, actual);
+}
+
+test "parseImmediate 10" {
+    const input = "SP+10";
+    const indirect = false;
+    const expected = Argument{
+        .Immediate8BitSigned = 10,
+    };
+
+    const actual = Argument.parseImmediate(input, indirect);
+
+    try std.testing.expectEqual(expected, actual);
+}
+
+test "parseImmediate 11" {
+    const input = "SP-10";
+    const indirect = false;
+    const expected = Argument{
+        .Immediate8BitSigned = -10,
     };
 
     const actual = Argument.parseImmediate(input, indirect);
@@ -955,7 +1019,6 @@ const ArgumentDefinition = union(ArgumentType) {
                     },
                     .Register => |register| {
                         if (arg.Register8Bit != register) {
-                            logError("Unexpected register.", .{});
                             return AssemblerError.InvalidInstructionArguments;
                         }
                         return .{ opcode, null, null };
@@ -971,7 +1034,6 @@ const ArgumentDefinition = union(ArgumentType) {
                     },
                     .Register => |register| {
                         if (arg.Register16Bit != register) {
-                            logError("Unexpected register.", .{});
                             return AssemblerError.InvalidInstructionArguments;
                         }
                         return .{ opcode, null, null };
@@ -989,28 +1051,24 @@ const ArgumentDefinition = union(ArgumentType) {
             },
             .IndirectRegister8Bit => |register| {
                 if (arg.IndirectRegister8Bit != register) {
-                    logError("Unexpected register.", .{});
                     return AssemblerError.InvalidInstructionArguments;
                 }
                 return .{ opcode, null, null };
             },
             .IndirectRegister16Bit => |register| {
                 if (arg.IndirectRegister16Bit != register) {
-                    logError("Unexpected register.", .{});
                     return AssemblerError.InvalidInstructionArguments;
                 }
                 return .{ opcode, null, null };
             },
             .IndirectRegister16BitInc => |register| {
                 if (arg.IndirectRegister16BitInc != register) {
-                    logError("Unexpected register.", .{});
                     return AssemblerError.InvalidInstructionArguments;
                 }
                 return .{ opcode, null, null };
             },
             .IndirectRegister16BitDec => |register| {
                 if (arg.IndirectRegister16BitDec != register) {
-                    logError("Unexpected register.", .{});
                     return AssemblerError.InvalidInstructionArguments;
                 }
                 return .{ opcode, null, null };
@@ -1035,7 +1093,6 @@ const ArgumentDefinition = union(ArgumentType) {
             Register8.L => 0b101,
             Register8.A => 0b111,
             else => {
-                logError("Unexpected register.", .{});
                 return AssemblerError.InvalidInstructionArguments;
             },
         };
@@ -1048,7 +1105,6 @@ const ArgumentDefinition = union(ArgumentType) {
             Register16.HL => 0b10,
             Register16.SP => 0b11,
             else => {
-                logError("Unexpected register.", .{});
                 return AssemblerError.InvalidInstructionArguments;
             },
         };
@@ -1458,6 +1514,7 @@ const defined_opcodes =
         .arg2 = null,
         .base_opcode = 0b01010101,
     },
+
     OpcodeDefinition{
         .instr = Instruction.LD,
         .arg1 = ArgumentDefinition{
@@ -1528,7 +1585,7 @@ const defined_opcodes =
         .arg2 = ArgumentDefinition{
             .IndirectRegister16Bit = Register16.BC,
         },
-        .base_opcode = 0b00110110,
+        .base_opcode = 0b00001010,
     },
     OpcodeDefinition{
         .instr = Instruction.LD,
@@ -1694,6 +1751,18 @@ const defined_opcodes =
             },
         },
         .arg2 = ArgumentDefinition{
+            .Immediate8BitUnsigned = {},
+        },
+        .base_opcode = 0b00_00_0001,
+    },
+    OpcodeDefinition{
+        .instr = Instruction.LD,
+        .arg1 = ArgumentDefinition{
+            .Register16Bit = Register16BitArgumentDefinition{
+                .Offset = 4,
+            },
+        },
+        .arg2 = ArgumentDefinition{
             .Immediate16Bit = {},
         },
         .base_opcode = 0b00_00_0001,
@@ -1760,7 +1829,7 @@ const defined_opcodes =
         .instr = Instruction.LD,
         .arg1 = ArgumentDefinition{
             .Register16Bit = Register16BitArgumentDefinition{
-                .Register = Register16.SP,
+                .Register = Register16.HL,
             },
         },
         .arg2 = ArgumentDefinition{
@@ -1772,7 +1841,7 @@ const defined_opcodes =
         .instr = Instruction.LD,
         .arg1 = ArgumentDefinition{
             .Register16Bit = Register16BitArgumentDefinition{
-                .Register = Register16.SP,
+                .Register = Register16.HL,
             },
         },
         .arg2 = ArgumentDefinition{
@@ -2095,6 +2164,7 @@ const Opcode = struct {
     }
 
     fn encode(self: *const Opcode, stream: *std.ArrayList(u8)) ![]u8 {
+        var latest_error: ?AssemblerError = null;
         for (defined_opcodes) |opcode_definition| {
             if (opcode_definition.instr != self.instr) {
                 continue;
@@ -2118,12 +2188,12 @@ const Opcode = struct {
 
             var opcode = opcode_definition.base_opcode;
             opcode, const imm1, const imm2 = if (opcode_definition.arg1) |arg| arg.encode(opcode, self.arg1.?) catch |e| {
-                logError("Line {d}. Invalid argument.", .{self.line});
-                return e;
+                latest_error = e;
+                continue;
             } else .{ opcode, null, null };
             opcode, const imm3, const imm4 = if (opcode_definition.arg2) |arg| arg.encode(opcode, self.arg2.?) catch |e| {
-                logError("Line {d}. Invalid argument.", .{self.line});
-                return e;
+                latest_error = e;
+                continue;
             } else .{ opcode, null, null };
 
             var size: usize = 0;
@@ -2150,7 +2220,7 @@ const Opcode = struct {
         }
 
         logError("Line {d}: Invalid instruction/argument combination.", .{self.line});
-        return AssemblerError.InvalidInstructionArguments;
+        return latest_error orelse AssemblerError.InvalidInstructionArguments;
     }
 };
 
@@ -2752,4 +2822,17 @@ test "assembler bad label" {
     const actual = assembler(opcodes, &labelMap, std.testing.allocator);
 
     try std.testing.expectError(AssemblerError.UndefinedLabel, actual);
+}
+
+pub fn translate(code: []const u8, allocator: std.mem.Allocator) ![]u8 {
+    const tokens = try lexer(code, allocator);
+    defer allocator.free(tokens);
+
+    var labelMap, const opcodes = try parser(tokens, allocator);
+    defer labelMap.deinit();
+    defer allocator.free(opcodes);
+    defer freeLabelMap(&labelMap, allocator);
+    defer freeOpcodes(opcodes, allocator);
+
+    return assembler(opcodes, &labelMap, allocator);
 }
