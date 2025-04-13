@@ -206,85 +206,56 @@ test "toUpper" {
     try std.testing.expectEqualSlices(u8, expected, actual);
 }
 
-fn validateLabel(label: *const Token) !void {
-    if (label.source[0] != '_' and !std.ascii.isAlphabetic(label.source[0])) {
-        logError("Line {d}: Invalid label '{s}'.", .{ label.line, label.source });
+fn validateLabel(source: []const u8, line: usize) !void {
+    if (source[0] != '_' and !std.ascii.isAlphabetic(source[0])) {
+        logError("Line {d}: Invalid label '{s}'.", .{ line, source });
         return AssemblerError.InvalidLabel;
     }
-    for (label.source) |c| {
+    for (source) |c| {
         if (!std.ascii.isAlphanumeric(c) and c != '_') {
-            logError("Line {d}: Invalid label '{s}'.", .{ label.line, label.source });
+            logError("Line {d}: Invalid label '{s}'.", .{ line, source });
             return AssemblerError.InvalidLabel;
         }
     }
 }
 
 test "validateLabel incorrect 1" {
-    const value = Token{
-        .line = 0,
-        .source = "-0x1",
-        .which = TokenKind.Label,
-    };
     const expected = AssemblerError.InvalidLabel;
-
-    const actual = validateLabel(&value);
-
+    const actual = validateLabel("-0x1", 0);
     try std.testing.expectError(expected, actual);
 }
 
 test "validateLabel incorrect 2" {
-    const value = Token{
-        .line = 0,
-        .source = "_0$1",
-        .which = TokenKind.Label,
-    };
     const expected = AssemblerError.InvalidLabel;
-
-    const actual = validateLabel(&value);
-
+    const actual = validateLabel("_0$1", 0);
     try std.testing.expectError(expected, actual);
 }
 
 test "validateLabel correct" {
-    const value = Token{
-        .line = 0,
-        .source = "_01",
-        .which = TokenKind.Label,
-    };
-    try validateLabel(&value);
+    try validateLabel("_01", 0);
 }
 
-const Instruction = enum { TESTINGONLY, LD, LDH, PUSH, POP, ADD, ADC, SUB, SBC, CP, INC, DEC, AND, OR, XOR, CCF, SCF, DAA, CPL, JMP };
+const Instruction = enum { LD, LDH, PUSH, POP, ADD, ADC, SUB, SBC, CP, INC, DEC, AND, OR, XOR, CCF, SCF, DAA, CPL };
 const Register8 = enum { A, B, C, D, E, F, H, L };
 const Register16 = enum { AF, BC, DE, HL, SP };
-const ArgumentType = enum {
-    Immediate8BitUnsigned,
-    Immediate8BitSigned,
-    Immediate16Bit,
+const BasicArgumentType = enum {
+    Immediate,
     Register8Bit,
     Register16Bit,
-    IndirectImmediate8Bit,
-    IndirectImmediate16Bit,
-    IndirectRegister8Bit,
-    IndirectRegister16Bit,
-    IndirectRegister16BitInc,
-    IndirectRegister16BitDec,
     Label,
 };
 
-const Argument = union(ArgumentType) {
-    Immediate8BitUnsigned: u8,
-    Immediate8BitSigned: i8,
-    Immediate16Bit: u16,
-    Register8Bit: Register8,
-    Register16Bit: Register16,
-    IndirectImmediate8Bit: u8,
-    IndirectImmediate16Bit: u16,
-    IndirectRegister8Bit: Register8,
-    IndirectRegister16Bit: Register16,
-    IndirectRegister16BitInc: Register16,
-    IndirectRegister16BitDec: Register16,
-    Label: []u8,
+const Argument = struct {
+    arg: union(BasicArgumentType) {
+        Immediate: i32,
+        Register8Bit: Register8,
+        Register16Bit: Register16,
+        Label: []const u8,
+    },
+
+    indirect: bool,
+    incDec: ?bool,
+    offset: ?i8,
 
     fn parseIndirect(input: []const u8) !struct { bool, []const u8 } {
         if (input[0] == '(') {
@@ -303,69 +274,64 @@ const Argument = union(ArgumentType) {
         }
     }
 
-    fn parseReg8(input: []const u8, indirect: bool) !?Argument {
-        const reg8 = std.meta.stringToEnum(Register8, input);
-        if (reg8 != null) {
-            if (indirect) {
-                return Argument{
-                    .IndirectRegister8Bit = reg8.?,
-                };
-            }
-            return Argument{
-                .Register8Bit = reg8.?,
-            };
-        }
-
-        return null;
+    fn parseIncDec(input: []const u8) struct { ?bool, []const u8 } {
+        return switch (input[input.len - 1]) {
+            '+' => .{
+                true,
+                input[0..(input.len - 1)],
+            },
+            '-' => .{
+                false,
+                input[0..(input.len - 1)],
+            },
+            else => .{
+                null,
+                input,
+            },
+        };
     }
 
-    fn parseReg16(input: []const u8, indirect: bool) !?Argument {
-        var incdec: ?bool = null;
-        var inputForReg16: []const u8 = undefined;
-        if (input[input.len - 1] == '+') {
-            incdec = true;
-            inputForReg16 = input[0..(input.len - 1)];
-        } else if (input[input.len - 1] == '-') {
-            incdec = false;
-            inputForReg16 = input[0..(input.len - 1)];
-        } else {
-            inputForReg16 = input;
+    fn parseOffset(input: []const u8) struct { ?i8, []const u8 } {
+        if (input[0] == '+' or input[0] == '-') {
+            return .{ null, input };
         }
 
-        const reg16 = std.meta.stringToEnum(Register16, inputForReg16);
-        if (reg16 != null) {
-            if (incdec == null) {
-                if (indirect) {
-                    return Argument{
-                        .IndirectRegister16Bit = reg16.?,
-                    };
-                } else {
-                    return Argument{
-                        .Register16Bit = reg16.?,
-                    };
-                }
-            }
-            if (!indirect) {
-                return AssemblerError.InvalidArgument;
-            }
-            if (incdec.?) {
-                return Argument{
-                    .IndirectRegister16BitInc = reg16.?,
-                };
-            } else {
-                return Argument{
-                    .IndirectRegister16BitDec = reg16.?,
-                };
+        var idx: ?usize = null;
+        for (input, 0..) |c, i| {
+            if (c == '+' or c == '-') {
+                idx = i;
+                break;
             }
         }
 
-        return null;
+        if (idx == null) {
+            return .{ null, input };
+        }
+
+        const offset = parseImmediate(input[idx.?..]);
+        if (offset == null) {
+            return .{ null, input };
+        }
+
+        if (offset.? < std.math.minInt(i8) or offset.? > std.math.maxInt(i8)) {
+            return .{ null, input };
+        }
+
+        return .{ @intCast(offset.?), input[0..idx.?] };
     }
 
-    fn parseImmediate(input: []const u8, indirect: bool) !?Argument {
+    fn parseReg8(input: []const u8) ?Register8 {
+        return std.meta.stringToEnum(Register8, input);
+    }
+
+    fn parseReg16(input: []const u8) ?Register16 {
+        return std.meta.stringToEnum(Register16, input);
+    }
+
+    fn parseBase(input: []const u8) struct { u8, []const u8 } {
         var base: u8 = 10;
         var start: usize = 0;
-        if (input[0] == '0') {
+        if (input[0] == '0' and input.len >= 2) {
             if (input[1] == 'B') {
                 base = 2;
             } else if (input[1] == 'X') {
@@ -375,107 +341,118 @@ const Argument = union(ArgumentType) {
             }
             start = 2;
         }
+        return .{ base, input[start..] };
+    }
 
-        var force_signed = false;
-        if (input[0] == 'S' and input[1] == 'P' and (input[2] == '+' or input[2] == '-')) {
-            force_signed = true;
-            if (input[2] == '+') {
-                start = 3;
-            } else {
-                start = 2;
-            }
-        }
+    fn parseImmediate(input: []const u8) ?i32 {
+        const base, const rest = Argument.parseBase(input);
+        return std.fmt.parseInt(i32, rest, base) catch null;
+    }
 
-        const number = std.fmt.parseInt(i32, input[start..], base) catch {
-            return null;
-        };
+    fn fromTokenInner(token: []const u8, allocator: std.mem.Allocator) !Argument {
+        var source = token;
 
-        if (number > 0xFFFF or number < -128) {
-            return AssemblerError.InvalidArgument;
-        }
-        if (number > 0xFF) {
-            if (force_signed) {
-                return AssemblerError.InvalidArgument;
-            }
-            if (indirect) {
-                return Argument{
-                    .IndirectImmediate16Bit = @intCast(number),
-                };
-            } else {
-                return Argument{
-                    .Immediate16Bit = @intCast(number),
-                };
-            }
-        }
-        if (number < 0) {
+        const indirect, source = try Argument.parseIndirect(source);
+        const incDec, source = Argument.parseIncDec(source);
+        const offset, source = Argument.parseOffset(source);
+
+        if (Argument.parseReg8(source)) |reg| {
             return Argument{
-                .Immediate8BitSigned = @intCast(number),
+                .arg = .{
+                    .Register8Bit = reg,
+                },
+                .indirect = indirect,
+                .incDec = incDec,
+                .offset = offset,
             };
         }
-        if (indirect) {
-            if (force_signed) {
-                return AssemblerError.InvalidArgument;
-            }
+
+        if (Argument.parseReg16(source)) |reg| {
             return Argument{
-                .IndirectImmediate8Bit = @intCast(number),
+                .arg = .{
+                    .Register16Bit = reg,
+                },
+                .indirect = indirect,
+                .incDec = incDec,
+                .offset = offset,
             };
         }
-        if (force_signed) {
+
+        if (Argument.parseImmediate(source)) |imm| {
             return Argument{
-                .Immediate8BitSigned = @intCast(number),
+                .arg = .{
+                    .Immediate = imm,
+                },
+                .indirect = indirect,
+                .incDec = incDec,
+                .offset = offset,
             };
         }
+
+        const label_text = try allocator.alloc(u8, source.len);
+        @memcpy(label_text, source);
         return Argument{
-            .Immediate8BitUnsigned = @intCast(number),
+            .arg = .{
+                .Label = label_text,
+            },
+            .indirect = indirect,
+            .incDec = incDec,
+            .offset = offset,
         };
     }
 
-    fn fromToken(token: *const Token, allocator: std.mem.Allocator) !Argument {
-        const indirect, const source = Argument.parseIndirect(token.source) catch |e| {
-            logError("Line {d}: Missmatched parenthesis '{s}'", .{ token.line, token.source });
+    fn validateArgument(self: *const Argument, source: []const u8, line: usize) !void {
+        switch (self.arg) {
+            .Immediate => {
+                if (self.incDec != null) {
+                    logError("Line {d}: Invalid immediate with increment/decrement sign. '{s}'", .{ line, source });
+                    return AssemblerError.InvalidArgument;
+                }
+                if (self.offset != null) {
+                    logError("Line {d}: Invalid immediate with offset (inline arithmetic is unsupported). '{s}'", .{ line, source });
+                    return AssemblerError.InvalidArgument;
+                }
+            },
+            .Register8Bit => {
+                if (self.incDec != null) {
+                    logError("Line {d}: Invalid 8-bit register with increment/decrement sign. '{s}'", .{ line, source });
+                    return AssemblerError.InvalidArgument;
+                }
+                if (self.offset != null) {
+                    logError("Line {d}: Invalid 8-bit register with offset. '{s}'", .{ line, source });
+                    return AssemblerError.InvalidArgument;
+                }
+            },
+            .Register16Bit => {},
+            .Label => |lbl| {
+                try validateLabel(lbl, line);
+                if (self.incDec != null) {
+                    logError("Line {d}: Invalid label. '{s}'", .{ line, source });
+                    return AssemblerError.InvalidArgument;
+                }
+                if (self.offset != null) {
+                    logError("Line {d}: Invalid label. '{s}'", .{ line, source });
+                    return AssemblerError.InvalidArgument;
+                }
+            },
+        }
+    }
+
+    fn fromToken(token: Token, allocator: std.mem.Allocator) !Argument {
+        const token_upper = try toUpper(token.source, allocator);
+        defer allocator.free(token_upper);
+        const res = Argument.fromTokenInner(token_upper, allocator) catch |e| {
+            if (e == AssemblerError.MissmatchedParenthesis) {
+                logError("Line {d}: Missmatched parenthesis '{s}'", .{ token.line, token.source });
+            }
             return e;
         };
-
-        var upper: ?[]u8 = try toUpper(source, allocator);
-        defer if (upper != null) allocator.free(upper.?);
-
-        if (Argument.parseReg8(upper.?, indirect) catch |e| {
-            logError("Line {d}: Invalid argument: '{s}' Cannot have an indirect 8bit register.", .{ token.line, token.source });
-            return e;
-        }) |res| {
-            return res;
-        }
-
-        if (Argument.parseReg16(upper.?, indirect) catch |e| {
-            logError("Line {d}: Invalid register '{s}'", .{ token.line, token.source });
-            return e;
-        }) |res| {
-            return res;
-        }
-
-        if (Argument.parseImmediate(upper.?, indirect) catch |e| {
-            logError("Line {d}: Invalid integer '{s}'", .{ token.line, token.source });
-            return e;
-        }) |res| {
-            return res;
-        }
-
-        if (indirect) {
-            logError("Line {d}: Invalid label '{s}'", .{ token.line, token.source });
-            return AssemblerError.InvalidArgument;
-        }
-
-        try validateLabel(token);
-
-        const res = upper.?;
-        upper = null;
-        return Argument{
-            .Label = res,
-        };
+        try res.validateArgument(token.source, token.line);
+        return res;
     }
 
     fn free(self: *Argument, allocator: std.mem.Allocator) void {
-        switch (self.*) {
+        switch (self.arg) {
             .Label => |l| allocator.free(l),
             else => {},
         }
@@ -513,463 +490,246 @@ test "parseIndirect 3" {
     try std.testing.expectError(expected, actual);
 }
 
+test "parseIncDec 1" {
+    const input = "foo+";
+    const expected1 = true;
+    const expected2 = "foo";
+
+    const actual1, const actual2 = Argument.parseIncDec(input);
+
+    try std.testing.expectEqual(expected1, actual1);
+    try std.testing.expectEqualSlices(u8, expected2, actual2);
+}
+
+test "parseIncDec 2" {
+    const input = "foo-";
+    const expected1 = false;
+    const expected2 = "foo";
+
+    const actual1, const actual2 = Argument.parseIncDec(input);
+
+    try std.testing.expectEqual(expected1, actual1);
+    try std.testing.expectEqualSlices(u8, expected2, actual2);
+}
+
+test "parseIncDec 3" {
+    const input = "foo";
+    const expected1: ?bool = null;
+    const expected2 = "foo";
+
+    const actual1, const actual2 = Argument.parseIncDec(input);
+
+    try std.testing.expectEqual(expected1, actual1);
+    try std.testing.expectEqualSlices(u8, expected2, actual2);
+}
+
 test "parseReg8 1" {
     const input = "B";
-    const indirect = false;
-    const expected = Argument{
-        .Register8Bit = Register8.B,
-    };
+    const expected = Register8.B;
 
-    const actual = try Argument.parseReg8(input, indirect);
+    const actual = Argument.parseReg8(input);
 
     try std.testing.expectEqual(expected, actual);
 }
 
 test "parseReg8 2" {
-    const input = "B";
-    const indirect = true;
-    const expected = Argument{
-        .IndirectRegister8Bit = Register8.B,
-    };
-
-    const actual = Argument.parseReg8(input, indirect);
-
-    try std.testing.expectEqual(expected, actual);
-}
-
-test "parseReg8 3" {
     const input = "X";
-    const indirect = false;
-    const expected = null;
+    const expected: ?Register8 = null;
 
-    const actual = try Argument.parseReg8(input, indirect);
+    const actual = Argument.parseReg8(input);
 
     try std.testing.expectEqual(expected, actual);
 }
 
 test "parseReg16 1" {
     const input = "HL";
-    const indirect = true;
-    const expected = Argument{
-        .IndirectRegister16Bit = Register16.HL,
-    };
+    const expected = Register16.HL;
 
-    const actual = try Argument.parseReg16(input, indirect);
+    const actual = Argument.parseReg16(input);
 
     try std.testing.expectEqual(expected, actual);
 }
 
 test "parseReg16 2" {
-    const input = "HL";
-    const indirect = false;
-    const expected = Argument{
-        .Register16Bit = Register16.HL,
-    };
+    const input = "XX";
+    const expected: ?Register16 = null;
 
-    const actual = try Argument.parseReg16(input, indirect);
+    const actual = Argument.parseReg16(input);
 
     try std.testing.expectEqual(expected, actual);
 }
 
-test "parseReg16 3" {
-    const input = "HL+";
-    const indirect = false;
-    const expected = AssemblerError.InvalidArgument;
+test "parseOffset 1" {
+    const input = "A+3";
+    const expected1: ?i8 = 3;
+    const expected2 = "A";
 
-    const actual = Argument.parseReg16(input, indirect);
+    const actual1, const actual2 = Argument.parseOffset(input);
 
-    try std.testing.expectError(expected, actual);
+    try std.testing.expectEqual(expected1, actual1);
+    try std.testing.expectEqualSlices(u8, expected2, actual2);
 }
 
-test "parseReg16 4" {
-    const input = "HL+";
-    const indirect = true;
-    const expected = Argument{
-        .IndirectRegister16BitInc = Register16.HL,
-    };
+test "parseOffset 2" {
+    const input = "A-3";
+    const expected1: ?i8 = -3;
+    const expected2 = "A";
 
-    const actual = try Argument.parseReg16(input, indirect);
+    const actual1, const actual2 = Argument.parseOffset(input);
 
-    try std.testing.expectEqual(expected, actual);
+    try std.testing.expectEqual(expected1, actual1);
+    try std.testing.expectEqualSlices(u8, expected2, actual2);
 }
 
-test "parseReg16 5" {
-    const input = "HL-";
-    const indirect = true;
-    const expected = Argument{
-        .IndirectRegister16BitDec = Register16.HL,
-    };
+test "parseOffset 3" {
+    const input = "-3";
+    const expected1: ?i8 = null;
+    const expected2 = "-3";
 
-    const actual = try Argument.parseReg16(input, indirect);
+    const actual1, const actual2 = Argument.parseOffset(input);
 
-    try std.testing.expectEqual(expected, actual);
+    try std.testing.expectEqual(expected1, actual1);
+    try std.testing.expectEqualSlices(u8, expected2, actual2);
+}
+
+test "parseOffset 4" {
+    const input = "+3";
+    const expected1: ?i8 = null;
+    const expected2 = "+3";
+
+    const actual1, const actual2 = Argument.parseOffset(input);
+
+    try std.testing.expectEqual(expected1, actual1);
+    try std.testing.expectEqualSlices(u8, expected2, actual2);
+}
+
+test "parseOffset 5" {
+    const input = "A";
+    const expected1: ?i8 = null;
+    const expected2 = "A";
+
+    const actual1, const actual2 = Argument.parseOffset(input);
+
+    try std.testing.expectEqual(expected1, actual1);
+    try std.testing.expectEqualSlices(u8, expected2, actual2);
+}
+
+test "parseOffset 6" {
+    const input = "A+999";
+    const expected1: ?i8 = null;
+    const expected2 = "A+999";
+
+    const actual1, const actual2 = Argument.parseOffset(input);
+
+    try std.testing.expectEqual(expected1, actual1);
+    try std.testing.expectEqualSlices(u8, expected2, actual2);
+}
+
+test "parseBase 1" {
+    const input = "1234";
+    const expected1: u8 = 10;
+    const expected2 = "1234";
+
+    const actual1, const actual2 = Argument.parseBase(input);
+
+    try std.testing.expectEqual(expected1, actual1);
+    try std.testing.expectEqualSlices(u8, expected2, actual2);
+}
+
+test "parseBase 2" {
+    const input = "0B1234";
+    const expected1: u8 = 2;
+    const expected2 = "1234";
+
+    const actual1, const actual2 = Argument.parseBase(input);
+
+    try std.testing.expectEqual(expected1, actual1);
+    try std.testing.expectEqualSlices(u8, expected2, actual2);
+}
+
+test "parseBase 3" {
+    const input = "0X1234";
+    const expected1: u8 = 16;
+    const expected2 = "1234";
+
+    const actual1, const actual2 = Argument.parseBase(input);
+
+    try std.testing.expectEqual(expected1, actual1);
+    try std.testing.expectEqualSlices(u8, expected2, actual2);
+}
+
+test "parseBase 4" {
+    const input = "0O1234";
+    const expected1: u8 = 8;
+    const expected2 = "1234";
+
+    const actual1, const actual2 = Argument.parseBase(input);
+
+    try std.testing.expectEqual(expected1, actual1);
+    try std.testing.expectEqualSlices(u8, expected2, actual2);
 }
 
 test "parseImmediate 1" {
-    const input = "0X10000";
-    const indirect = false;
-    const expected = AssemblerError.InvalidArgument;
+    const input = "0X100000000";
+    const expected: ?i32 = null;
 
-    const actual = Argument.parseImmediate(input, indirect);
+    const actual = Argument.parseImmediate(input);
 
-    try std.testing.expectError(expected, actual);
+    try std.testing.expectEqual(expected, actual);
 }
 
 test "parseImmediate 2" {
-    const input = "-50000";
-    const indirect = false;
-    const expected = AssemblerError.InvalidArgument;
+    const input = "-50000000000000000";
+    const expected: ?i32 = null;
 
-    const actual = Argument.parseImmediate(input, indirect);
+    const actual = Argument.parseImmediate(input);
 
-    try std.testing.expectError(expected, actual);
+    try std.testing.expectEqual(expected, actual);
 }
 
 test "parseImmediate 3" {
     const input = "0XFFFF";
-    const indirect = true;
-    const expected = Argument{
-        .IndirectImmediate16Bit = 0xFFFF,
-    };
+    const expected: ?i32 = 0xFFFF;
 
-    const actual = Argument.parseImmediate(input, indirect);
+    const actual = Argument.parseImmediate(input);
 
     try std.testing.expectEqual(expected, actual);
 }
 
 test "parseImmediate 4" {
     const input = "0XFFFF";
-    const indirect = false;
-    const expected = Argument{
-        .Immediate16Bit = 0xFFFF,
-    };
+    const expected: ?i32 = 0xFFFF;
 
-    const actual = Argument.parseImmediate(input, indirect);
+    const actual = Argument.parseImmediate(input);
 
     try std.testing.expectEqual(expected, actual);
 }
 
 test "parseImmediate 5" {
     const input = "0XFF";
-    const indirect = true;
-    const expected = Argument{
-        .IndirectImmediate8Bit = 0xFF,
-    };
+    const expected: ?i32 = 0xFF;
 
-    const actual = Argument.parseImmediate(input, indirect);
+    const actual = Argument.parseImmediate(input);
 
     try std.testing.expectEqual(expected, actual);
 }
 
 test "parseImmediate 6" {
     const input = "-100";
-    const indirect = false;
-    const expected = Argument{
-        .Immediate8BitSigned = -100,
-    };
+    const expected: ?i32 = -100;
 
-    const actual = Argument.parseImmediate(input, indirect);
+    const actual = Argument.parseImmediate(input);
 
     try std.testing.expectEqual(expected, actual);
 }
 
 test "parseImmediate 7" {
     const input = "100";
-    const indirect = false;
-    const expected = Argument{
-        .Immediate8BitUnsigned = 100,
-    };
+    const expected: ?i32 = 100;
 
-    const actual = Argument.parseImmediate(input, indirect);
+    const actual = Argument.parseImmediate(input);
 
     try std.testing.expectEqual(expected, actual);
-}
-
-test "parseImmediate 8" {
-    const input = "SP+";
-    const indirect = false;
-    const expected: ?Argument = null;
-
-    const actual = Argument.parseImmediate(input, indirect);
-
-    try std.testing.expectEqual(expected, actual);
-}
-
-test "parseImmediate 9" {
-    const input = "SP+10";
-    const indirect = true;
-    const expected = AssemblerError.InvalidArgument;
-
-    const actual = Argument.parseImmediate(input, indirect);
-
-    try std.testing.expectError(expected, actual);
-}
-
-test "parseImmediate 10" {
-    const input = "SP+10";
-    const indirect = false;
-    const expected = Argument{
-        .Immediate8BitSigned = 10,
-    };
-
-    const actual = Argument.parseImmediate(input, indirect);
-
-    try std.testing.expectEqual(expected, actual);
-}
-
-test "parseImmediate 11" {
-    const input = "SP-10";
-    const indirect = false;
-    const expected = Argument{
-        .Immediate8BitSigned = -10,
-    };
-
-    const actual = Argument.parseImmediate(input, indirect);
-
-    try std.testing.expectEqual(expected, actual);
-}
-
-test "Argument.fromToken 0xFF" {
-    const input = Token{
-        .line = 0,
-        .source = "0XFF",
-        .which = TokenKind.Argument,
-    };
-    const expected = Argument{
-        .Immediate8BitUnsigned = 0xFF,
-    };
-
-    var actual = try Argument.fromToken(&input, std.testing.allocator);
-    defer actual.free(std.testing.allocator);
-
-    try std.testing.expectEqual(expected, actual);
-}
-
-test "Argument.fromToken -100" {
-    const input = Token{
-        .line = 0,
-        .source = "-100",
-        .which = TokenKind.Argument,
-    };
-    const expected = Argument{
-        .Immediate8BitSigned = -100,
-    };
-
-    var actual = try Argument.fromToken(&input, std.testing.allocator);
-    defer actual.free(std.testing.allocator);
-
-    try std.testing.expectEqual(expected, actual);
-}
-
-test "Argument.fromToken 0xFFFF" {
-    const input = Token{
-        .line = 0,
-        .source = "0XFFFF",
-        .which = TokenKind.Argument,
-    };
-    const expected = Argument{
-        .Immediate16Bit = 0xFFFF,
-    };
-
-    var actual = try Argument.fromToken(&input, std.testing.allocator);
-    defer actual.free(std.testing.allocator);
-
-    try std.testing.expectEqual(expected, actual);
-}
-
-test "Argument.fromToken (0xFFFF)" {
-    const input = Token{
-        .line = 0,
-        .source = "(0XFFFF)",
-        .which = TokenKind.Argument,
-    };
-    const expected = Argument{
-        .IndirectImmediate16Bit = 0xFFFF,
-    };
-
-    var actual = try Argument.fromToken(&input, std.testing.allocator);
-    defer actual.free(std.testing.allocator);
-
-    try std.testing.expectEqual(expected, actual);
-}
-
-test "Argument.fromToken B" {
-    const input = Token{
-        .line = 0,
-        .source = "B",
-        .which = TokenKind.Argument,
-    };
-    const expected = Argument{
-        .Register8Bit = Register8.B,
-    };
-
-    var actual = try Argument.fromToken(&input, std.testing.allocator);
-    defer actual.free(std.testing.allocator);
-
-    try std.testing.expectEqual(expected, actual);
-}
-
-test "Argument.fromToken BC" {
-    const input = Token{
-        .line = 0,
-        .source = "BC",
-        .which = TokenKind.Argument,
-    };
-    const expected = Argument{
-        .Register16Bit = Register16.BC,
-    };
-
-    var actual = try Argument.fromToken(&input, std.testing.allocator);
-    defer actual.free(std.testing.allocator);
-
-    try std.testing.expectEqual(expected, actual);
-}
-
-test "Argument.fromToken (BC)" {
-    const input = Token{
-        .line = 0,
-        .source = "(BC)",
-        .which = TokenKind.Argument,
-    };
-    const expected = Argument{
-        .IndirectRegister16Bit = Register16.BC,
-    };
-
-    var actual = try Argument.fromToken(&input, std.testing.allocator);
-    defer actual.free(std.testing.allocator);
-
-    try std.testing.expectEqual(expected, actual);
-}
-
-test "Argument.fromToken (B)" {
-    const input = Token{
-        .line = 0,
-        .source = "(B)",
-        .which = TokenKind.Argument,
-    };
-    const expected = Argument{
-        .IndirectRegister8Bit = Register8.B,
-    };
-
-    var actual = try Argument.fromToken(&input, std.testing.allocator);
-    defer actual.free(std.testing.allocator);
-
-    try std.testing.expectEqual(expected, actual);
-}
-
-test "Argument.fromToken (BC+)" {
-    const input = Token{
-        .line = 0,
-        .source = "(BC+)",
-        .which = TokenKind.Argument,
-    };
-    const expected = Argument{
-        .IndirectRegister16BitInc = Register16.BC,
-    };
-
-    var actual = try Argument.fromToken(&input, std.testing.allocator);
-    defer actual.free(std.testing.allocator);
-
-    try std.testing.expectEqual(expected, actual);
-}
-
-test "Argument.fromToken (BC-)" {
-    const input = Token{
-        .line = 0,
-        .source = "(BC-)",
-        .which = TokenKind.Argument,
-    };
-    const expected = Argument{
-        .IndirectRegister16BitDec = Register16.BC,
-    };
-
-    var actual = try Argument.fromToken(&input, std.testing.allocator);
-    defer actual.free(std.testing.allocator);
-
-    try std.testing.expectEqual(expected, actual);
-}
-
-test "Argument.fromToken foo" {
-    const input = Token{
-        .line = 0,
-        .source = "foo",
-        .which = TokenKind.Argument,
-    };
-    const label = try toUpper("foo", std.testing.allocator);
-    defer std.testing.allocator.free(label);
-    const expected = Argument{
-        .Label = label,
-    };
-
-    var actual = try Argument.fromToken(&input, std.testing.allocator);
-    defer actual.free(std.testing.allocator);
-
-    try std.testing.expectEqualDeep(expected, actual);
-}
-
-test "Argument.fromToken (BC" {
-    const input = Token{
-        .line = 0,
-        .source = "(BC",
-        .which = TokenKind.Argument,
-    };
-    const expected = AssemblerError.MissmatchedParenthesis;
-
-    const actual = Argument.fromToken(&input, std.testing.allocator);
-
-    try std.testing.expectError(expected, actual);
-}
-
-test "Argument.fromToken (B+)" {
-    const input = Token{
-        .line = 0,
-        .source = "(B+)",
-        .which = TokenKind.Argument,
-    };
-    const expected = AssemblerError.InvalidArgument;
-
-    const actual = Argument.fromToken(&input, std.testing.allocator);
-
-    try std.testing.expectError(expected, actual);
-}
-
-test "Argument.fromToken 0xFFFFFFFF" {
-    const input = Token{
-        .line = 0,
-        .source = "0XFFFFFFFF",
-        .which = TokenKind.Argument,
-    };
-    const expected = AssemblerError.InvalidLabel;
-
-    const actual = Argument.fromToken(&input, std.testing.allocator);
-
-    try std.testing.expectError(expected, actual);
-}
-
-test "Argument.fromToken -99999999" {
-    const input = Token{
-        .line = 0,
-        .source = "-99999999",
-        .which = TokenKind.Argument,
-    };
-    const expected = AssemblerError.InvalidArgument;
-
-    const actual = Argument.fromToken(&input, std.testing.allocator);
-
-    try std.testing.expectError(expected, actual);
-}
-
-test "Argument.fromToken -0x1" {
-    const input = Token{
-        .line = 0,
-        .source = "-0X1",
-        .which = TokenKind.Argument,
-    };
-    const expected = AssemblerError.InvalidLabel;
-
-    const actual = Argument.fromToken(&input, std.testing.allocator);
-
-    try std.testing.expectError(expected, actual);
 }
 
 const Register8BitArgumentDefinition = union(enum) {
@@ -987,24 +747,397 @@ const Register16BitArgumentDefinition = union(enum) {
     Register: Register16,
 };
 
-const ArgumentDefinition = union(ArgumentType) {
-    Immediate8BitUnsigned,
+const DefinedArgumentType = enum {
+    Immediate8Bit,
+    Immediate8BitSigned,
+    Immediate16Bit,
+    Register8Bit,
+    Register16Bit,
+    Register16BitWithOffset,
+    IndirectImmediate8Bit,
+    IndirectImmediate16Bit,
+    IndirectRegister8Bit,
+    IndirectRegister16Bit,
+    IndirectRegister16BitInc,
+    IndirectRegister16BitDec,
+};
+
+const ArgumentData = union(DefinedArgumentType) {
+    Immediate8Bit: u8,
+    Immediate8BitSigned: i8,
+    Immediate16Bit: u16,
+    Register8Bit: Register8,
+    Register16Bit: Register16,
+    Register16BitWithOffset: struct { offset: i8, reg: Register16 },
+    IndirectImmediate8Bit: u8,
+    IndirectImmediate16Bit: u16,
+    IndirectRegister8Bit: Register8,
+    IndirectRegister16Bit: Register16,
+    IndirectRegister16BitInc: Register16,
+    IndirectRegister16BitDec: Register16,
+
+    fn fromDefinition(parsed: Argument, definition: DefinedArgumentType) ?ArgumentData {
+        switch (definition) {
+            DefinedArgumentType.Immediate8Bit => {
+                if (parsed.arg == BasicArgumentType.Immediate and !parsed.indirect and parsed.incDec == null and parsed.offset == null) {
+                    const imm = parsed.arg.Immediate;
+                    if (imm >= std.math.minInt(u8) and imm <= std.math.maxInt(u8)) {
+                        return ArgumentData{
+                            .Immediate8Bit = @intCast(imm),
+                        };
+                    }
+                }
+            },
+            DefinedArgumentType.Immediate8BitSigned => {
+                if (parsed.arg == BasicArgumentType.Immediate and !parsed.indirect and parsed.incDec == null and parsed.offset == null) {
+                    const imm = parsed.arg.Immediate;
+                    if (imm >= std.math.minInt(i8) and imm <= std.math.maxInt(i8)) {
+                        return ArgumentData{
+                            .Immediate8BitSigned = @intCast(imm),
+                        };
+                    }
+                }
+            },
+            DefinedArgumentType.Immediate16Bit => {
+                if (parsed.arg == BasicArgumentType.Immediate and !parsed.indirect and parsed.incDec == null and parsed.offset == null) {
+                    const imm = parsed.arg.Immediate;
+                    if (imm >= std.math.minInt(u16) and imm <= std.math.maxInt(u16)) {
+                        return ArgumentData{
+                            .Immediate16Bit = @intCast(imm),
+                        };
+                    }
+                }
+                if (parsed.arg == BasicArgumentType.Label and !parsed.indirect and parsed.incDec == null and parsed.offset == null) {
+                    return ArgumentData{
+                        .Immediate16Bit = 0xAAAA,
+                    };
+                }
+            },
+            DefinedArgumentType.Register8Bit => {
+                if (parsed.arg == BasicArgumentType.Register8Bit and !parsed.indirect and parsed.incDec == null and parsed.offset == null) {
+                    return ArgumentData{
+                        .Register8Bit = parsed.arg.Register8Bit,
+                    };
+                }
+            },
+            DefinedArgumentType.Register16Bit => {
+                if (parsed.arg == BasicArgumentType.Register16Bit and !parsed.indirect and parsed.incDec == null and parsed.offset == null) {
+                    return ArgumentData{
+                        .Register16Bit = parsed.arg.Register16Bit,
+                    };
+                }
+            },
+            DefinedArgumentType.Register16BitWithOffset => {
+                if (parsed.arg == BasicArgumentType.Register16Bit and !parsed.indirect and parsed.incDec == null and parsed.offset != null) {
+                    return ArgumentData{
+                        .Register16BitWithOffset = .{
+                            .offset = parsed.offset.?,
+                            .reg = parsed.arg.Register16Bit,
+                        },
+                    };
+                }
+            },
+            DefinedArgumentType.IndirectImmediate8Bit => {
+                if (parsed.arg == BasicArgumentType.Immediate and parsed.indirect and parsed.incDec == null and parsed.offset == null) {
+                    const imm = parsed.arg.Immediate;
+                    if (imm >= std.math.minInt(u8) and imm <= std.math.maxInt(u8)) {
+                        return ArgumentData{
+                            .IndirectImmediate8Bit = @intCast(imm),
+                        };
+                    }
+                }
+            },
+            DefinedArgumentType.IndirectImmediate16Bit => {
+                if (parsed.arg == BasicArgumentType.Immediate and parsed.indirect and parsed.incDec == null and parsed.offset == null) {
+                    const imm = parsed.arg.Immediate;
+                    if (imm >= std.math.minInt(u16) and imm <= std.math.maxInt(u16)) {
+                        return ArgumentData{
+                            .IndirectImmediate16Bit = @intCast(imm),
+                        };
+                    }
+                }
+                if (parsed.arg == BasicArgumentType.Label and parsed.indirect and parsed.incDec == null and parsed.offset == null) {
+                    return ArgumentData{
+                        .IndirectImmediate16Bit = 0xAAAA,
+                    };
+                }
+            },
+            DefinedArgumentType.IndirectRegister8Bit => {
+                if (parsed.arg == BasicArgumentType.Register8Bit and parsed.indirect and parsed.incDec == null and parsed.offset == null) {
+                    return ArgumentData{
+                        .IndirectRegister8Bit = parsed.arg.Register8Bit,
+                    };
+                }
+            },
+            DefinedArgumentType.IndirectRegister16Bit => {
+                if (parsed.arg == BasicArgumentType.Register16Bit and parsed.indirect and parsed.incDec == null and parsed.offset == null) {
+                    return ArgumentData{
+                        .IndirectRegister16Bit = parsed.arg.Register16Bit,
+                    };
+                }
+            },
+            DefinedArgumentType.IndirectRegister16BitInc => {
+                if (parsed.arg == BasicArgumentType.Register16Bit and parsed.indirect and parsed.incDec == true and parsed.offset == null) {
+                    return ArgumentData{
+                        .IndirectRegister16BitInc = parsed.arg.Register16Bit,
+                    };
+                }
+            },
+            DefinedArgumentType.IndirectRegister16BitDec => {
+                if (parsed.arg == BasicArgumentType.Register16Bit and parsed.indirect and parsed.incDec == false and parsed.offset == null) {
+                    return ArgumentData{
+                        .IndirectRegister16BitDec = parsed.arg.Register16Bit,
+                    };
+                }
+            },
+        }
+        return null;
+    }
+};
+
+test "ArgumentData.fromDefinition Immediate8Bit" {
+    const definition = DefinedArgumentType.Immediate8Bit;
+    const argument = Argument{
+        .arg = .{
+            .Immediate = 42,
+        },
+        .incDec = null,
+        .indirect = false,
+        .offset = null,
+    };
+    const expected = ArgumentData{
+        .Immediate8Bit = 42,
+    };
+
+    const actual = ArgumentData.fromDefinition(argument, definition);
+
+    try std.testing.expectEqualDeep(expected, actual);
+}
+
+test "ArgumentData.fromDefinition Immediate8BitSigned" {
+    const definition = DefinedArgumentType.Immediate8BitSigned;
+    const argument = Argument{
+        .arg = .{
+            .Immediate = -42,
+        },
+        .incDec = null,
+        .indirect = false,
+        .offset = null,
+    };
+    const expected = ArgumentData{
+        .Immediate8BitSigned = -42,
+    };
+
+    const actual = ArgumentData.fromDefinition(argument, definition);
+
+    try std.testing.expectEqualDeep(expected, actual);
+}
+
+test "ArgumentData.fromDefinition Register16BitWithOffset" {
+    const definition = DefinedArgumentType.Register16BitWithOffset;
+    const argument = Argument{
+        .arg = .{
+            .Register16Bit = Register16.SP,
+        },
+        .incDec = null,
+        .indirect = false,
+        .offset = -5,
+    };
+    const expected = ArgumentData{
+        .Register16BitWithOffset = .{
+            .offset = -5,
+            .reg = Register16.SP,
+        },
+    };
+
+    const actual = ArgumentData.fromDefinition(argument, definition);
+
+    try std.testing.expectEqualDeep(expected, actual);
+}
+
+test "ArgumentData.fromDefinition Immediate16Bit" {
+    const definition = DefinedArgumentType.Immediate16Bit;
+    const argument = Argument{
+        .arg = .{
+            .Immediate = 5,
+        },
+        .incDec = null,
+        .indirect = false,
+        .offset = null,
+    };
+    const expected = ArgumentData{
+        .Immediate16Bit = 5,
+    };
+
+    const actual = ArgumentData.fromDefinition(argument, definition);
+
+    try std.testing.expectEqualDeep(expected, actual);
+}
+
+test "ArgumentData.fromDefinition Register8Bit" {
+    const definition = DefinedArgumentType.Register8Bit;
+    const argument = Argument{
+        .arg = .{
+            .Register8Bit = Register8.B,
+        },
+        .incDec = null,
+        .indirect = false,
+        .offset = null,
+    };
+    const expected = ArgumentData{ .Register8Bit = Register8.B };
+
+    const actual = ArgumentData.fromDefinition(argument, definition);
+
+    try std.testing.expectEqualDeep(expected, actual);
+}
+
+test "ArgumentData.fromDefinition Register16Bit" {
+    const definition = DefinedArgumentType.Register16Bit;
+    const argument = Argument{
+        .arg = .{
+            .Register16Bit = Register16.HL,
+        },
+        .incDec = null,
+        .indirect = false,
+        .offset = null,
+    };
+    const expected = ArgumentData{ .Register16Bit = Register16.HL };
+
+    const actual = ArgumentData.fromDefinition(argument, definition);
+
+    try std.testing.expectEqualDeep(expected, actual);
+}
+
+test "ArgumentData.fromDefinition IndirectImmediate8Bit" {
+    const definition = DefinedArgumentType.IndirectImmediate8Bit;
+    const argument = Argument{
+        .arg = .{
+            .Immediate = 42,
+        },
+        .incDec = null,
+        .indirect = true,
+        .offset = null,
+    };
+    const expected = ArgumentData{
+        .IndirectImmediate8Bit = 42,
+    };
+
+    const actual = ArgumentData.fromDefinition(argument, definition);
+
+    try std.testing.expectEqualDeep(expected, actual);
+}
+
+test "ArgumentData.fromDefinition IndirectImmediate16Bit" {
+    const definition = DefinedArgumentType.IndirectImmediate16Bit;
+    const argument = Argument{
+        .arg = .{
+            .Immediate = 42,
+        },
+        .incDec = null,
+        .indirect = true,
+        .offset = null,
+    };
+    const expected = ArgumentData{
+        .IndirectImmediate16Bit = 42,
+    };
+
+    const actual = ArgumentData.fromDefinition(argument, definition);
+
+    try std.testing.expectEqualDeep(expected, actual);
+}
+
+test "ArgumentData.fromDefinition IndirectRegister8Bit" {
+    const definition = DefinedArgumentType.IndirectRegister8Bit;
+    const argument = Argument{
+        .arg = .{
+            .Register8Bit = Register8.B,
+        },
+        .incDec = null,
+        .indirect = true,
+        .offset = null,
+    };
+    const expected = ArgumentData{ .IndirectRegister8Bit = Register8.B };
+
+    const actual = ArgumentData.fromDefinition(argument, definition);
+
+    try std.testing.expectEqualDeep(expected, actual);
+}
+
+test "ArgumentData.fromDefinition IndirectRegister16Bit" {
+    const definition = DefinedArgumentType.IndirectRegister16Bit;
+    const argument = Argument{
+        .arg = .{
+            .Register16Bit = Register16.HL,
+        },
+        .incDec = null,
+        .indirect = true,
+        .offset = null,
+    };
+    const expected = ArgumentData{
+        .IndirectRegister16Bit = Register16.HL,
+    };
+
+    const actual = ArgumentData.fromDefinition(argument, definition);
+
+    try std.testing.expectEqualDeep(expected, actual);
+}
+
+test "ArgumentData.fromDefinition IndirectRegister16BitInc" {
+    const definition = DefinedArgumentType.IndirectRegister16BitInc;
+    const argument = Argument{
+        .arg = .{
+            .Register16Bit = Register16.HL,
+        },
+        .incDec = true,
+        .indirect = true,
+        .offset = null,
+    };
+    const expected = ArgumentData{
+        .IndirectRegister16BitInc = Register16.HL,
+    };
+
+    const actual = ArgumentData.fromDefinition(argument, definition);
+
+    try std.testing.expectEqualDeep(expected, actual);
+}
+
+test "ArgumentData.fromDefinition IndirectRegister16BitDec" {
+    const definition = DefinedArgumentType.IndirectRegister16BitDec;
+    const argument = Argument{
+        .arg = .{
+            .Register16Bit = Register16.HL,
+        },
+        .incDec = false,
+        .indirect = true,
+        .offset = null,
+    };
+    const expected = ArgumentData{
+        .IndirectRegister16BitDec = Register16.HL,
+    };
+
+    const actual = ArgumentData.fromDefinition(argument, definition);
+
+    try std.testing.expectEqualDeep(expected, actual);
+}
+
+const ArgumentDefinition = union(DefinedArgumentType) {
+    Immediate8Bit,
     Immediate8BitSigned,
     Immediate16Bit,
     Register8Bit: Register8BitArgumentDefinition,
     Register16Bit: Register16BitArgumentDefinition,
+    Register16BitWithOffset: Register16,
     IndirectImmediate8Bit,
     IndirectImmediate16Bit,
     IndirectRegister8Bit: Register8,
     IndirectRegister16Bit: Register16,
     IndirectRegister16BitInc: Register16,
     IndirectRegister16BitDec: Register16,
-    Label,
 
-    fn encode(self: ArgumentDefinition, opcode: u8, arg: anytype) !struct { u8, ?u8, ?u8 } {
+    fn encode(self: ArgumentDefinition, opcode: u8, arg: ArgumentData) !struct { u8, ?u8, ?u8 } {
         switch (self) {
-            .Immediate8BitUnsigned => {
-                return .{ opcode, arg.Immediate8BitUnsigned, null };
+            .Immediate8Bit => {
+                return .{ opcode, arg.Immediate8Bit, null };
             },
             .Immediate8BitSigned => {
                 const byte: u8 = @bitCast(arg.Immediate8BitSigned);
@@ -1048,6 +1181,13 @@ const ArgumentDefinition = union(ArgumentType) {
                     },
                 }
             },
+            .Register16BitWithOffset => |x| {
+                if (x != arg.Register16BitWithOffset.reg) {
+                    return AssemblerError.InvalidInstructionArguments;
+                }
+                const byte: u8 = @bitCast(arg.Register16BitWithOffset.offset);
+                return .{ opcode, byte, null };
+            },
             .IndirectImmediate8Bit => {
                 const byte: u8 = arg.IndirectImmediate8Bit;
                 return .{ opcode, byte, null };
@@ -1080,13 +1220,6 @@ const ArgumentDefinition = union(ArgumentType) {
                     return AssemblerError.InvalidInstructionArguments;
                 }
                 return .{ opcode, null, null };
-            },
-            .Label => {
-                if (builtin.is_test) {
-                    return .{ opcode, 0xAA, 0xAA };
-                } else {
-                    return .{ opcode, 0, 0 };
-                }
             },
         }
     }
@@ -1131,12 +1264,12 @@ const ArgumentDefinition = union(ArgumentType) {
     }
 };
 
-test "ArgumentDefinition.encode Immediate8BitUnsigned" {
+test "ArgumentDefinition.encode Immediate8Bit" {
     const definition = ArgumentDefinition{
-        .Immediate8BitUnsigned = {},
+        .Immediate8Bit = {},
     };
-    const argument = Argument{
-        .Immediate8BitUnsigned = 0xFF,
+    const argument = ArgumentData{
+        .Immediate8Bit = 0xFF,
     };
     const opcode = 0x00;
     const expected: struct { u8, ?u8, ?u8 } = .{ 0x00, 0xFF, null };
@@ -1150,8 +1283,26 @@ test "ArgumentDefinition.encode Immediate8BitSigned" {
     const definition = ArgumentDefinition{
         .Immediate8BitSigned = {},
     };
-    const argument = Argument{
-        .Immediate8BitSigned = -128,
+    const argument = ArgumentData{
+        .Immediate8BitSigned = -1,
+    };
+    const opcode = 0x00;
+    const expected: struct { u8, ?u8, ?u8 } = .{ 0x00, 0xFF, null };
+
+    const actual = try definition.encode(opcode, argument);
+
+    try std.testing.expectEqualDeep(expected, actual);
+}
+
+test "ArgumentDefinition.encode Register16BitWithOffset" {
+    const definition = ArgumentDefinition{
+        .Register16BitWithOffset = Register16.SP,
+    };
+    const argument = ArgumentData{
+        .Register16BitWithOffset = .{
+            .offset = -128,
+            .reg = Register16.SP,
+        },
     };
     const opcode = 0x00;
     const expected: struct { u8, ?u8, ?u8 } = .{ 0x00, 0x80, null };
@@ -1165,7 +1316,7 @@ test "ArgumentDefinition.encode Immediate16Bit" {
     const definition = ArgumentDefinition{
         .Immediate16Bit = {},
     };
-    const argument = Argument{
+    const argument = ArgumentData{
         .Immediate16Bit = 0xFFEE,
     };
     const opcode = 0x00;
@@ -1182,7 +1333,7 @@ test "ArgumentDefinition.encode Register8Bit offset" {
             .Offset = 3,
         },
     };
-    const argument = Argument{
+    const argument = ArgumentData{
         .Register8Bit = Register8.A,
     };
     const opcode = 0x00;
@@ -1199,7 +1350,7 @@ test "ArgumentDefinition.encode Register8Bit register success" {
             .Register = Register8.A,
         },
     };
-    const argument = Argument{
+    const argument = ArgumentData{
         .Register8Bit = Register8.A,
     };
     const opcode = 0x00;
@@ -1216,7 +1367,7 @@ test "ArgumentDefinition.encode Register8Bit register failure" {
             .Register = Register8.A,
         },
     };
-    const argument = Argument{
+    const argument = ArgumentData{
         .Register8Bit = Register8.B,
     };
     const opcode = 0x00;
@@ -1234,7 +1385,7 @@ test "ArgumentDefinition.encode Register16Bit offset 1" {
             },
         },
     };
-    const argument = Argument{
+    const argument = ArgumentData{
         .Register16Bit = Register16.AF,
     };
     const opcode = 0x00;
@@ -1253,7 +1404,7 @@ test "ArgumentDefinition.encode Register16Bit offset 2" {
             },
         },
     };
-    const argument = Argument{
+    const argument = ArgumentData{
         .Register16Bit = Register16.SP,
     };
     const opcode = 0x00;
@@ -1270,7 +1421,7 @@ test "ArgumentDefinition.encode Register16Bit register success" {
             .Register = Register16.SP,
         },
     };
-    const argument = Argument{
+    const argument = ArgumentData{
         .Register16Bit = Register16.SP,
     };
     const opcode = 0x00;
@@ -1287,7 +1438,7 @@ test "ArgumentDefinition.encode Register16Bit register failure" {
             .Register = Register16.SP,
         },
     };
-    const argument = Argument{
+    const argument = ArgumentData{
         .Register16Bit = Register16.BC,
     };
     const opcode = 0x00;
@@ -1301,7 +1452,7 @@ test "ArgumentDefinition.encode IndirectImmediate8Bit" {
     const definition = ArgumentDefinition{
         .IndirectImmediate8Bit = {},
     };
-    const argument = Argument{
+    const argument = ArgumentData{
         .IndirectImmediate8Bit = 0xFF,
     };
     const opcode = 0x00;
@@ -1316,7 +1467,7 @@ test "ArgumentDefinition.encode IndirectImmediate16Bit" {
     const definition = ArgumentDefinition{
         .IndirectImmediate16Bit = {},
     };
-    const argument = Argument{
+    const argument = ArgumentData{
         .IndirectImmediate16Bit = 0xFFEE,
     };
     const opcode = 0x00;
@@ -1331,7 +1482,7 @@ test "ArgumentDefinition.encode IndirectRegister8Bit success" {
     const definition = ArgumentDefinition{
         .IndirectRegister8Bit = Register8.A,
     };
-    const argument = Argument{
+    const argument = ArgumentData{
         .IndirectRegister8Bit = Register8.A,
     };
     const opcode = 0x00;
@@ -1346,7 +1497,7 @@ test "ArgumentDefinition.encode IndirectRegister8Bit failure" {
     const definition = ArgumentDefinition{
         .IndirectRegister8Bit = Register8.A,
     };
-    const argument = Argument{
+    const argument = ArgumentData{
         .IndirectRegister8Bit = Register8.B,
     };
     const opcode = 0x00;
@@ -1360,7 +1511,7 @@ test "ArgumentDefinition.encode IndirectRegister16Bit success" {
     const definition = ArgumentDefinition{
         .IndirectRegister16Bit = Register16.BC,
     };
-    const argument = Argument{
+    const argument = ArgumentData{
         .IndirectRegister16Bit = Register16.BC,
     };
     const opcode = 0x00;
@@ -1375,7 +1526,7 @@ test "ArgumentDefinition.encode IndirectRegister16Bit failure" {
     const definition = ArgumentDefinition{
         .IndirectRegister16Bit = Register16.BC,
     };
-    const argument = Argument{
+    const argument = ArgumentData{
         .IndirectRegister16Bit = Register16.DE,
     };
     const opcode = 0x00;
@@ -1389,7 +1540,7 @@ test "ArgumentDefinition.encode IndirectRegister16BitInc success" {
     const definition = ArgumentDefinition{
         .IndirectRegister16BitInc = Register16.BC,
     };
-    const argument = Argument{
+    const argument = ArgumentData{
         .IndirectRegister16BitInc = Register16.BC,
     };
     const opcode = 0x00;
@@ -1404,7 +1555,7 @@ test "ArgumentDefinition.encode IndirectRegister16BitInc failure" {
     const definition = ArgumentDefinition{
         .IndirectRegister16BitInc = Register16.BC,
     };
-    const argument = Argument{
+    const argument = ArgumentData{
         .IndirectRegister16BitInc = Register16.DE,
     };
     const opcode = 0x00;
@@ -1418,7 +1569,7 @@ test "ArgumentDefinition.encode IndirectRegister16BitDec success" {
     const definition = ArgumentDefinition{
         .IndirectRegister16BitDec = Register16.BC,
     };
-    const argument = Argument{
+    const argument = ArgumentData{
         .IndirectRegister16BitDec = Register16.BC,
     };
     const opcode = 0x00;
@@ -1433,7 +1584,7 @@ test "ArgumentDefinition.encode IndirectRegister16BitDec failure" {
     const definition = ArgumentDefinition{
         .IndirectRegister16BitDec = Register16.BC,
     };
-    const argument = Argument{
+    const argument = ArgumentData{
         .IndirectRegister16BitDec = Register16.DE,
     };
     const opcode = 0x00;
@@ -1441,23 +1592,6 @@ test "ArgumentDefinition.encode IndirectRegister16BitDec failure" {
     const actual = definition.encode(opcode, argument);
 
     try std.testing.expectError(AssemblerError.InvalidInstructionArguments, actual);
-}
-
-test "ArgumentDefinition.encode Label" {
-    const definition = ArgumentDefinition{
-        .Label = {},
-    };
-    const lbl = try toUpper("foo", std.testing.allocator);
-    defer std.testing.allocator.free(lbl);
-    const argument = Argument{
-        .Label = lbl,
-    };
-    const opcode = 0x00;
-    const expected: struct { u8, ?u8, ?u8 } = .{ 0x00, 0xAA, 0xAA };
-
-    const actual = try definition.encode(opcode, argument);
-
-    try std.testing.expectEqualDeep(expected, actual);
 }
 
 const OpcodeDefinition = struct {
@@ -1469,93 +1603,6 @@ const OpcodeDefinition = struct {
 
 const defined_opcodes =
     [_]OpcodeDefinition{
-    OpcodeDefinition{
-        .instr = Instruction.TESTINGONLY,
-        .arg1 = ArgumentDefinition{
-            .Immediate16Bit = {},
-        },
-        .arg2 = ArgumentDefinition{
-            .Immediate16Bit = {},
-        },
-        .base_opcode = 0b01010101,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.TESTINGONLY,
-        .arg1 = ArgumentDefinition{
-            .Immediate8BitUnsigned = {},
-        },
-        .arg2 = ArgumentDefinition{
-            .Immediate16Bit = {},
-        },
-        .base_opcode = 0b01010101,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.TESTINGONLY,
-        .arg1 = ArgumentDefinition{
-            .Immediate16Bit = {},
-        },
-        .arg2 = ArgumentDefinition{
-            .Immediate8BitUnsigned = {},
-        },
-        .base_opcode = 0b01010101,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.TESTINGONLY,
-        .arg1 = ArgumentDefinition{
-            .Immediate8BitUnsigned = {},
-        },
-        .arg2 = ArgumentDefinition{
-            .Immediate8BitUnsigned = {},
-        },
-        .base_opcode = 0b01010101,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.TESTINGONLY,
-        .arg1 = null,
-        .arg2 = ArgumentDefinition{
-            .Immediate16Bit = {},
-        },
-        .base_opcode = 0b01010101,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.TESTINGONLY,
-        .arg1 = null,
-        .arg2 = ArgumentDefinition{
-            .Immediate8BitUnsigned = {},
-        },
-        .base_opcode = 0b01010101,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.TESTINGONLY,
-        .arg1 = ArgumentDefinition{
-            .Immediate16Bit = {},
-        },
-        .arg2 = null,
-        .base_opcode = 0b01010101,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.TESTINGONLY,
-        .arg1 = ArgumentDefinition{
-            .Immediate8BitUnsigned = {},
-        },
-        .arg2 = null,
-        .base_opcode = 0b01010101,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.TESTINGONLY,
-        .arg1 = ArgumentDefinition{
-            .Label = {},
-        },
-        .arg2 = null,
-        .base_opcode = 0b01010101,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.TESTINGONLY,
-        .arg1 = null,
-        .arg2 = null,
-        .base_opcode = 0b01010101,
-    },
-
     OpcodeDefinition{
         .instr = Instruction.LD,
         .arg1 = ArgumentDefinition{
@@ -1578,7 +1625,7 @@ const defined_opcodes =
             },
         },
         .arg2 = ArgumentDefinition{
-            .Immediate8BitUnsigned = {},
+            .Immediate8Bit = {},
         },
         .base_opcode = 0b00_000_110,
     },
@@ -1612,7 +1659,7 @@ const defined_opcodes =
             .IndirectRegister16Bit = Register16.HL,
         },
         .arg2 = ArgumentDefinition{
-            .Immediate8BitUnsigned = {},
+            .Immediate8Bit = {},
         },
         .base_opcode = 0b00110110,
     },
@@ -1794,35 +1841,7 @@ const defined_opcodes =
             },
         },
         .arg2 = ArgumentDefinition{
-            .Immediate8BitUnsigned = {},
-        },
-        .base_opcode = 0b00_00_0001,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.LD,
-        .arg1 = ArgumentDefinition{
-            .Register16Bit = Register16BitArgumentDefinition{
-                .Offset = Register16BitOffsetVariety{
-                    .LikeLD = 4,
-                },
-            },
-        },
-        .arg2 = ArgumentDefinition{
             .Immediate16Bit = {},
-        },
-        .base_opcode = 0b00_00_0001,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.LD,
-        .arg1 = ArgumentDefinition{
-            .Register16Bit = Register16BitArgumentDefinition{
-                .Offset = Register16BitOffsetVariety{
-                    .LikeLD = 4,
-                },
-            },
-        },
-        .arg2 = ArgumentDefinition{
-            .Label = {},
         },
         .base_opcode = 0b00_00_0001,
     },
@@ -1879,24 +1898,12 @@ const defined_opcodes =
     OpcodeDefinition{
         .instr = Instruction.LD,
         .arg1 = ArgumentDefinition{
-            .Register16Bit = Register16BitArgumentDefinition{
+            .Register16Bit = .{
                 .Register = Register16.HL,
             },
         },
         .arg2 = ArgumentDefinition{
-            .Immediate8BitUnsigned = {},
-        },
-        .base_opcode = 0b11111000,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.LD,
-        .arg1 = ArgumentDefinition{
-            .Register16Bit = Register16BitArgumentDefinition{
-                .Register = Register16.HL,
-            },
-        },
-        .arg2 = ArgumentDefinition{
-            .Immediate8BitSigned = {},
+            .Register16BitWithOffset = Register16.SP,
         },
         .base_opcode = 0b11111000,
     },
@@ -1921,7 +1928,7 @@ const defined_opcodes =
     OpcodeDefinition{
         .instr = Instruction.ADD,
         .arg1 = ArgumentDefinition{
-            .Immediate8BitUnsigned = {},
+            .Immediate8Bit = {},
         },
         .arg2 = null,
         .base_opcode = 0b11000110,
@@ -1947,7 +1954,7 @@ const defined_opcodes =
     OpcodeDefinition{
         .instr = Instruction.ADC,
         .arg1 = ArgumentDefinition{
-            .Immediate8BitUnsigned = {},
+            .Immediate8Bit = {},
         },
         .arg2 = null,
         .base_opcode = 0b11001110,
@@ -1973,7 +1980,7 @@ const defined_opcodes =
     OpcodeDefinition{
         .instr = Instruction.SUB,
         .arg1 = ArgumentDefinition{
-            .Immediate8BitUnsigned = {},
+            .Immediate8Bit = {},
         },
         .arg2 = null,
         .base_opcode = 0b11010110,
@@ -1999,7 +2006,7 @@ const defined_opcodes =
     OpcodeDefinition{
         .instr = Instruction.SBC,
         .arg1 = ArgumentDefinition{
-            .Immediate8BitUnsigned = {},
+            .Immediate8Bit = {},
         },
         .arg2 = null,
         .base_opcode = 0b11011110,
@@ -2025,7 +2032,7 @@ const defined_opcodes =
     OpcodeDefinition{
         .instr = Instruction.CP,
         .arg1 = ArgumentDefinition{
-            .Immediate8BitUnsigned = {},
+            .Immediate8Bit = {},
         },
         .arg2 = null,
         .base_opcode = 0b11111110,
@@ -2087,7 +2094,7 @@ const defined_opcodes =
     OpcodeDefinition{
         .instr = Instruction.AND,
         .arg1 = ArgumentDefinition{
-            .Immediate8BitUnsigned = {},
+            .Immediate8Bit = {},
         },
         .arg2 = null,
         .base_opcode = 0b11100110,
@@ -2113,7 +2120,7 @@ const defined_opcodes =
     OpcodeDefinition{
         .instr = Instruction.OR,
         .arg1 = ArgumentDefinition{
-            .Immediate8BitUnsigned = {},
+            .Immediate8Bit = {},
         },
         .arg2 = null,
         .base_opcode = 0b11110110,
@@ -2139,7 +2146,7 @@ const defined_opcodes =
     OpcodeDefinition{
         .instr = Instruction.XOR,
         .arg1 = ArgumentDefinition{
-            .Immediate8BitUnsigned = {},
+            .Immediate8Bit = {},
         },
         .arg2 = null,
         .base_opcode = 0b11101110,
@@ -2168,6 +2175,58 @@ const defined_opcodes =
         .arg2 = null,
         .base_opcode = 0b00101111,
     },
+    OpcodeDefinition{
+        .instr = Instruction.INC,
+        .arg1 = ArgumentDefinition{
+            .Register16Bit = Register16BitArgumentDefinition{
+                .Offset = Register16BitOffsetVariety{
+                    .LikeLD = 4,
+                },
+            },
+        },
+        .arg2 = null,
+        .base_opcode = 0b00_00_0011,
+    },
+    OpcodeDefinition{
+        .instr = Instruction.DEC,
+        .arg1 = ArgumentDefinition{
+            .Register16Bit = Register16BitArgumentDefinition{
+                .Offset = Register16BitOffsetVariety{
+                    .LikeLD = 4,
+                },
+            },
+        },
+        .arg2 = null,
+        .base_opcode = 0b00_00_1011,
+    },
+    OpcodeDefinition{
+        .instr = Instruction.ADD,
+        .arg1 = ArgumentDefinition{
+            .Register16Bit = Register16BitArgumentDefinition{
+                .Register = Register16.HL,
+            },
+        },
+        .arg2 = ArgumentDefinition{
+            .Register16Bit = Register16BitArgumentDefinition{
+                .Offset = Register16BitOffsetVariety{
+                    .LikeLD = 4,
+                },
+            },
+        },
+        .base_opcode = 0b00_00_1001,
+    },
+    OpcodeDefinition{
+        .instr = Instruction.ADD,
+        .arg1 = ArgumentDefinition{
+            .Register16Bit = .{
+                .Register = Register16.SP,
+            },
+        },
+        .arg2 = .{
+            .Immediate8BitSigned = {},
+        },
+        .base_opcode = 0b11101000,
+    },
 };
 
 const Opcode = struct {
@@ -2176,7 +2235,7 @@ const Opcode = struct {
     arg1: ?Argument,
     arg2: ?Argument,
 
-    fn fromToken(token: *const Token, allocator: std.mem.Allocator) !Opcode {
+    fn fromToken(token: Token, allocator: std.mem.Allocator) !Opcode {
         const token_capital = try toUpper(token.source, allocator);
         defer allocator.free(token_capital);
         const instr = std.meta.stringToEnum(Instruction, token_capital);
@@ -2221,31 +2280,54 @@ const Opcode = struct {
                 continue;
             }
 
-            if ((opcode_definition.arg1 != null and self.arg1 == null) or (opcode_definition.arg1 == null and self.arg1 != null)) {
+            const opcode_arg1_null = self.arg1 == null;
+            const opcode_arg2_null = self.arg2 == null;
+            const definition_arg1_null = opcode_definition.arg1 == null;
+            const definition_arg2_null = opcode_definition.arg2 == null;
+
+            if (opcode_arg1_null != definition_arg1_null) {
                 continue;
             }
 
-            if ((opcode_definition.arg2 != null and self.arg2 == null) or (opcode_definition.arg2 == null and self.arg2 != null)) {
+            if (opcode_arg2_null != definition_arg2_null) {
                 continue;
             }
 
-            if (opcode_definition.arg1 != null and self.arg1 != null and @as(ArgumentType, opcode_definition.arg1.?) != @as(ArgumentType, self.arg1.?)) {
-                continue;
+            var arg1: ArgumentData = undefined;
+            if (!opcode_arg1_null) {
+                const arg = ArgumentData.fromDefinition(self.arg1.?, opcode_definition.arg1.?);
+                if (arg == null) {
+                    continue;
+                }
+                arg1 = arg.?;
             }
 
-            if (opcode_definition.arg2 != null and self.arg2 != null and @as(ArgumentType, opcode_definition.arg2.?) != @as(ArgumentType, self.arg2.?)) {
-                continue;
+            var arg2: ArgumentData = undefined;
+            if (!opcode_arg2_null) {
+                const arg = ArgumentData.fromDefinition(self.arg2.?, opcode_definition.arg2.?);
+                if (arg == null) {
+                    continue;
+                }
+                arg2 = arg.?;
             }
 
             var opcode = opcode_definition.base_opcode;
-            opcode, const imm1, const imm2 = if (opcode_definition.arg1) |arg| arg.encode(opcode, self.arg1.?) catch |e| {
-                latest_error = e;
-                continue;
-            } else .{ opcode, null, null };
-            opcode, const imm3, const imm4 = if (opcode_definition.arg2) |arg| arg.encode(opcode, self.arg2.?) catch |e| {
-                latest_error = e;
-                continue;
-            } else .{ opcode, null, null };
+
+            opcode, const imm1, const imm2 = if (opcode_definition.arg1) |arg|
+                arg.encode(opcode, arg1) catch |e| {
+                    latest_error = e;
+                    continue;
+                }
+            else
+                .{ opcode, null, null };
+
+            opcode, const imm3, const imm4 = if (opcode_definition.arg2) |arg|
+                arg.encode(opcode, arg2) catch |e| {
+                    latest_error = e;
+                    continue;
+                }
+            else
+                .{ opcode, null, null };
 
             var size: usize = 0;
             try stream.append(opcode);
@@ -2278,17 +2360,17 @@ const Opcode = struct {
 test "Opcode.fromToken 1" {
     const input = Token{
         .line = 0,
-        .source = "TESTINGONLY",
+        .source = "DAA",
         .which = TokenKind.Instruction,
     };
     const expected = Opcode{
         .line = 0,
-        .instr = Instruction.TESTINGONLY,
+        .instr = Instruction.DAA,
         .arg1 = null,
         .arg2 = null,
     };
 
-    const actual = try Opcode.fromToken(&input, std.testing.allocator);
+    const actual = try Opcode.fromToken(input, std.testing.allocator);
 
     try std.testing.expectEqual(expected, actual);
 }
@@ -2301,7 +2383,7 @@ test "Opcode.fromToken 2" {
     };
     const expected = AssemblerError.InvalidInstruction;
 
-    const actual = Opcode.fromToken(&input, std.testing.allocator);
+    const actual = Opcode.fromToken(input, std.testing.allocator);
 
     try std.testing.expectError(expected, actual);
 }
@@ -2309,12 +2391,17 @@ test "Opcode.fromToken 2" {
 test "addArgument 1" {
     var opcode = Opcode{
         .line = 0,
-        .instr = Instruction.TESTINGONLY,
+        .instr = Instruction.ADD,
         .arg1 = null,
         .arg2 = null,
     };
     const arg = Argument{
-        .Register8Bit = Register8.B,
+        .arg = .{
+            .Register8Bit = Register8.B,
+        },
+        .indirect = false,
+        .incDec = null,
+        .offset = null,
     };
 
     try opcode.addArgument(arg);
@@ -2325,16 +2412,26 @@ test "addArgument 1" {
 
 test "addArgument 2" {
     const arg1 = Argument{
-        .Register8Bit = Register8.B,
+        .arg = .{
+            .Register8Bit = Register8.B,
+        },
+        .indirect = false,
+        .incDec = null,
+        .offset = null,
     };
     var opcode = Opcode{
         .line = 0,
-        .instr = Instruction.TESTINGONLY,
+        .instr = Instruction.ADD,
         .arg1 = arg1,
         .arg2 = null,
     };
     const arg = Argument{
-        .Immediate8BitUnsigned = 0,
+        .arg = .{
+            .Immediate = 0,
+        },
+        .indirect = false,
+        .incDec = null,
+        .offset = null,
     };
 
     try opcode.addArgument(arg);
@@ -2345,39 +2442,64 @@ test "addArgument 2" {
 
 test "addArgument 3" {
     const arg1 = Argument{
-        .Register8Bit = Register8.B,
+        .arg = .{
+            .Register8Bit = Register8.B,
+        },
+        .indirect = false,
+        .incDec = null,
+        .offset = null,
     };
     const arg2 = Argument{
-        .Immediate8BitUnsigned = 0,
+        .arg = .{
+            .Immediate = 0,
+        },
+        .indirect = false,
+        .incDec = null,
+        .offset = null,
     };
     var opcode = Opcode{
         .line = 0,
-        .instr = Instruction.TESTINGONLY,
+        .instr = Instruction.LD,
         .arg1 = arg1,
         .arg2 = arg2,
     };
     const arg = Argument{
-        .Immediate16Bit = 0xFFFF,
+        .arg = .{
+            .Immediate = 0xFFFF,
+        },
+        .indirect = false,
+        .incDec = null,
+        .offset = null,
     };
 
     try std.testing.expectError(AssemblerError.InvalidArgumentCount, opcode.addArgument(arg));
 }
 
-test "encode 16 16" {
+test "encode immediate 16" {
     var stream = std.ArrayList(u8).init(std.testing.allocator);
     try stream.append(0x11);
     defer stream.deinit();
 
-    const expected_stream = [_]u8{ 0x11, 0b01010101, 0xBB, 0xAA, 0xDD, 0xCC };
-    const expected_slice = [_]u8{ 0b01010101, 0xBB, 0xAA, 0xDD, 0xCC };
+    const expected_stream = [_]u8{ 0x11, 0b00000001, 0xBB, 0xAA };
+    const expected_slice = [_]u8{ 0b00000001, 0xBB, 0xAA };
 
     const opcode = Opcode{
-        .instr = Instruction.TESTINGONLY,
+        .instr = Instruction.LD,
         .arg1 = Argument{
-            .Immediate16Bit = 0xAABB,
+            .arg = .{
+                .Register16Bit = Register16.BC,
+            },
+            .indirect = false,
+            .incDec = null,
+            .offset = null,
         },
         .arg2 = Argument{
-            .Immediate16Bit = 0xCCDD,
+            .arg = .{
+                .Immediate = 0xAABB,
+            },
+            .indirect = false,
+            .incDec = null,
+            .offset = null,
         },
         .line = 0,
     };
@@ -2388,21 +2510,31 @@ test "encode 16 16" {
     try std.testing.expectEqualSlices(u8, &expected_slice, actual);
 }
 
-test "encode 16 8" {
+test "encode immediate 8" {
     var stream = std.ArrayList(u8).init(std.testing.allocator);
     try stream.append(0x11);
     defer stream.deinit();
 
-    const expected_stream = [_]u8{ 0x11, 0b01010101, 0xBB, 0xAA, 0xCC };
-    const expected_slice = [_]u8{ 0b01010101, 0xBB, 0xAA, 0xCC };
+    const expected_stream = [_]u8{ 0x11, 0b00000110, 0xAA };
+    const expected_slice = [_]u8{ 0b00000110, 0xAA };
 
     const opcode = Opcode{
-        .instr = Instruction.TESTINGONLY,
+        .instr = Instruction.LD,
         .arg1 = Argument{
-            .Immediate16Bit = 0xAABB,
+            .arg = .{
+                .Register8Bit = Register8.B,
+            },
+            .indirect = false,
+            .incDec = null,
+            .offset = null,
         },
         .arg2 = Argument{
-            .Immediate8BitUnsigned = 0xCC,
+            .arg = .{
+                .Immediate = 0xAA,
+            },
+            .indirect = false,
+            .incDec = null,
+            .offset = null,
         },
         .line = 0,
     };
@@ -2413,44 +2545,31 @@ test "encode 16 8" {
     try std.testing.expectEqualSlices(u8, &expected_slice, actual);
 }
 
-test "encode 16 null" {
+test "encode immediate 8 as immediate 16" {
     var stream = std.ArrayList(u8).init(std.testing.allocator);
     try stream.append(0x11);
     defer stream.deinit();
 
-    const expected_stream = [_]u8{ 0x11, 0b01010101, 0xBB, 0xAA };
-    const expected_slice = [_]u8{ 0b01010101, 0xBB, 0xAA };
+    const expected_stream = [_]u8{ 0x11, 0b00000001, 0xAA, 0x00 };
+    const expected_slice = [_]u8{ 0b00000001, 0xAA, 0x00 };
 
     const opcode = Opcode{
-        .instr = Instruction.TESTINGONLY,
+        .instr = Instruction.LD,
         .arg1 = Argument{
-            .Immediate16Bit = 0xAABB,
-        },
-        .arg2 = null,
-        .line = 0,
-    };
-
-    const actual = try opcode.encode(&stream);
-
-    try std.testing.expectEqualSlices(u8, &expected_stream, stream.items);
-    try std.testing.expectEqualSlices(u8, &expected_slice, actual);
-}
-
-test "encode 8 16" {
-    var stream = std.ArrayList(u8).init(std.testing.allocator);
-    try stream.append(0x11);
-    defer stream.deinit();
-
-    const expected_stream = [_]u8{ 0x11, 0b01010101, 0xAA, 0xCC, 0xBB };
-    const expected_slice = [_]u8{ 0b01010101, 0xAA, 0xCC, 0xBB };
-
-    const opcode = Opcode{
-        .instr = Instruction.TESTINGONLY,
-        .arg1 = Argument{
-            .Immediate8BitUnsigned = 0xAA,
+            .arg = .{
+                .Register16Bit = Register16.BC,
+            },
+            .indirect = false,
+            .incDec = null,
+            .offset = null,
         },
         .arg2 = Argument{
-            .Immediate16Bit = 0xBBCC,
+            .arg = .{
+                .Immediate = 0xAA,
+            },
+            .indirect = false,
+            .incDec = null,
+            .offset = null,
         },
         .line = 0,
     };
@@ -2461,21 +2580,33 @@ test "encode 8 16" {
     try std.testing.expectEqualSlices(u8, &expected_slice, actual);
 }
 
-test "encode 8 8" {
+test "encode label as immediate 16" {
     var stream = std.ArrayList(u8).init(std.testing.allocator);
     try stream.append(0x11);
     defer stream.deinit();
 
-    const expected_stream = [_]u8{ 0x11, 0b01010101, 0xAA, 0xBB };
-    const expected_slice = [_]u8{ 0b01010101, 0xAA, 0xBB };
+    const expected_stream = [_]u8{ 0x11, 0b00000001, 0xAA, 0xAA };
+    const expected_slice = [_]u8{ 0b00000001, 0xAA, 0xAA };
 
+    const label = try toUpper("foo", std.testing.allocator);
+    defer std.testing.allocator.free(label);
     const opcode = Opcode{
-        .instr = Instruction.TESTINGONLY,
+        .instr = Instruction.LD,
         .arg1 = Argument{
-            .Immediate8BitUnsigned = 0xAA,
+            .arg = .{
+                .Register16Bit = Register16.BC,
+            },
+            .indirect = false,
+            .incDec = null,
+            .offset = null,
         },
         .arg2 = Argument{
-            .Immediate8BitUnsigned = 0xBB,
+            .arg = .{
+                .Label = label,
+            },
+            .indirect = false,
+            .incDec = null,
+            .offset = null,
         },
         .line = 0,
     };
@@ -2486,42 +2617,31 @@ test "encode 8 8" {
     try std.testing.expectEqualSlices(u8, &expected_slice, actual);
 }
 
-test "encode 8 null" {
+test "encode indirect 16" {
     var stream = std.ArrayList(u8).init(std.testing.allocator);
     try stream.append(0x11);
     defer stream.deinit();
 
-    const expected_stream = [_]u8{ 0x11, 0b01010101, 0xAA };
-    const expected_slice = [_]u8{ 0b01010101, 0xAA };
+    const expected_stream = [_]u8{ 0x11, 0b11111010, 0xBB, 0xAA };
+    const expected_slice = [_]u8{ 0b11111010, 0xBB, 0xAA };
 
     const opcode = Opcode{
-        .instr = Instruction.TESTINGONLY,
+        .instr = Instruction.LD,
         .arg1 = Argument{
-            .Immediate8BitUnsigned = 0xAA,
+            .arg = .{
+                .Register8Bit = Register8.A,
+            },
+            .indirect = false,
+            .incDec = null,
+            .offset = null,
         },
-        .arg2 = null,
-        .line = 0,
-    };
-
-    const actual = try opcode.encode(&stream);
-
-    try std.testing.expectEqualSlices(u8, &expected_stream, stream.items);
-    try std.testing.expectEqualSlices(u8, &expected_slice, actual);
-}
-
-test "encode null 16" {
-    var stream = std.ArrayList(u8).init(std.testing.allocator);
-    try stream.append(0x11);
-    defer stream.deinit();
-
-    const expected_stream = [_]u8{ 0x11, 0b01010101, 0xBB, 0xAA };
-    const expected_slice = [_]u8{ 0b01010101, 0xBB, 0xAA };
-
-    const opcode = Opcode{
-        .instr = Instruction.TESTINGONLY,
-        .arg1 = null,
         .arg2 = Argument{
-            .Immediate16Bit = 0xAABB,
+            .arg = .{
+                .Immediate = 0xAABB,
+            },
+            .indirect = true,
+            .incDec = null,
+            .offset = null,
         },
         .line = 0,
     };
@@ -2532,19 +2652,31 @@ test "encode null 16" {
     try std.testing.expectEqualSlices(u8, &expected_slice, actual);
 }
 
-test "encode null 8" {
+test "encode indirect 8" {
     var stream = std.ArrayList(u8).init(std.testing.allocator);
     try stream.append(0x11);
     defer stream.deinit();
 
-    const expected_stream = [_]u8{ 0x11, 0b01010101, 0xAA };
-    const expected_slice = [_]u8{ 0b01010101, 0xAA };
+    const expected_stream = [_]u8{ 0x11, 0b11110000, 0xAA };
+    const expected_slice = [_]u8{ 0b11110000, 0xAA };
 
     const opcode = Opcode{
-        .instr = Instruction.TESTINGONLY,
-        .arg1 = null,
+        .instr = Instruction.LDH,
+        .arg1 = Argument{
+            .arg = .{
+                .Register8Bit = Register8.A,
+            },
+            .indirect = false,
+            .incDec = null,
+            .offset = null,
+        },
         .arg2 = Argument{
-            .Immediate8BitUnsigned = 0xAA,
+            .arg = .{
+                .Immediate = 0xAA,
+            },
+            .indirect = true,
+            .incDec = null,
+            .offset = null,
         },
         .line = 0,
     };
@@ -2555,18 +2687,139 @@ test "encode null 8" {
     try std.testing.expectEqualSlices(u8, &expected_slice, actual);
 }
 
-test "encode null null" {
+test "encode indirect 8 as indirect 16" {
     var stream = std.ArrayList(u8).init(std.testing.allocator);
     try stream.append(0x11);
     defer stream.deinit();
 
-    const expected_stream = [_]u8{ 0x11, 0b01010101 };
-    const expected_slice = [_]u8{0b01010101};
+    const expected_stream = [_]u8{ 0x11, 0b11111010, 0xAA, 0x00 };
+    const expected_slice = [_]u8{ 0b11111010, 0xAA, 0x00 };
 
     const opcode = Opcode{
-        .instr = Instruction.TESTINGONLY,
-        .arg1 = null,
-        .arg2 = null,
+        .instr = Instruction.LD,
+        .arg1 = Argument{
+            .arg = .{
+                .Register8Bit = Register8.A,
+            },
+            .indirect = false,
+            .incDec = null,
+            .offset = null,
+        },
+        .arg2 = Argument{
+            .arg = .{
+                .Immediate = 0xAA,
+            },
+            .indirect = true,
+            .incDec = null,
+            .offset = null,
+        },
+        .line = 0,
+    };
+
+    const actual = try opcode.encode(&stream);
+
+    try std.testing.expectEqualSlices(u8, &expected_stream, stream.items);
+    try std.testing.expectEqualSlices(u8, &expected_slice, actual);
+}
+
+test "encode label as indirect 16" {
+    var stream = std.ArrayList(u8).init(std.testing.allocator);
+    try stream.append(0x11);
+    defer stream.deinit();
+
+    const expected_stream = [_]u8{ 0x11, 0b11111010, 0xAA, 0xAA };
+    const expected_slice = [_]u8{ 0b11111010, 0xAA, 0xAA };
+
+    const label = try toUpper("foo", std.testing.allocator);
+    defer std.testing.allocator.free(label);
+    const opcode = Opcode{
+        .instr = Instruction.LD,
+        .arg1 = Argument{
+            .arg = .{
+                .Register8Bit = Register8.A,
+            },
+            .indirect = false,
+            .incDec = null,
+            .offset = null,
+        },
+        .arg2 = Argument{
+            .arg = .{
+                .Label = label,
+            },
+            .indirect = true,
+            .incDec = null,
+            .offset = null,
+        },
+        .line = 0,
+    };
+
+    const actual = try opcode.encode(&stream);
+
+    try std.testing.expectEqualSlices(u8, &expected_stream, stream.items);
+    try std.testing.expectEqualSlices(u8, &expected_slice, actual);
+}
+
+test "encode reg16 offset" {
+    var stream = std.ArrayList(u8).init(std.testing.allocator);
+    try stream.append(0x11);
+    defer stream.deinit();
+
+    const expected_stream = [_]u8{ 0x11, 0b11111000, 0xFF };
+    const expected_slice = [_]u8{ 0b11111000, 0xFF };
+
+    const opcode = Opcode{
+        .instr = Instruction.LD,
+        .arg1 = Argument{
+            .arg = .{
+                .Register16Bit = Register16.HL,
+            },
+            .indirect = false,
+            .incDec = null,
+            .offset = null,
+        },
+        .arg2 = .{
+            .arg = .{
+                .Register16Bit = Register16.SP,
+            },
+            .indirect = false,
+            .incDec = null,
+            .offset = -1,
+        },
+        .line = 0,
+    };
+
+    const actual = try opcode.encode(&stream);
+
+    try std.testing.expectEqualSlices(u8, &expected_stream, stream.items);
+    try std.testing.expectEqualSlices(u8, &expected_slice, actual);
+}
+
+test "encode reg16 offset 2" {
+    var stream = std.ArrayList(u8).init(std.testing.allocator);
+    try stream.append(0x11);
+    defer stream.deinit();
+
+    const expected_stream = [_]u8{ 0x11, 0b11111000, 0x01 };
+    const expected_slice = [_]u8{ 0b11111000, 0x01 };
+
+    const opcode = Opcode{
+        .instr = Instruction.LD,
+        .arg1 = Argument{
+            .arg = .{
+                .Register16Bit = Register16.HL,
+            },
+            .indirect = false,
+            .incDec = null,
+            .offset = null,
+        },
+        .arg2 = .{
+            .arg = .{
+                .Register16Bit = Register16.SP,
+            },
+            .indirect = false,
+            .incDec = null,
+            .offset = 1,
+        },
         .line = 0,
     };
 
@@ -2581,7 +2834,7 @@ test "encode failure" {
     defer stream.deinit();
 
     const opcode = Opcode{
-        .instr = Instruction.ADD,
+        .instr = Instruction.LD,
         .arg1 = null,
         .arg2 = null,
         .line = 0,
@@ -2618,7 +2871,7 @@ pub fn parser(input: []const Token, allocator: std.mem.Allocator) !struct { std.
                 const upper = try toUpper(token.source, allocator);
                 errdefer allocator.free(upper);
 
-                try validateLabel(&token);
+                try validateLabel(token.source, token.line);
                 if (labels.contains(upper)) {
                     logError("Line {d}: Redefinition of label '{s}'", .{ token.line, token.source });
                     return AssemblerError.RedefinedLabel;
@@ -2626,7 +2879,7 @@ pub fn parser(input: []const Token, allocator: std.mem.Allocator) !struct { std.
                 try labels.put(upper, idx);
             },
             TokenKind.Instruction => {
-                var next = try Opcode.fromToken(&token, allocator);
+                var next = try Opcode.fromToken(token, allocator);
                 errdefer next.free(allocator);
 
                 if (current != null) {
@@ -2636,7 +2889,7 @@ pub fn parser(input: []const Token, allocator: std.mem.Allocator) !struct { std.
                 current = next;
             },
             TokenKind.Argument => {
-                var arg = try Argument.fromToken(&token, allocator);
+                var arg = try Argument.fromToken(token, allocator);
                 errdefer arg.free(allocator);
                 try current.?.addArgument(arg);
             },
@@ -2656,8 +2909,8 @@ pub fn parser(input: []const Token, allocator: std.mem.Allocator) !struct { std.
 test "parser succeed" {
     const input =
         \\ lbl1:
-        \\   testingonly B 2
-        \\ lbl2: testingonly C 3
+        \\   ld B 2
+        \\ lbl2: ld C 3
         \\ lbl3:
     ;
 
@@ -2674,22 +2927,42 @@ test "parser succeed" {
     const expected_opcodes = [_]Opcode{
         Opcode{
             .line = 2,
-            .instr = Instruction.TESTINGONLY,
+            .instr = Instruction.LD,
             .arg1 = Argument{
-                .Register8Bit = Register8.B,
+                .arg = .{
+                    .Register8Bit = Register8.B,
+                },
+                .indirect = false,
+                .incDec = null,
+                .offset = null,
             },
             .arg2 = Argument{
-                .Immediate8BitUnsigned = 2,
+                .arg = .{
+                    .Immediate = 2,
+                },
+                .indirect = false,
+                .incDec = null,
+                .offset = null,
             },
         },
         Opcode{
             .line = 3,
-            .instr = Instruction.TESTINGONLY,
+            .instr = Instruction.LD,
             .arg1 = Argument{
-                .Register8Bit = Register8.C,
+                .arg = .{
+                    .Register8Bit = Register8.C,
+                },
+                .indirect = false,
+                .incDec = null,
+                .offset = null,
             },
             .arg2 = Argument{
-                .Immediate8BitUnsigned = 3,
+                .arg = .{
+                    .Immediate = 3,
+                },
+                .indirect = false,
+                .incDec = null,
+                .offset = null,
             },
         },
     };
@@ -2738,20 +3011,22 @@ pub fn assembler(input: []const Opcode, labelMap: *std.StringHashMap(usize), all
         const accumulated: usize = accumulatedOpcodeSize[idx];
         accumulatedOpcodeSize[idx + 1] = accumulated + bytes.len;
 
-        if (opcode.arg1 != null) {
-            // Expect labels only on the first argument
-            switch (opcode.arg1.?) {
-                .Label => |lbl| {
-                    const getOrPut = try labelReferences.getOrPut(lbl);
-                    if (!getOrPut.found_existing) {
-                        var newlist = std.ArrayList(usize).init(allocator);
-                        errdefer newlist.deinit();
-                        getOrPut.value_ptr.* = newlist;
-                    }
-                    try getOrPut.value_ptr.append(accumulated);
-                },
-                else => {},
+        // Expect labels only on one of the arguments (there is no instruction that takes in multiple immediates)
+        var lbl: ?[]const u8 = null;
+        if (opcode.arg1 != null and opcode.arg1.?.arg == BasicArgumentType.Label) {
+            lbl = opcode.arg1.?.arg.Label;
+        }
+        if (opcode.arg2 != null and opcode.arg2.?.arg == BasicArgumentType.Label) {
+            lbl = opcode.arg2.?.arg.Label;
+        }
+        if (lbl != null) {
+            const getOrPut = try labelReferences.getOrPut(lbl.?);
+            if (!getOrPut.found_existing) {
+                var newlist = std.ArrayList(usize).init(allocator);
+                errdefer newlist.deinit();
+                getOrPut.value_ptr.* = newlist;
             }
+            try getOrPut.value_ptr.append(accumulated);
         }
     }
 
@@ -2806,13 +3081,9 @@ fn freeOpcodes(opcodes: []Opcode, allocator: std.mem.Allocator) void {
 test "assembler" {
     const input =
         \\ lbl1:
-        \\       testingonly
-        \\       testingonly 0xAA 0xBBCC
-        \\       testingonly lbl3
-        \\ lbl2: testingonly lbl2
-        \\       testingonly lbl1
-        \\       testingonly 0xFF 0xEEDD
-        \\       testingonly
+        \\       ld BC lbl3
+        \\ lbl2: ld BC lbl2
+        \\       ld BC lbl1
         \\ lbl3:
     ;
 
@@ -2826,13 +3097,9 @@ test "assembler" {
     defer freeOpcodes(opcodes, std.testing.allocator);
 
     const expected = [_]u8{
-        0x55, // testingonly
-        0x55, 0xAA, 0xCC, 0xBB, // testingonly AA BBCC
-        0x55, 0x13, 0x00, // testingonly lbl3
-        0x55, 0x08, 0x00, // testingonly lbl2
-        0x55, 0x00, 0x00, // testingonly lbl1
-        0x55, 0xFF, 0xDD, 0xEE, // testingonly DD EEDD
-        0x55, // testingonly
+        0b00000001, 0x09, 0x00,
+        0b00000001, 0x03, 0x00,
+        0b00000001, 0x00, 0x00,
     };
 
     const actual = try assembler(opcodes, &labelMap, std.testing.allocator);
@@ -2859,7 +3126,7 @@ test "assembler bad argument" {
 }
 
 test "assembler bad label" {
-    const input = "lbl1: testingonly lbl2";
+    const input = "lbl1: ld BC lbl2";
 
     const tokens = try lexer(input, std.testing.allocator);
     defer std.testing.allocator.free(tokens);
@@ -2886,4 +3153,188 @@ pub fn translate(code: []const u8, allocator: std.mem.Allocator) ![]u8 {
     defer freeOpcodes(opcodes, allocator);
 
     return assembler(opcodes, &labelMap, allocator);
+}
+
+test "translate" {
+    const input =
+        \\ foo:           ; 1
+        \\ LD B, C        ; 2
+        \\ LD B, 0        ; 3
+        \\ LD B, 255      ; 4
+        \\ LD B, (HL)     ; 5
+        \\ LD (HL), B     ; 6
+        \\ LD (HL), 0     ; 7
+        \\ LD (HL), 255   ; 8
+        \\ LD A, (BC)     ; 9
+        \\ LD A, (DE)     ; 10
+        \\ LD (BC), A     ; 11
+        \\ LD (DE), A     ; 12
+        \\ LD A, (0)      ; 13
+        \\ LD A, (65535)  ; 14
+        \\ LD A, (foo)    ; 15
+        \\ LD (0), A      ; 16
+        \\ LD (65535), A  ; 17
+        \\ LD (foo), A    ; 18
+        \\ LDH A, (C)     ; 19
+        \\ LDH (C), A     ; 20
+        \\ LDH A, (0)     ; 21
+        \\ LDH A, (255)   ; 22
+        \\ LDH (0), A     ; 23
+        \\ LDH (255), A   ; 24
+        \\ LD A, (HL-)    ; 25
+        \\ LD (HL-), A    ; 26
+        \\ LD A, (HL+)    ; 27
+        \\ LD (HL+), A    ; 28
+        \\ LD HL, 0       ; 29
+        \\ LD HL, 65535   ; 30
+        \\ LD HL, foo     ; 31
+        \\ LD (0), SP     ; 32
+        \\ LD (65535), SP ; 33
+        \\ LD (foo), SP   ; 34
+        \\ LD SP, HL      ; 35
+        \\ PUSH HL        ; 36
+        \\ POP HL         ; 37
+        \\ LD HL, SP+127  ; 38
+        \\ LD HL, SP+0    ; 39
+        \\ LD HL, SP-128  ; 40
+        \\ ADD B          ; 41
+        \\ ADD (HL)       ; 42
+        \\ ADD 0          ; 43
+        \\ ADD 255        ; 44
+        \\ ADC B          ; 45
+        \\ ADC (HL)       ; 46
+        \\ ADC 0          ; 47
+        \\ ADC 255        ; 48
+        \\ SUB B          ; 49
+        \\ SUB (HL)       ; 50
+        \\ SUB 0          ; 51
+        \\ SUB 255        ; 52
+        \\ SBC B          ; 53
+        \\ SBC (HL)       ; 54
+        \\ SBC 0          ; 55
+        \\ SBC 255        ; 56
+        \\ CP B           ; 57
+        \\ CP (HL)        ; 58
+        \\ CP 0           ; 59
+        \\ CP 255         ; 60
+        \\ INC B          ; 61
+        \\ INC (HL)       ; 62
+        \\ DEC B          ; 63
+        \\ DEC (HL)       ; 64
+        \\ AND B          ; 65
+        \\ AND (HL)       ; 66
+        \\ AND 0          ; 67
+        \\ AND 255        ; 68
+        \\ OR B           ; 69
+        \\ OR (HL)        ; 70
+        \\ OR 0           ; 71
+        \\ OR 255         ; 72
+        \\ XOR B          ; 73
+        \\ XOR (HL)       ; 74
+        \\ XOR 0          ; 75
+        \\ XOR 255        ; 76
+        \\ CCF            ; 77
+        \\ SCF            ; 78
+        \\ DAA            ; 79
+        \\ CPL            ; 80
+        \\ INC HL         ; 81
+        \\ DEC HL         ; 82
+        \\ ADD HL, BC     ; 83
+        \\ ADD SP, 127    ; 84
+        \\ ADD SP, 0      ; 85
+        \\ ADD SP, -128   ; 86
+    ;
+
+    const expected = [_]u8{
+        0b01_000_001, // LD B, C
+        0b00_000_110, 0x00, // LD B, 0
+        0b00_000_110, 0xFF, // LD B, 255
+        0b01_000_110, // LD B, (HL)
+        0b01_110_000, // LD (HL), B
+        0b00110110, 0x00, // LD (HL), 0
+        0b00110110, 0xFF, // LD (HL), 255
+        0b0000_1010, // LD A, (BC)
+        0b0001_1010, // LD A, (DE)
+        0b0000_0010, // LD (BC), A
+        0b0001_0010, // LD (DE), A
+        0b1111_1010, 0x00, 0x00, // LD A, (0)
+        0b1111_1010, 0xFF, 0xFF, // LD A, (65535)
+        0b1111_1010, 0x00, 0x00, // LD A, (foo)
+        0b1110_1010, 0x00, 0x00, // LD (0), A
+        0b1110_1010, 0xFF, 0xFF, // LD (65535), A
+        0b1110_1010, 0x00, 0x00, // LD (foo), A
+        0b1111_0010, // LDH A, (C)
+        0b1110_0010, // LDH (C), A
+        0b1111_0000, 0x00, // LDH A, (0)
+        0b1111_0000, 0xFF, // LDH A, (255)
+        0b1110_0000, 0x00, // LDH (0), A
+        0b1110_0000, 0xFF, // LDH (255), A
+        0b001_11_010, // LD A, (HL-)
+        0b001_10_010, // LD (HL-), A
+        0b001_01_010, // LD A, (HL+)
+        0b001_00_010, // LD (HL+), A
+        0b00_10_0001, 0x00, 0x00, // LD HL, 0
+        0b00_10_0001, 0xFF, 0xFF, // LD HL, 65535
+        0b00_10_0001, 0x00, 0x00, // LD HL, foo
+        0b0000_1000, 0x00, 0x00, // LD (0), SP
+        0b0000_1000, 0xFF, 0xFF, // LD (65535), SP
+        0b0000_1000, 0x00, 0x00, // LD (foo), SP
+        0b11111001, // LD SP, HL
+        0b11_10_0101, // PUSH HL
+        0b11_10_0001, // POP HL
+        0b11111000, 0x7F, // LD HL, SP+127
+        0b11111000, 0x00, // LD HL, SP+0
+        0b11111000, 0x80, // LD HL, SP-128
+        0b10000_000, // ADD B
+        0b10000_110, // ADD (HL)
+        0b11000_110, 0x00, // ADD 0
+        0b11000_110, 0xFF, // ADD 255
+        0b10001_000, // ADC B
+        0b10001_110, // ADC (HL)
+        0b11001_110, 0x00, // ADC 0
+        0b11001_110, 0xFF, // ADC 255
+        0b10010_000, // SUB B
+        0b10010_110, // SUB (HL)
+        0b11010_110, 0x00, // SUB 0
+        0b11010_110, 0xFF, // SUB 255
+        0b10011_000, // SBC B
+        0b10011_110, // SBC (HL)
+        0b11011_110, 0x00, // SBC 0
+        0b11011_110, 0xFF, // SBC 255
+        0b10111_000, // CP B
+        0b10011_110, // CP (HL)
+        0b11111_110, 0x00, // CP 0
+        0b11111_110, 0xFF, // CP 255
+        0b00_000_100, // INC B
+        0b00_110_100, // INC (HL)
+        0b00_000_101, // DEC B
+        0b00_110_101, // DEC (HL)
+        0b10100_000, // AND B
+        0b10100_110, // AND (HL)
+        0b11100_110, 0x00, // AND 0
+        0b11100_110, 0xFF, // AND 255
+        0b10110_000, // OR B
+        0b10110_110, // OR (HL)
+        0b11110_110, 0x00, // OR 0
+        0b11110_110, 0xFF, // OR 255
+        0b10101_000, // XOR B
+        0b10101_110, // XOR (HL)
+        0b11101_110, 0x00, // XOR 0
+        0b11101_110, 0xFF, // XOR 255
+        0b00111111, // CCF
+        0b00110111, // SCF
+        0b00100111, // DAA
+        0b00101111, // CPL
+        0b00_10_0011, // INC HL
+        0b00_10_1011, // DEC HL
+        0b00_00_1001, // ADD HL, BC
+        0b11101000, 0x7F, // ADD SP, 127
+        0b11101000, 0x00, // ADD SP, 0
+        0b11101000, 0x80, // ADD SP, -128
+    };
+
+    const actual = try translate(input, std.testing.allocator);
+    defer std.testing.allocator.free(actual);
+
+    try std.testing.expectEqualSlices(u8, &expected, actual);
 }
