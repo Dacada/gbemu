@@ -66,6 +66,7 @@ const SelfRefCpuMethod = struct {
 pub const Cpu = struct {
     mmu: mmu.Mmu,
     reg: RegisterBank,
+    tmp: u8 = undefined,
 
     next_tick: SelfRefCpuMethod,
 
@@ -135,6 +136,13 @@ pub const Cpu = struct {
     }
 
     fn decodeOpcode(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        // OTHER
+
+        // NOP
+        if (self.reg.IR & 0b11111111 == 0b00000000) {
+            return self.fetchOpcode();
+        }
+
         // LOAD 8-BIT
 
         // Load register (register)
@@ -440,9 +448,33 @@ pub const Cpu = struct {
             return self.fetchOpcode();
         }
 
-        // NOP
-        if (self.reg.IR & 0b11111111 == 0b00000000) {
-            return self.fetchOpcode();
+        // ARITHMETIC 8-BIT
+
+        // Inc/Dec register 16-bit
+        if (self.reg.IR & 0b11_00_0_111 == 0b00_00_0_011) {
+            const incdec: u1 = @intCast((self.reg.IR & 0b00_00_1_000) >> 3);
+            const reg_code: u2 = @intCast((self.reg.IR & 0b00_11_0_000) >> 4);
+            const reg_ptr = self.ptrReg16Bit(reg_code);
+            if (incdec == 0) {
+                reg_ptr.inc();
+            } else {
+                reg_ptr.dec();
+            }
+            return SelfRefCpuMethod.init(Cpu.fetchOpcode);
+        }
+
+        // Add register 16-bit
+        if (self.reg.IR & 0b11_00_1111 == 0b00_00_1001) {
+            const reg_code: u2 = @intCast((self.reg.IR & 0b00_11_0000) >> 4);
+            const reg_ptr = self.ptrReg16Bit(reg_code);
+            self.reg.HL.Lo = self.reg.AF.add_return(self.reg.HL.Lo, reg_ptr.Lo, 0, self.reg.AF.Lo.Z);
+            return SelfRefCpuMethod.init(Cpu.addRegister162);
+        }
+
+        // Add to SP relative
+        if (self.reg.IR & 0b11111111 == 0b11101000) {
+            self.reg.WZ.Lo = try self.fetchPC();
+            return SelfRefCpuMethod.init(Cpu.addToSPRelative2);
         }
 
         return CpuError.IllegalInstruction;
@@ -581,19 +613,12 @@ pub const Cpu = struct {
     }
 
     fn loadHLfromAdjustedSP2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
-        const tmp = self.reg.AF.Hi;
-        self.reg.AF.Hi = self.reg.SP.Lo;
-        self.reg.AF.add(self.reg.WZ.Lo, 0);
-        self.reg.HL.Lo = self.reg.AF.Hi;
-        self.reg.AF.Hi = tmp;
-        self.reg.AF.Lo.Z = 0;
+        self.reg.HL.Lo = self.reg.AF.add_return(self.reg.SP.Lo, self.reg.WZ.Lo, 0, 0);
         return SelfRefCpuMethod.init(Cpu.loadHLfromAdjustedSP3);
     }
 
     fn loadHLfromAdjustedSP3(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
-        const adj: u8 = if ((self.reg.WZ.Lo & 0b1000_0000) >> 7 == 1) 0xFF else 0x00;
-        const tmp, _ = @addWithOverflow(self.reg.SP.Hi, adj);
-        self.reg.HL.Hi, _ = @addWithOverflow(tmp, self.reg.AF.Lo.C);
+        self.reg.HL.Hi = self.reg.AF.add_adj(self.reg.SP.Hi, self.reg.WZ.Lo);
         return self.fetchOpcode();
     }
 
@@ -640,6 +665,29 @@ pub const Cpu = struct {
 
     fn doXor(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
         self.reg.AF.xor(self.reg.WZ.Lo);
+        return self.fetchOpcode();
+    }
+
+    fn addRegister162(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        const reg_code: u2 = @intCast((self.reg.IR & 0b00_11_0000) >> 4);
+        const reg_ptr = self.ptrReg16Bit(reg_code);
+        self.reg.HL.Hi = self.reg.AF.add_return(self.reg.HL.Hi, reg_ptr.Hi, 1, self.reg.AF.Lo.Z);
+        return self.fetchOpcode();
+    }
+
+    fn addToSPRelative2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        self.tmp = self.reg.WZ.Lo;
+        self.reg.WZ.Lo = self.reg.AF.add_return(self.reg.SP.Lo, self.tmp, 0, 0);
+        return SelfRefCpuMethod.init(Cpu.addToSPRelative3);
+    }
+
+    fn addToSPRelative3(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        self.reg.WZ.Hi = self.reg.AF.add_adj(self.reg.SP.Hi, self.tmp);
+        return SelfRefCpuMethod.init(Cpu.addToSPRelative4);
+    }
+
+    fn addToSPRelative4(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        self.reg.SP.setAll(self.reg.WZ.all());
         return self.fetchOpcode();
     }
 

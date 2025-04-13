@@ -214,6 +214,19 @@ pub const AluRegister = packed struct {
         self.Lo.C = carry;
         self.Lo.H = 0;
     }
+
+    pub fn add_return(self: *AluRegister, op1: u8, op2: u8, with_carry: u1, z: u1) u8 {
+        const res = self.add_values(op1, op2, with_carry);
+        self.Lo.Z = z;
+        return res;
+    }
+
+    pub fn add_adj(self: *const AluRegister, op: u8, prev: u8) u8 {
+        const adj: u8 = if ((prev & 0b1000_0000) >> 7 == 1) 0xFF else 0x00;
+        const tmp, _ = @addWithOverflow(op, adj);
+        const res, _ = @addWithOverflow(tmp, self.Lo.C);
+        return res;
+    }
 };
 
 test "0b00000001 + 0b00000001" {
@@ -1340,4 +1353,66 @@ test "DAA a=0xFF, n=1, h=1, c=1" {
     reg.daa();
 
     try std.testing.expectEqual(expected_reg.all(), reg.all());
+}
+
+test "add return" {
+    var reg = AluRegister{
+        .Hi = 0x00,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 1,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0x00,
+        .Lo = RegisterFlags{
+            .C = 1,
+            .H = 1,
+            .N = 0,
+            .Z = 1,
+            .rest = 0,
+        },
+    };
+    const op1: u8 = 0xFF;
+    const op2: u8 = 0x01;
+    const expected: u8 = 0x00;
+
+    const actual = reg.add_return(op1, op2, 1, 1);
+
+    try std.testing.expectEqual(expected, actual);
+    try std.testing.expectEqualDeep(expected_reg, reg);
+}
+
+test "add_adj" {
+    var reg = AluRegister{
+        .Hi = 0x00,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+
+    const op1: u16 = 0x0A01;
+    const op2: i8 = -10;
+    const op1_hi: u8 = @intCast((op1 & 0xFF00) >> 8);
+    const op1_lo: u8 = @intCast(op1 & 0xFF);
+    const unsigned_op2: u8 = @bitCast(op2);
+    const expected_result_signed, _ = @addWithOverflow(@as(i16, op1), op2);
+    const expected_result: u16 = @intCast(expected_result_signed);
+    _, const expected_h = @addWithOverflow(@as(u4, op1 & 0x000F), @as(u4, @intCast(unsigned_op2 & 0x0F)));
+    _, const expected_c = @addWithOverflow(@as(u8, op1 & 0x00FF), unsigned_op2);
+
+    const actual_lo = reg.add_values(op1_lo, unsigned_op2, 0);
+    const actual_hi = reg.add_adj(op1_hi, unsigned_op2);
+    const actual = (@as(u16, actual_hi) << 8) | actual_lo;
+
+    try std.testing.expectEqual(expected_result, actual);
+    try std.testing.expectEqual(expected_h, reg.Lo.H);
+    try std.testing.expectEqual(expected_c, reg.Lo.C);
 }

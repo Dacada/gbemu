@@ -1025,12 +1025,20 @@ test "Load HL from adjusted SP" {
         const test_value: u16 = 0x100D;
 
         const unsigned_e: u8 = @intCast(e);
-        const signed_e: i8 = @bitCast(unsigned_e);
-        const test_value_after_second_add_signed, _ = @addWithOverflow(@as(i16, test_value), signed_e);
-        const test_value_after_second_add: u16 = @bitCast(test_value_after_second_add_signed);
-        const test_value_after_first_add: u16 = test_value_after_second_add & 0x00FF;
-        _, const halfcarry_flag = @addWithOverflow(@as(u4, test_value & 0x000F), @as(u4, @intCast(unsigned_e & 0x0F)));
-        _, const carry_flag = @addWithOverflow(@as(u8, test_value & 0x00FF), @as(u8, unsigned_e));
+
+        var reg = alu.AluRegister{
+            .Hi = 0x00,
+            .Lo = alu.RegisterFlags{
+                .C = 0,
+                .H = 0,
+                .N = 0,
+                .Z = 0,
+                .rest = 0,
+            },
+        };
+        const expected_lo = reg.add_return(@intCast(test_value & 0xFF), unsigned_e, 0, 0);
+        const expected_hi = reg.add_adj(@intCast((test_value & 0xFF00) >> 8), unsigned_e);
+        const expected = (@as(u16, expected_hi) << 8) | expected_lo;
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "Load HL from adjusted SP (e={d})", .{e});
         defer std.testing.allocator.free(name);
@@ -1058,16 +1066,16 @@ test "Load HL from adjusted SP" {
                     .rSP(test_value),
                 TestCpuState.init() // execute iut: add e to SP_lsb
                     .rPC(0x0003)
-                    .fC(carry_flag)
-                    .fH(halfcarry_flag)
+                    .fC(reg.Lo.C)
+                    .fH(reg.Lo.H)
                     .rSP(test_value)
-                    .rHL(test_value_after_first_add),
+                    .rL(expected_lo),
                 TestCpuState.init() // read (PC) | execute iut: add carry to SP_msb
                     .rPC(0x0004)
-                    .fC(carry_flag)
-                    .fH(halfcarry_flag)
+                    .fC(reg.Lo.C)
+                    .fH(reg.Lo.H)
                     .rSP(test_value)
-                    .rHL(test_value_after_second_add),
+                    .rHL(expected),
             },
         );
     }
@@ -2939,4 +2947,325 @@ test "Complement accumulator" {
                 .rAF(res.all()),
         },
     );
+}
+
+test "Inc/Dec register 16" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    inline for (.{ 0b0, 0b1 }) |incdec| {
+        inline for (.{ 0xFFFF, 0x0FFF, 0x00FF, 0x000F, 0x0000 }) |val| {
+            for (0..(0b11 + 1)) |reg| {
+                // Constants
+                const instr: u8 = @intCast(0b00_00_0_011 | (reg << 4) | (incdec << 3));
+                const value: u16 = val;
+
+                const expected: u16, _ = if (incdec == 0)
+                    @addWithOverflow(value, 1)
+                else
+                    @subWithOverflow(value, 1);
+
+                const name = try std.fmt.allocPrint(std.testing.allocator, "Increment register 16 (reg={b}) (val={x}) (incdec={b})", .{ reg, value, incdec });
+                defer std.testing.allocator.free(name);
+                try run_test_case(
+                    name,
+                    rom,
+                    exram,
+                    &[_]u8{
+                        0x00,
+                        instr,
+                        0xFD,
+                    },
+                    TestCpuState.init()
+                        .reg16(@intCast(reg), value),
+                    &[_]*TestCpuState{
+                        TestCpuState.init() // read nop(PC) from ram
+                            .rPC(0x0001)
+                            .reg16(@intCast(reg), value),
+                        TestCpuState.init() // execute nop | read iut(PC) from ram
+                            .rPC(0x0002)
+                            .reg16(@intCast(reg), value),
+                        TestCpuState.init() // execute iut: inc/dec register
+                            .rPC(0x0002)
+                            .reg16(@intCast(reg), expected),
+                        TestCpuState.init() // read (PC) from ram
+                            .rPC(0x0003)
+                            .reg16(@intCast(reg), expected),
+                    },
+                );
+            }
+        }
+    }
+}
+
+test "Add register 16" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    inline for (.{ 0xFFFF, 0x0F0F, 0xF0F0, 0x000F, 0x0F00, 0x0000, 0x0101, 0xF1F1 }) |val| {
+        inline for (.{ 0b0, 0b1 }) |carry| {
+            inline for (.{ 0b0, 0b1 }) |zero| {
+                inline for (.{ 0b0, 0b1 }) |halfcarry| {
+                    inline for (.{ 0b0, 0b1 }) |subtract| {
+                        for (0..(0b11 + 1)) |reg| {
+                            if (reg == 0b10) {
+                                continue;
+                            }
+                            // Constants
+                            const instr: u8 = @intCast(0b00_00_1001 | (reg << 4));
+                            const value: u16 = val;
+                            const base: u16 = 0x0F0F;
+
+                            const base_lo: u8 = @intCast(base & 0xFF);
+                            const base_hi: u8 = @intCast((base & 0xFF00) >> 8);
+
+                            const value_lo: u8 = @intCast(value & 0xFF);
+                            const value_hi: u8 = @intCast((value & 0xFF00) >> 8);
+
+                            var res_1 = alu.AluRegister{
+                                .Hi = 0,
+                                .Lo = alu.RegisterFlags{
+                                    .C = carry,
+                                    .H = halfcarry,
+                                    .N = subtract,
+                                    .Z = zero,
+                                    .rest = 0,
+                                },
+                            };
+                            const expected_lo = res_1.add_return(base_lo, value_lo, 0, zero);
+                            var res_2 = res_1;
+                            const expected_hi = res_2.add_return(base_hi, value_hi, 1, zero);
+
+                            const expected: u16 = (@as(u16, expected_hi) << 8) | expected_lo;
+
+                            const name = try std.fmt.allocPrint(std.testing.allocator, "Add register 16 (val={x}) (C={b}) (Z={b}) (H={b}) (N={b})", .{ val, carry, zero, halfcarry, subtract });
+                            defer std.testing.allocator.free(name);
+                            try run_test_case(
+                                name,
+                                rom,
+                                exram,
+                                &[_]u8{
+                                    0x00,
+                                    instr,
+                                    0xFD,
+                                },
+                                TestCpuState.init()
+                                    .fC(carry)
+                                    .fH(halfcarry)
+                                    .fN(subtract)
+                                    .fZ(zero)
+                                    .rHL(base)
+                                    .reg16(@intCast(reg), value),
+                                &[_]*TestCpuState{
+                                    TestCpuState.init() // read nop(PC) from ram
+                                        .rPC(0x0001)
+                                        .fC(carry)
+                                        .fH(halfcarry)
+                                        .fN(subtract)
+                                        .fZ(zero)
+                                        .rHL(base)
+                                        .reg16(@intCast(reg), value),
+                                    TestCpuState.init() // execute nop | read iut(PC) from ram
+                                        .rPC(0x0002)
+                                        .fC(carry)
+                                        .fH(halfcarry)
+                                        .fN(subtract)
+                                        .fZ(zero)
+                                        .rHL(base)
+                                        .reg16(@intCast(reg), value),
+                                    TestCpuState.init() // execute iut: add lsb
+                                        .rPC(0x0002)
+                                        .fC(res_1.Lo.C)
+                                        .fH(res_1.Lo.H)
+                                        .fN(res_1.Lo.N)
+                                        .fZ(res_1.Lo.Z)
+                                        .rH(base_hi)
+                                        .rL(expected_lo)
+                                        .reg16(@intCast(reg), value),
+                                    TestCpuState.init() // execute iut: add msb | read (PC) from ram
+                                        .rPC(0x0003)
+                                        .fC(res_2.Lo.C)
+                                        .fH(res_2.Lo.H)
+                                        .fN(res_2.Lo.N)
+                                        .fZ(res_2.Lo.Z)
+                                        .rHL(expected)
+                                        .reg16(@intCast(reg), value),
+                                },
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+test "Add register HL" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    inline for (.{ 0xFFFF, 0x0F0F, 0xF0F0, 0x000F, 0x0F00, 0x0000, 0x0101, 0xF1F1 }) |val| {
+        inline for (.{ 0b0, 0b1 }) |carry| {
+            inline for (.{ 0b0, 0b1 }) |zero| {
+                inline for (.{ 0b0, 0b1 }) |halfcarry| {
+                    inline for (.{ 0b0, 0b1 }) |subtract| {
+                        // Constants
+                        const instr: u8 = 0b00_10_1001;
+
+                        const value: u16 = val;
+
+                        const value_lo: u8 = @intCast(value & 0xFF);
+                        const value_hi: u8 = @intCast((value & 0xFF00) >> 8);
+
+                        var res_1 = alu.AluRegister{
+                            .Hi = 0,
+                            .Lo = alu.RegisterFlags{
+                                .C = carry,
+                                .H = halfcarry,
+                                .N = subtract,
+                                .Z = zero,
+                                .rest = 0,
+                            },
+                        };
+                        const expected_lo = res_1.add_return(value_lo, value_lo, 0, zero);
+                        var res_2 = res_1;
+                        const expected_hi = res_2.add_return(value_hi, value_hi, 1, zero);
+
+                        const expected: u16 = (@as(u16, expected_hi) << 8) | expected_lo;
+
+                        const name = try std.fmt.allocPrint(std.testing.allocator, "Add register HL (val={x}) (C={b}) (Z={b}) (H={b}) (N={b})", .{ val, carry, zero, halfcarry, subtract });
+                        defer std.testing.allocator.free(name);
+                        try run_test_case(
+                            name,
+                            rom,
+                            exram,
+                            &[_]u8{
+                                0x00,
+                                instr,
+                                0xFD,
+                            },
+                            TestCpuState.init()
+                                .fC(carry)
+                                .fH(halfcarry)
+                                .fN(subtract)
+                                .fZ(zero)
+                                .rHL(value),
+                            &[_]*TestCpuState{
+                                TestCpuState.init() // read nop(PC) from ram
+                                    .rPC(0x0001)
+                                    .fC(carry)
+                                    .fH(halfcarry)
+                                    .fN(subtract)
+                                    .fZ(zero)
+                                    .rHL(value),
+                                TestCpuState.init() // execute nop | read iut(PC) from ram
+                                    .rPC(0x0002)
+                                    .fC(carry)
+                                    .fH(halfcarry)
+                                    .fN(subtract)
+                                    .fZ(zero)
+                                    .rHL(value),
+                                TestCpuState.init() // execute iut: add lsb
+                                    .rPC(0x0002)
+                                    .fC(res_1.Lo.C)
+                                    .fH(res_1.Lo.H)
+                                    .fN(res_1.Lo.N)
+                                    .fZ(res_1.Lo.Z)
+                                    .rH(value_hi)
+                                    .rL(expected_lo),
+                                TestCpuState.init() // execute iut: add msb | read (PC) from ram
+                                    .rPC(0x0003)
+                                    .fC(res_2.Lo.C)
+                                    .fH(res_2.Lo.H)
+                                    .fN(res_2.Lo.N)
+                                    .fZ(res_2.Lo.Z)
+                                    .rHL(expected),
+                            },
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+test "Add SP relative" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    inline for (.{ 0x00, 0x01, 0x04, 0x0F, 0xF4, 0xFF }) |e| {
+        // Constants
+        const instr: u8 = 0b11101000;
+        const test_value: u16 = 0x100D;
+
+        const unsigned_e: u8 = @intCast(e);
+
+        var reg = alu.AluRegister{
+            .Hi = 0x00,
+            .Lo = alu.RegisterFlags{
+                .C = 0,
+                .H = 0,
+                .N = 0,
+                .Z = 0,
+                .rest = 0,
+            },
+        };
+        const expected_lo = reg.add_return(@intCast(test_value & 0xFF), unsigned_e, 0, 0);
+        const expected_hi = reg.add_adj(@intCast((test_value & 0xFF00) >> 8), unsigned_e);
+        const expected = (@as(u16, expected_hi) << 8) | expected_lo;
+
+        const name = try std.fmt.allocPrint(std.testing.allocator, "Add SP relative (e={d})", .{e});
+        defer std.testing.allocator.free(name);
+        try run_test_case(
+            name,
+            rom,
+            exram,
+            &[_]u8{
+                0x00,
+                instr,
+                unsigned_e,
+                0xFD,
+            },
+            TestCpuState.init()
+                .rSP(test_value),
+            &[_]*TestCpuState{
+                TestCpuState.init() // read nop(PC) from ram
+                    .rPC(0x0001)
+                    .rSP(test_value),
+                TestCpuState.init() // execute nop | read iut(PC) from ram
+                    .rPC(0x0002)
+                    .rSP(test_value),
+                TestCpuState.init() // execute iut: read e(PC) from ram
+                    .rPC(0x0003)
+                    .rSP(test_value),
+                TestCpuState.init() // execute iut: add e to SP_lsb
+                    .rPC(0x0003)
+                    .fC(reg.Lo.C)
+                    .fH(reg.Lo.H)
+                    .rSP(test_value),
+                TestCpuState.init() // execute iut: add carry/adj to SP_msb
+                    .rPC(0x0003)
+                    .fC(reg.Lo.C)
+                    .fH(reg.Lo.H)
+                    .rSP(test_value),
+                TestCpuState.init() // execute iut: assign WZ to SP | read (PC) from ram
+                    .rPC(0x0004)
+                    .fC(reg.Lo.C)
+                    .fH(reg.Lo.H)
+                    .rSP(expected),
+            },
+        );
+    }
 }

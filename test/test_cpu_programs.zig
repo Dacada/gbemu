@@ -268,3 +268,40 @@ test "Arithmetic (8-bit)" {
     try std.testing.expectEqual(0x0A, cpu.mmu.read(0xFFEC));
     try std.testing.expectEqual(0b01000000, cpu.mmu.read(0xFFEB));
 }
+
+test "Arithmetic (16-bit)" {
+    // Seed values into memory and do arithmetic with them. Save flags to memory.
+
+    const code =
+        \\ ; Initial setup
+        \\ LD BC, 0x1234      ; BC = 0x1234
+        \\ LD DE, 0x1111      ; DE = 0x1111
+        \\ LD HL, 0x0000      ; HL = 0x0000
+        \\ LD SP, 0xFFF0      ; SP = 0xFFF0
+        \\ 
+        \\ ; 16-bit arithmetic
+        \\ INC BC             ; BC = 0x1235
+        \\ DEC DE             ; DE = 0x1110
+        \\ ADD HL, BC         ; HL = 0x1235
+        \\ ADD HL, DE         ; HL = 0x2345
+        \\ ADD SP, -4         ; SP = 0xFFEC
+    ;
+    var program = try lib.assembler.translate(code, std.testing.allocator);
+    defer std.testing.allocator.free(program);
+
+    program = try std.testing.allocator.realloc(program, program.len + 1);
+    program[program.len - 1] = 0xFD; // Illegal instruction signals end of program
+
+    const cpu = try run_program(
+        "Arithmetic integ test (16-bit)",
+        program,
+    );
+    defer destroy_cpu(&cpu);
+
+    try std.testing.expectEqual(program.len, cpu.reg.PC);
+
+    try std.testing.expectEqual(0x1235, cpu.reg.BC.all());
+    try std.testing.expectEqual(0x1110, cpu.reg.DE.all());
+    try std.testing.expectEqual(0x2345, cpu.reg.HL.all());
+    try std.testing.expectEqual(0xFFEC, cpu.reg.SP.all());
+}
