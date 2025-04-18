@@ -251,8 +251,6 @@ fn map_initial_state(cpu: *Cpu, initial_state: *TestCpuState) !void {
 }
 
 pub fn run_test_case(name: []const u8, rom: []u8, exram: []u8, program: []const u8, initial_state: *TestCpuState, ticks: []const *TestCpuState) !void {
-    std.debug.print("Running test case: {s}\n", .{name});
-
     var cpu = try make_cpu(rom, exram);
     defer destroy_cpu(&cpu);
 
@@ -270,7 +268,7 @@ pub fn run_test_case(name: []const u8, rom: []u8, exram: []u8, program: []const 
     for (ticks, 1..) |state, idx| {
         try cpu.tick();
         expect_cpu_state(&cpu, state) catch |err| {
-            std.debug.print("Failed on tick {d}\n", .{idx});
+            std.debug.print("{s}:\n  Failed on tick {d}\n", .{ name, idx });
             return err;
         };
     }

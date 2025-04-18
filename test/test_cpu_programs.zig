@@ -65,11 +65,10 @@ test "LD only integ test" {
         \\ ; Final verification marker
         \\ LD A, 0x99
         \\ LD (0xC00F), A                                         
+        \\ NOP
     ;
     var program = try lib.assembler.translate(code, std.testing.allocator);
     defer std.testing.allocator.free(program);
-
-    program = try std.testing.allocator.realloc(program, program.len + 1);
     program[program.len - 1] = 0xFD; // Illegal instruction signals end of program
 
     const cpu = try run_program("LD only integ test", program);
@@ -135,11 +134,10 @@ test "LD only integ test (16-bit)" {
         \\ ; Final verification marker                                             
         \\ LD A, 0x99                                                            
         \\ LD (0xC01F), A                                                        
+        \\ NOP
     ;
     var program = try lib.assembler.translate(code, std.testing.allocator);
     defer std.testing.allocator.free(program);
-
-    program = try std.testing.allocator.realloc(program, program.len + 1);
     program[program.len - 1] = 0xFD; // Illegal instruction signals end of program
 
     const cpu = try run_program(
@@ -220,11 +218,10 @@ test "Arithmetic (8-bit)" {
         \\ LD (HL), C
         \\ INC L
         \\ LD (HL), D
+        \\ NOP
     ;
     var program = try lib.assembler.translate(code, std.testing.allocator);
     defer std.testing.allocator.free(program);
-
-    program = try std.testing.allocator.realloc(program, program.len + 1);
     program[program.len - 1] = 0xFD; // Illegal instruction signals end of program
 
     const cpu = try run_program(
@@ -285,11 +282,10 @@ test "Arithmetic (16-bit)" {
         \\ ADD HL, BC         ; HL = 0x1235
         \\ ADD HL, DE         ; HL = 0x2345
         \\ ADD SP, -4         ; SP = 0xFFEC
+        \\ NOP
     ;
     var program = try lib.assembler.translate(code, std.testing.allocator);
     defer std.testing.allocator.free(program);
-
-    program = try std.testing.allocator.realloc(program, program.len + 1);
     program[program.len - 1] = 0xFD; // Illegal instruction signals end of program
 
     const cpu = try run_program(

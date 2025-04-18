@@ -448,7 +448,7 @@ pub const Cpu = struct {
             return self.fetchOpcode();
         }
 
-        // ARITHMETIC 8-BIT
+        // ARITHMETIC 16-BIT
 
         // Inc/Dec register 16-bit
         if (self.reg.IR & 0b11_00_0_111 == 0b00_00_0_011) {
@@ -699,7 +699,7 @@ pub const Cpu = struct {
             0b011 => &self.reg.DE.Lo,
             0b100 => &self.reg.HL.Hi,
             0b101 => &self.reg.HL.Lo,
-            0b110 => unreachable,
+            0b110 => undefined,
             0b111 => &self.reg.AF.Hi,
         };
     }
