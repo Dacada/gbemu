@@ -63,12 +63,24 @@ const SelfRefCpuMethod = struct {
     }
 };
 
+const CpuOp1Union = union {
+    tmp: u8,
+    next_alu_op: *const fn (*alu.AluRegister, u8) u8,
+    next_alu_op_bit: *const fn (u8, u3) u8,
+    next_alu_op_bit_test: *const fn (*alu.AluRegister, u8, u3) void,
+};
+
+const CpuOp2Union = union {
+    bitIdx: u3,
+};
+
 pub const Cpu = struct {
     mmu: mmu.Mmu,
     reg: RegisterBank,
-    tmp: u8 = undefined,
 
     next_tick: SelfRefCpuMethod,
+    next_op_1: CpuOp1Union = undefined,
+    next_op_2: CpuOp2Union = undefined,
 
     pub fn init(mmu_: mmu.Mmu) Cpu {
         return Cpu{
@@ -137,6 +149,12 @@ pub const Cpu = struct {
 
     fn decodeOpcode(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
         // OTHER
+
+        // Prefixed
+        if (self.reg.IR == 0xCB) {
+            self.reg.IR = try self.fetchPC();
+            return SelfRefCpuMethod.init(Cpu.decodeOpcodePrefixed);
+        }
 
         // NOP
         if (self.reg.IR & 0b11111111 == 0b00000000) {
@@ -477,6 +495,95 @@ pub const Cpu = struct {
             return SelfRefCpuMethod.init(Cpu.addToSPRelative2);
         }
 
+        // ROTATE
+
+        // Rotate left circular (accumulator)
+        if (self.reg.IR & 0b11111111 == 0b00000111) {
+            self.reg.AF.Hi = self.reg.AF.rlc(self.reg.AF.Hi);
+            self.reg.AF.Lo.Z = 0;
+            return self.fetchOpcode();
+        }
+
+        // Rotate right circular (accumulator)
+        if (self.reg.IR & 0b11111111 == 0b00001111) {
+            self.reg.AF.Hi = self.reg.AF.rrc(self.reg.AF.Hi);
+            self.reg.AF.Lo.Z = 0;
+            return self.fetchOpcode();
+        }
+
+        // Rotate left through carry (accumulator)
+        if (self.reg.IR & 0b11111111 == 0b00010111) {
+            self.reg.AF.Hi = self.reg.AF.rl(self.reg.AF.Hi);
+            self.reg.AF.Lo.Z = 0;
+            return self.fetchOpcode();
+        }
+
+        // Rotate right through carry (accumulator)
+        if (self.reg.IR & 0b11111111 == 0b00011111) {
+            self.reg.AF.Hi = self.reg.AF.rr(self.reg.AF.Hi);
+            self.reg.AF.Lo.Z = 0;
+            return self.fetchOpcode();
+        }
+
+        return CpuError.IllegalInstruction;
+    }
+
+    fn decodeOpcodePrefixed(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        // TODO: this is how instruction decoding will be done in general eventually, in chunks (and likely calling
+        // sub-functions for better readability, the variety of opcodes here is just low enough to not need that)
+
+        const op1: u2 = @intCast((self.reg.IR & 0b11_000_000) >> 6);
+        const op2: u3 = @intCast((self.reg.IR & 0b00_111_000) >> 3);
+        const regIdx: u3 = @intCast(self.reg.IR & 0b00_000_111);
+        const isMemory = regIdx == 0b110;
+
+        if (isMemory) {
+            self.reg.WZ.Lo = try self.mmu.read(self.reg.HL.all());
+        }
+        const reg = self.ptrReg8Bit(regIdx);
+
+        switch (op1) {
+            0b00 => { // shift/rotate/swap
+                self.next_op_1 = CpuOp1Union{ .next_alu_op = switch (op2) {
+                    0b000 => alu.AluRegister.rlc,
+                    0b001 => alu.AluRegister.rrc,
+                    0b010 => alu.AluRegister.rl,
+                    0b011 => alu.AluRegister.rr,
+                    0b100 => alu.AluRegister.sla,
+                    0b101 => alu.AluRegister.sra,
+                    0b110 => alu.AluRegister.swap,
+                    0b111 => alu.AluRegister.srl,
+                } };
+                if (isMemory) {
+                    return SelfRefCpuMethod.init(Cpu.aluOpOnMemory);
+                }
+                reg.* = self.next_op_1.next_alu_op(&self.reg.AF, reg.*);
+                return self.fetchOpcode();
+            },
+            0b01 => { // bit test
+                self.next_op_1 = CpuOp1Union{ .next_alu_op_bit_test = alu.AluRegister.bit };
+                if (isMemory) {
+                    self.next_op_2.bitIdx = op2;
+                    return SelfRefCpuMethod.init(Cpu.aluOpOnMemoryBitsNoWriteBack);
+                }
+                self.next_op_1.next_alu_op_bit_test(&self.reg.AF, reg.*, op2);
+                return self.fetchOpcode();
+            },
+            else => { // bit set/reset
+                self.next_op_1 = CpuOp1Union{ .next_alu_op_bit = switch (op1) {
+                    0b10 => alu.AluRegister.res,
+                    0b11 => alu.AluRegister.set,
+                    else => unreachable,
+                } };
+                if (isMemory) {
+                    self.next_op_2.bitIdx = op2;
+                    return SelfRefCpuMethod.init(Cpu.aluOpOnMemoryBits);
+                }
+                reg.* = self.next_op_1.next_alu_op_bit(reg.*, op2);
+                return self.fetchOpcode();
+            },
+        }
+
         return CpuError.IllegalInstruction;
     }
 
@@ -676,18 +783,35 @@ pub const Cpu = struct {
     }
 
     fn addToSPRelative2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
-        self.tmp = self.reg.WZ.Lo;
-        self.reg.WZ.Lo = self.reg.AF.add_return(self.reg.SP.Lo, self.tmp, 0, 0);
+        self.next_op_1 = CpuOp1Union{ .tmp = self.reg.WZ.Lo };
+        self.reg.WZ.Lo = self.reg.AF.add_return(self.reg.SP.Lo, self.next_op_1.tmp, 0, 0);
         return SelfRefCpuMethod.init(Cpu.addToSPRelative3);
     }
 
     fn addToSPRelative3(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
-        self.reg.WZ.Hi = self.reg.AF.add_adj(self.reg.SP.Hi, self.tmp);
+        self.reg.WZ.Hi = self.reg.AF.add_adj(self.reg.SP.Hi, self.next_op_1.tmp);
         return SelfRefCpuMethod.init(Cpu.addToSPRelative4);
     }
 
     fn addToSPRelative4(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
         self.reg.SP.setAll(self.reg.WZ.all());
+        return self.fetchOpcode();
+    }
+
+    fn aluOpOnMemory(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        const res = self.next_op_1.next_alu_op(&self.reg.AF, self.reg.WZ.Lo);
+        try self.mmu.write(self.reg.HL.all(), res);
+        return SelfRefCpuMethod.init(Cpu.fetchOpcode);
+    }
+
+    fn aluOpOnMemoryBits(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        const res = self.next_op_1.next_alu_op_bit(self.reg.WZ.Lo, self.next_op_2.bitIdx);
+        try self.mmu.write(self.reg.HL.all(), res);
+        return SelfRefCpuMethod.init(Cpu.fetchOpcode);
+    }
+
+    fn aluOpOnMemoryBitsNoWriteBack(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        self.next_op_1.next_alu_op_bit_test(&self.reg.AF, self.reg.WZ.Lo, self.next_op_2.bitIdx);
         return self.fetchOpcode();
     }
 

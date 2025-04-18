@@ -3269,3 +3269,496 @@ test "Add SP relative" {
         );
     }
 }
+
+test "rotate accumulator" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    inline for (.{ 0b00, 0b01, 0b10, 0b11 }) |op| {
+        const aluop: fn (*alu.AluRegister, u8) u8 = switch (op) {
+            0b00 => alu.AluRegister.rlc,
+            0b01 => alu.AluRegister.rrc,
+            0b10 => alu.AluRegister.rl,
+            0b11 => alu.AluRegister.rr,
+            else => unreachable,
+        };
+        inline for (.{ 0xA5, 0x00, 0xFF }) |val| {
+            const instr = 0b000_00_111 | (@as(u8, op) << 3);
+
+            var reg = alu.AluRegister{
+                .Hi = 0,
+                .Lo = alu.RegisterFlags{
+                    .C = 0,
+                    .H = 0,
+                    .N = 0,
+                    .Z = 0,
+                    .rest = 0,
+                },
+            };
+            const res = aluop(&reg, val);
+            reg.Lo.Z = 0;
+
+            const name = try std.fmt.allocPrint(std.testing.allocator, "rotate accumulator ({d}) (op={b})", .{ val, op });
+            defer std.testing.allocator.free(name);
+            try run_test_case(
+                name,
+                rom,
+                exram,
+                &[_]u8{
+                    0x00,
+                    instr,
+                    0xFD,
+                },
+                TestCpuState.init()
+                    .rA(val),
+                &[_]*TestCpuState{
+                    TestCpuState.init() // read nop(PC) from ram
+                        .rPC(0x0001)
+                        .rA(val),
+                    TestCpuState.init() // execute nop | read iot(PC) from ram
+                        .rPC(0x0002)
+                        .rA(val),
+                    TestCpuState.init() // execute iot: operate on reg | read (PC) from ram
+                        .rPC(0x0003)
+                        .rA(res)
+                        .fC(reg.Lo.C)
+                        .fH(reg.Lo.H)
+                        .fN(reg.Lo.N)
+                        .fZ(reg.Lo.Z),
+                },
+            );
+        }
+    }
+}
+
+test "rotate/swap register" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    inline for (.{ 0b000, 0b001, 0b010, 0b011, 0b100, 0b101, 0b110, 0b111 }) |op| {
+        const aluop: fn (*alu.AluRegister, u8) u8 = switch (op) {
+            0b000 => alu.AluRegister.rlc,
+            0b001 => alu.AluRegister.rrc,
+            0b010 => alu.AluRegister.rl,
+            0b011 => alu.AluRegister.rr,
+            0b100 => alu.AluRegister.sla,
+            0b101 => alu.AluRegister.sra,
+            0b110 => alu.AluRegister.swap,
+            0b111 => alu.AluRegister.srl,
+            else => unreachable,
+        };
+        inline for (.{ 0b000, 0b001, 0b010, 0b011, 0b100, 0b101, 0b111 }) |regIdx| {
+            inline for (.{ 0xA5, 0x00, 0xFF }) |val| {
+                const instr = 0b00_000_000 | (@as(u8, op) << 3) | regIdx;
+
+                var reg = alu.AluRegister{
+                    .Hi = 0,
+                    .Lo = alu.RegisterFlags{
+                        .C = 0,
+                        .H = 0,
+                        .N = 0,
+                        .Z = 0,
+                        .rest = 0,
+                    },
+                };
+                const res = aluop(&reg, val);
+
+                const name = try std.fmt.allocPrint(std.testing.allocator, "rotate/swap register ({d}) (op={b}) (reg={b})", .{ val, op, regIdx });
+                defer std.testing.allocator.free(name);
+                try run_test_case(
+                    name,
+                    rom,
+                    exram,
+                    &[_]u8{
+                        0x00,
+                        0xCB,
+                        instr,
+                        0xFD,
+                    },
+                    TestCpuState.init()
+                        .reg(regIdx, val),
+                    &[_]*TestCpuState{
+                        TestCpuState.init() // read nop(PC) from ram
+                            .rPC(0x0001)
+                            .reg(regIdx, val),
+                        TestCpuState.init() // execute nop | read prefix(PC) from ram
+                            .rPC(0x0002)
+                            .reg(regIdx, val),
+                        TestCpuState.init() // read iot(PC) from ram
+                            .rPC(0x0003)
+                            .reg(regIdx, val),
+                        TestCpuState.init() // execute iot: operate on reg | read (PC) from ram
+                            .rPC(0x0004)
+                            .reg(regIdx, res)
+                            .fC(reg.Lo.C)
+                            .fH(reg.Lo.H)
+                            .fN(reg.Lo.N)
+                            .fZ(reg.Lo.Z),
+                    },
+                );
+            }
+        }
+    }
+}
+
+test "rotate/swap HL indirect" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    inline for (.{ 0b000, 0b001, 0b010, 0b011, 0b100, 0b101, 0b110, 0b111 }) |op| {
+        const aluop: fn (*alu.AluRegister, u8) u8 = switch (op) {
+            0b000 => alu.AluRegister.rlc,
+            0b001 => alu.AluRegister.rrc,
+            0b010 => alu.AluRegister.rl,
+            0b011 => alu.AluRegister.rr,
+            0b100 => alu.AluRegister.sla,
+            0b101 => alu.AluRegister.sra,
+            0b110 => alu.AluRegister.swap,
+            0b111 => alu.AluRegister.srl,
+            else => unreachable,
+        };
+        inline for (.{ 0xA5, 0x00, 0xFF }) |val| {
+            const addr = 0xD00D;
+            const instr = 0b00_000_110 | (@as(u8, op) << 3);
+
+            var reg = alu.AluRegister{
+                .Hi = 0,
+                .Lo = alu.RegisterFlags{
+                    .C = 0,
+                    .H = 0,
+                    .N = 0,
+                    .Z = 0,
+                    .rest = 0,
+                },
+            };
+            const res = aluop(&reg, val);
+
+            const name = try std.fmt.allocPrint(std.testing.allocator, "rotate/swap HL indirect ({d}) (op={b})", .{ val, op });
+            defer std.testing.allocator.free(name);
+            try run_test_case(
+                name,
+                rom,
+                exram,
+                &[_]u8{
+                    0x00,
+                    0xCB,
+                    instr,
+                    0xFD,
+                },
+                TestCpuState.init()
+                    .rHL(addr)
+                    .ram(addr, val),
+                &[_]*TestCpuState{
+                    TestCpuState.init() // read nop(PC) from ram
+                        .rPC(0x0001)
+                        .rHL(addr)
+                        .ram(addr, val),
+                    TestCpuState.init() // execute nop | read prefix(PC) from ram
+                        .rPC(0x0002)
+                        .rHL(addr)
+                        .ram(addr, val),
+                    TestCpuState.init() // read iot(PC) from ram
+                        .rPC(0x0003)
+                        .rHL(addr)
+                        .ram(addr, val),
+                    TestCpuState.init() // execute iot: read val(HL) from ram
+                        .rPC(0x0003)
+                        .rHL(addr)
+                        .ram(addr, val),
+                    TestCpuState.init() // execute iot: operate on val | write val to ram
+                        .rPC(0x0003)
+                        .rHL(addr)
+                        .ram(addr, res)
+                        .fC(reg.Lo.C)
+                        .fH(reg.Lo.H)
+                        .fN(reg.Lo.N)
+                        .fZ(reg.Lo.Z),
+                    TestCpuState.init() // execute iot: read (PC)
+                        .rPC(0x0004)
+                        .rHL(addr)
+                        .ram(addr, res)
+                        .fC(reg.Lo.C)
+                        .fH(reg.Lo.H)
+                        .fN(reg.Lo.N)
+                        .fZ(reg.Lo.Z),
+                },
+            );
+        }
+    }
+}
+
+test "test bit register" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    inline for (0..8) |regIdxS| {
+        if (regIdxS == 0b110) {
+            continue;
+        }
+        const regIdx: u3 = @intCast(regIdxS);
+        inline for (0..8) |bitIdxS| {
+            const bitIdx: u3 = @intCast(bitIdxS);
+            inline for (.{ 0xA5, 0x00, 0xFF }) |val| {
+                const instr = 0b01_000_000 | (@as(u8, bitIdx) << 3) | regIdx;
+
+                var reg = alu.AluRegister{
+                    .Hi = 0,
+                    .Lo = alu.RegisterFlags{
+                        .C = 0,
+                        .H = 0,
+                        .N = 0,
+                        .Z = 0,
+                        .rest = 0,
+                    },
+                };
+                reg.bit(val, bitIdx);
+
+                const name = try std.fmt.allocPrint(std.testing.allocator, "test bit register ({d}) (bit={b}) (reg={b})", .{ val, bitIdx, regIdx });
+                defer std.testing.allocator.free(name);
+                try run_test_case(
+                    name,
+                    rom,
+                    exram,
+                    &[_]u8{
+                        0x00,
+                        0xCB,
+                        instr,
+                        0xFD,
+                    },
+                    TestCpuState.init()
+                        .reg(regIdx, val),
+                    &[_]*TestCpuState{
+                        TestCpuState.init() // read nop(PC) from ram
+                            .rPC(0x0001)
+                            .reg(regIdx, val),
+                        TestCpuState.init() // execute nop | read prefix(PC) from ram
+                            .rPC(0x0002)
+                            .reg(regIdx, val),
+                        TestCpuState.init() // read iot(PC) from ram
+                            .rPC(0x0003)
+                            .reg(regIdx, val),
+                        TestCpuState.init() // execute iot: operate on reg | read (PC) from ram
+                            .rPC(0x0004)
+                            .reg(regIdx, val)
+                            .fC(reg.Lo.C)
+                            .fH(reg.Lo.H)
+                            .fN(reg.Lo.N)
+                            .fZ(reg.Lo.Z),
+                    },
+                );
+            }
+        }
+    }
+}
+
+test "test bit HL" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    inline for (0..8) |bitIdxS| {
+        if (bitIdxS == 0b110) {
+            continue;
+        }
+        const bitIdx: u3 = @intCast(bitIdxS);
+        inline for (.{ 0xA5, 0x00, 0xFF }) |val| {
+            const addr = 0xD00D;
+            const instr = 0b01_000_110 | (@as(u8, bitIdx) << 3);
+
+            var reg = alu.AluRegister{
+                .Hi = 0,
+                .Lo = alu.RegisterFlags{
+                    .C = 0,
+                    .H = 0,
+                    .N = 0,
+                    .Z = 0,
+                    .rest = 0,
+                },
+            };
+            reg.bit(val, bitIdx);
+
+            const name = try std.fmt.allocPrint(std.testing.allocator, "test bit register HL indirect ({d}) (bit={b})", .{ val, bitIdx });
+            defer std.testing.allocator.free(name);
+            try run_test_case(
+                name,
+                rom,
+                exram,
+                &[_]u8{
+                    0x00,
+                    0xCB,
+                    instr,
+                    0xFD,
+                },
+                TestCpuState.init()
+                    .rHL(addr)
+                    .ram(addr, val),
+                &[_]*TestCpuState{
+                    TestCpuState.init() // read nop(PC) from ram
+                        .rPC(0x0001)
+                        .rHL(addr)
+                        .ram(addr, val),
+                    TestCpuState.init() // execute nop | read prefix(PC) from ram
+                        .rPC(0x0002)
+                        .rHL(addr)
+                        .ram(addr, val),
+                    TestCpuState.init() // read iot(PC) from ram
+                        .rPC(0x0003)
+                        .rHL(addr)
+                        .ram(addr, val),
+                    TestCpuState.init() // execute iot: read val(HL) from ram
+                        .rPC(0x0003)
+                        .rHL(addr)
+                        .ram(addr, val),
+                    TestCpuState.init() // execute iot: operate on val | read(PC)
+                        .rPC(0x0004)
+                        .rHL(addr)
+                        .ram(addr, val)
+                        .fC(reg.Lo.C)
+                        .fH(reg.Lo.H)
+                        .fN(reg.Lo.N)
+                        .fZ(reg.Lo.Z),
+                },
+            );
+        }
+    }
+}
+
+test "set/reset bit register" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    for (0..2) |setResetS| {
+        const setReset: u1 = @intCast(setResetS);
+        for (0..8) |regIdxS| {
+            if (regIdxS == 0b110) {
+                continue;
+            }
+            const regIdx: u3 = @intCast(regIdxS);
+            for (0..8) |bitIdxS| {
+                const bitIdx: u3 = @intCast(bitIdxS);
+                inline for (.{ 0xA5, 0x00, 0xFF }) |val| {
+                    const instr = 0b10_000_000 | (@as(u8, setReset) << 6) | (@as(u8, bitIdx) << 3) | regIdx;
+
+                    const res = if (setReset == 0)
+                        alu.AluRegister.res(val, bitIdx)
+                    else
+                        alu.AluRegister.set(val, bitIdx);
+
+                    const name = try std.fmt.allocPrint(std.testing.allocator, "set/reset bit register ({d}) (bit={b}) (reg={b})", .{ val, bitIdx, regIdx });
+                    defer std.testing.allocator.free(name);
+                    try run_test_case(
+                        name,
+                        rom,
+                        exram,
+                        &[_]u8{
+                            0x00,
+                            0xCB,
+                            instr,
+                            0xFD,
+                        },
+                        TestCpuState.init()
+                            .reg(regIdx, val),
+                        &[_]*TestCpuState{
+                            TestCpuState.init() // read nop(PC) from ram
+                                .rPC(0x0001)
+                                .reg(regIdx, val),
+                            TestCpuState.init() // execute nop | read prefix(PC) from ram
+                                .rPC(0x0002)
+                                .reg(regIdx, val),
+                            TestCpuState.init() // read iot(PC) from ram
+                                .rPC(0x0003)
+                                .reg(regIdx, val),
+                            TestCpuState.init() // execute iot: operate on reg | read (PC) from ram
+                                .rPC(0x0004)
+                                .reg(regIdx, res),
+                        },
+                    );
+                }
+            }
+        }
+    }
+}
+
+test "set/reset bit HL" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    for (0..2) |setResetS| {
+        const setReset: u1 = @intCast(setResetS);
+        for (0..8) |bitIdxS| {
+            const bitIdx: u3 = @intCast(bitIdxS);
+            inline for (.{ 0xA5, 0x00, 0xFF }) |val| {
+                const addr = 0xD00D;
+                const instr = 0b10_000_110 | (@as(u8, @intCast(setReset)) << 6) | (@as(u8, @intCast(bitIdx)) << 3);
+
+                const res = if (setReset == 0)
+                    alu.AluRegister.res(val, bitIdx)
+                else
+                    alu.AluRegister.set(val, bitIdx);
+
+                const name = try std.fmt.allocPrint(std.testing.allocator, "set/reset bit register HL indirect ({d}) (bit={b})", .{ val, bitIdx });
+                defer std.testing.allocator.free(name);
+                try run_test_case(
+                    name,
+                    rom,
+                    exram,
+                    &[_]u8{
+                        0x00,
+                        0xCB,
+                        instr,
+                        0xFD,
+                    },
+                    TestCpuState.init()
+                        .rHL(addr)
+                        .ram(addr, val),
+                    &[_]*TestCpuState{
+                        TestCpuState.init() // read nop(PC) from ram
+                            .rPC(0x0001)
+                            .rHL(addr)
+                            .ram(addr, val),
+                        TestCpuState.init() // execute nop | read prefix(PC) from ram
+                            .rPC(0x0002)
+                            .rHL(addr)
+                            .ram(addr, val),
+                        TestCpuState.init() // read iot(PC) from ram
+                            .rPC(0x0003)
+                            .rHL(addr)
+                            .ram(addr, val),
+                        TestCpuState.init() // execute iot: read val(HL) from ram
+                            .rPC(0x0003)
+                            .rHL(addr)
+                            .ram(addr, val),
+                        TestCpuState.init() // execute iot: operate on val | write val(HL) to ram
+                            .rPC(0x0003)
+                            .rHL(addr)
+                            .ram(addr, res),
+                        TestCpuState.init() // execute iot: read (PC) from ram
+                            .rPC(0x0004)
+                            .rHL(addr)
+                            .ram(addr, res),
+                    },
+                );
+            }
+        }
+    }
+}

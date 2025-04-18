@@ -301,3 +301,44 @@ test "Arithmetic (16-bit)" {
     try std.testing.expectEqual(0x2345, cpu.reg.HL.all());
     try std.testing.expectEqual(0xFFEC, cpu.reg.SP.all());
 }
+
+test "Misc bit operations" {
+    // Nothing fancy here
+
+    const code =
+        \\ LD A, 0x96       ; A = 1001 0110
+        \\ RLCA             ; A = 0010 1101, Carry = 1 (MSB 1 went to carry and LSB)
+        \\ RRCA             ; A = 1001 0110, Carry = 1
+        \\ LD B, 0x12       ; B = 0001 0010
+        \\ SLA B            ; B = 0010 0100, Carry = 0
+        \\ LD C, 0x81       ; C = 1000 0001
+        \\ SRL C            ; C = 0100 0000, Carry = 1
+        \\ LD D, 0x3C       ; D = 0011 1100
+        \\ SWAP D           ; D = 1100 0011
+        \\ LD E, 0x00       ; E = 0000 0000
+        \\ SET 3, E         ; E = 0000 1000
+        \\ RES 3, E         ; E = 0000 0000
+        \\ LD H, 0x08       ; H = 0000 1000
+        \\ BIT 3, H         ; Zero flag = 0 (bit 3 is set)
+        \\ NOP
+    ;
+    var program = try lib.assembler.translate(code, std.testing.allocator);
+    defer std.testing.allocator.free(program);
+    program[program.len - 1] = 0xFD; // Illegal instruction signals end of program
+
+    const cpu = try run_program(
+        "Misc bit operations test",
+        program,
+    );
+    defer destroy_cpu(&cpu);
+
+    try std.testing.expectEqual(program.len, cpu.reg.PC);
+
+    try std.testing.expectEqual(0x96, cpu.reg.AF.Hi);
+    try std.testing.expectEqual(0x24, cpu.reg.BC.Hi);
+    try std.testing.expectEqual(0x40, cpu.reg.BC.Lo);
+    try std.testing.expectEqual(0xC3, cpu.reg.DE.Hi);
+    try std.testing.expectEqual(0x00, cpu.reg.DE.Lo);
+    try std.testing.expectEqual(0x08, cpu.reg.HL.Hi);
+    try std.testing.expectEqual(1, cpu.reg.AF.Lo.Z);
+}

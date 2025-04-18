@@ -235,7 +235,7 @@ test "validateLabel correct" {
     try validateLabel("_01", 0);
 }
 
-const Instruction = enum { LD, LDH, PUSH, POP, ADD, ADC, SUB, SBC, CP, INC, DEC, AND, OR, XOR, CCF, SCF, DAA, CPL };
+const Instruction = enum { NOP, LD, LDH, PUSH, POP, ADD, ADC, SUB, SBC, CP, INC, DEC, AND, OR, XOR, CCF, SCF, DAA, CPL, RLCA, RRCA, RLA, RRA, RLC, RRC, RL, RR, SLA, SRA, SWAP, SRL, BIT, RES, SET };
 const Register8 = enum { A, B, C, D, E, F, H, L };
 const Register16 = enum { AF, BC, DE, HL, SP };
 const BasicArgumentType = enum {
@@ -751,6 +751,7 @@ const DefinedArgumentType = enum {
     Immediate8Bit,
     Immediate8BitSigned,
     Immediate16Bit,
+    ImmediateBitIndex,
     Register8Bit,
     Register16Bit,
     Register16BitWithOffset,
@@ -766,6 +767,7 @@ const ArgumentData = union(DefinedArgumentType) {
     Immediate8Bit: u8,
     Immediate8BitSigned: i8,
     Immediate16Bit: u16,
+    ImmediateBitIndex: u3,
     Register8Bit: Register8,
     Register16Bit: Register16,
     Register16BitWithOffset: struct { offset: i8, reg: Register16 },
@@ -811,6 +813,16 @@ const ArgumentData = union(DefinedArgumentType) {
                     return ArgumentData{
                         .Immediate16Bit = 0xAAAA,
                     };
+                }
+            },
+            DefinedArgumentType.ImmediateBitIndex => {
+                if (parsed.arg == BasicArgumentType.Immediate and !parsed.indirect and parsed.incDec == null and parsed.offset == null) {
+                    const imm = parsed.arg.Immediate;
+                    if (imm >= std.math.minInt(u3) and imm <= std.math.maxInt(u3)) {
+                        return ArgumentData{
+                            .ImmediateBitIndex = @intCast(imm),
+                        };
+                    }
                 }
             },
             DefinedArgumentType.Register8Bit => {
@@ -974,6 +986,25 @@ test "ArgumentData.fromDefinition Immediate16Bit" {
     try std.testing.expectEqualDeep(expected, actual);
 }
 
+test "ArgumentData.fromDefinition ImmediateBitIndex" {
+    const definition = DefinedArgumentType.ImmediateBitIndex;
+    const argument = Argument{
+        .arg = .{
+            .Immediate = 5,
+        },
+        .incDec = null,
+        .indirect = false,
+        .offset = null,
+    };
+    const expected = ArgumentData{
+        .ImmediateBitIndex = 5,
+    };
+
+    const actual = ArgumentData.fromDefinition(argument, definition);
+
+    try std.testing.expectEqualDeep(expected, actual);
+}
+
 test "ArgumentData.fromDefinition Register8Bit" {
     const definition = DefinedArgumentType.Register8Bit;
     const argument = Argument{
@@ -1124,6 +1155,7 @@ const ArgumentDefinition = union(DefinedArgumentType) {
     Immediate8Bit,
     Immediate8BitSigned,
     Immediate16Bit,
+    ImmediateBitIndex,
     Register8Bit: Register8BitArgumentDefinition,
     Register16Bit: Register16BitArgumentDefinition,
     Register16BitWithOffset: Register16,
@@ -1147,6 +1179,10 @@ const ArgumentDefinition = union(DefinedArgumentType) {
                 const lsb: u8 = @intCast(arg.Immediate16Bit & 0xFF);
                 const msb: u8 = @intCast((arg.Immediate16Bit & 0xFF00) >> 8);
                 return .{ opcode, lsb, msb };
+            },
+            .ImmediateBitIndex => {
+                const new_opcode = opcode | (@as(u8, arg.ImmediateBitIndex) << 3);
+                return .{ new_opcode, null, null };
             },
             .Register8Bit => |x| {
                 switch (x) {
@@ -1321,6 +1357,21 @@ test "ArgumentDefinition.encode Immediate16Bit" {
     };
     const opcode = 0x00;
     const expected: struct { u8, ?u8, ?u8 } = .{ 0x00, 0xEE, 0xFF };
+
+    const actual = try definition.encode(opcode, argument);
+
+    try std.testing.expectEqualDeep(expected, actual);
+}
+
+test "ArgumentDefinition.encode ImmediateBitIndex" {
+    const definition = ArgumentDefinition{
+        .ImmediateBitIndex = {},
+    };
+    const argument = ArgumentData{
+        .ImmediateBitIndex = 0b101,
+    };
+    const opcode = 0x00;
+    const expected: struct { u8, ?u8, ?u8 } = .{ 0b00_101_000, null, null };
 
     const actual = try definition.encode(opcode, argument);
 
@@ -1599,10 +1650,17 @@ const OpcodeDefinition = struct {
     arg1: ?ArgumentDefinition,
     arg2: ?ArgumentDefinition,
     base_opcode: u8,
+    prefix: ?u8 = null,
 };
 
 const defined_opcodes =
     [_]OpcodeDefinition{
+    OpcodeDefinition{
+        .instr = Instruction.NOP,
+        .arg1 = null,
+        .arg2 = null,
+        .base_opcode = 0b00000000,
+    },
     OpcodeDefinition{
         .instr = Instruction.LD,
         .arg1 = ArgumentDefinition{
@@ -2227,6 +2285,262 @@ const defined_opcodes =
         },
         .base_opcode = 0b11101000,
     },
+    OpcodeDefinition{
+        .instr = Instruction.RLCA,
+        .arg1 = null,
+        .arg2 = null,
+        .base_opcode = 0b00000111,
+    },
+    OpcodeDefinition{
+        .instr = Instruction.RRCA,
+        .arg1 = null,
+        .arg2 = null,
+        .base_opcode = 0b00001111,
+    },
+    OpcodeDefinition{
+        .instr = Instruction.RLA,
+        .arg1 = null,
+        .arg2 = null,
+        .base_opcode = 0b00010111,
+    },
+    OpcodeDefinition{
+        .instr = Instruction.RRA,
+        .arg1 = null,
+        .arg2 = null,
+        .base_opcode = 0b00011111,
+    },
+    OpcodeDefinition{
+        .instr = Instruction.RLC,
+        .arg1 = ArgumentDefinition{
+            .Register8Bit = Register8BitArgumentDefinition{
+                .Offset = 0,
+            },
+        },
+        .arg2 = null,
+        .base_opcode = 0b00000_000,
+        .prefix = 0xCB,
+    },
+    OpcodeDefinition{
+        .instr = Instruction.RLC,
+        .arg1 = ArgumentDefinition{
+            .IndirectRegister16Bit = Register16.HL,
+        },
+        .arg2 = null,
+        .base_opcode = 0b00000_110,
+        .prefix = 0xCB,
+    },
+    OpcodeDefinition{
+        .instr = Instruction.RRC,
+        .arg1 = ArgumentDefinition{
+            .Register8Bit = Register8BitArgumentDefinition{
+                .Offset = 0,
+            },
+        },
+        .arg2 = null,
+        .base_opcode = 0b00001_000,
+        .prefix = 0xCB,
+    },
+    OpcodeDefinition{
+        .instr = Instruction.RRC,
+        .arg1 = ArgumentDefinition{
+            .IndirectRegister16Bit = Register16.HL,
+        },
+        .arg2 = null,
+        .base_opcode = 0b00001_110,
+        .prefix = 0xCB,
+    },
+    OpcodeDefinition{
+        .instr = Instruction.RL,
+        .arg1 = ArgumentDefinition{
+            .Register8Bit = Register8BitArgumentDefinition{
+                .Offset = 0,
+            },
+        },
+        .arg2 = null,
+        .base_opcode = 0b00010_000,
+        .prefix = 0xCB,
+    },
+    OpcodeDefinition{
+        .instr = Instruction.RL,
+        .arg1 = ArgumentDefinition{
+            .IndirectRegister16Bit = Register16.HL,
+        },
+        .arg2 = null,
+        .base_opcode = 0b00010_110,
+        .prefix = 0xCB,
+    },
+    OpcodeDefinition{
+        .instr = Instruction.RR,
+        .arg1 = ArgumentDefinition{
+            .Register8Bit = Register8BitArgumentDefinition{
+                .Offset = 0,
+            },
+        },
+        .arg2 = null,
+        .base_opcode = 0b00011_000,
+        .prefix = 0xCB,
+    },
+    OpcodeDefinition{
+        .instr = Instruction.RR,
+        .arg1 = ArgumentDefinition{
+            .IndirectRegister16Bit = Register16.HL,
+        },
+        .arg2 = null,
+        .base_opcode = 0b00011_110,
+        .prefix = 0xCB,
+    },
+    OpcodeDefinition{
+        .instr = Instruction.SLA,
+        .arg1 = ArgumentDefinition{
+            .Register8Bit = Register8BitArgumentDefinition{
+                .Offset = 0,
+            },
+        },
+        .arg2 = null,
+        .base_opcode = 0b00100_000,
+        .prefix = 0xCB,
+    },
+    OpcodeDefinition{
+        .instr = Instruction.SLA,
+        .arg1 = ArgumentDefinition{
+            .IndirectRegister16Bit = Register16.HL,
+        },
+        .arg2 = null,
+        .base_opcode = 0b00100_110,
+        .prefix = 0xCB,
+    },
+    OpcodeDefinition{
+        .instr = Instruction.SRA,
+        .arg1 = ArgumentDefinition{
+            .Register8Bit = Register8BitArgumentDefinition{
+                .Offset = 0,
+            },
+        },
+        .arg2 = null,
+        .base_opcode = 0b00101_000,
+        .prefix = 0xCB,
+    },
+    OpcodeDefinition{
+        .instr = Instruction.SRA,
+        .arg1 = ArgumentDefinition{
+            .IndirectRegister16Bit = Register16.HL,
+        },
+        .arg2 = null,
+        .base_opcode = 0b00101_110,
+        .prefix = 0xCB,
+    },
+    OpcodeDefinition{
+        .instr = Instruction.SWAP,
+        .arg1 = ArgumentDefinition{
+            .Register8Bit = Register8BitArgumentDefinition{
+                .Offset = 0,
+            },
+        },
+        .arg2 = null,
+        .base_opcode = 0b00110_000,
+        .prefix = 0xCB,
+    },
+    OpcodeDefinition{
+        .instr = Instruction.SWAP,
+        .arg1 = ArgumentDefinition{
+            .IndirectRegister16Bit = Register16.HL,
+        },
+        .arg2 = null,
+        .base_opcode = 0b00110_110,
+        .prefix = 0xCB,
+    },
+    OpcodeDefinition{
+        .instr = Instruction.SRL,
+        .arg1 = ArgumentDefinition{
+            .Register8Bit = Register8BitArgumentDefinition{
+                .Offset = 0,
+            },
+        },
+        .arg2 = null,
+        .base_opcode = 0b00111_000,
+        .prefix = 0xCB,
+    },
+    OpcodeDefinition{
+        .instr = Instruction.SRL,
+        .arg1 = ArgumentDefinition{
+            .IndirectRegister16Bit = Register16.HL,
+        },
+        .arg2 = null,
+        .base_opcode = 0b00111_110,
+        .prefix = 0xCB,
+    },
+    OpcodeDefinition{
+        .instr = Instruction.BIT,
+        .arg1 = ArgumentDefinition{
+            .ImmediateBitIndex = {},
+        },
+        .arg2 = ArgumentDefinition{
+            .Register8Bit = Register8BitArgumentDefinition{
+                .Offset = 0,
+            },
+        },
+        .base_opcode = 0b01_000_000,
+        .prefix = 0xCB,
+    },
+    OpcodeDefinition{
+        .instr = Instruction.BIT,
+        .arg1 = ArgumentDefinition{
+            .ImmediateBitIndex = {},
+        },
+        .arg2 = ArgumentDefinition{
+            .IndirectRegister16Bit = Register16.HL,
+        },
+        .base_opcode = 0b01_000_110,
+        .prefix = 0xCB,
+    },
+    OpcodeDefinition{
+        .instr = Instruction.RES,
+        .arg1 = ArgumentDefinition{
+            .ImmediateBitIndex = {},
+        },
+        .arg2 = ArgumentDefinition{
+            .Register8Bit = Register8BitArgumentDefinition{
+                .Offset = 0,
+            },
+        },
+        .base_opcode = 0b10_000_000,
+        .prefix = 0xCB,
+    },
+    OpcodeDefinition{
+        .instr = Instruction.RES,
+        .arg1 = ArgumentDefinition{
+            .ImmediateBitIndex = {},
+        },
+        .arg2 = ArgumentDefinition{
+            .IndirectRegister16Bit = Register16.HL,
+        },
+        .base_opcode = 0b10_000_110,
+        .prefix = 0xCB,
+    },
+    OpcodeDefinition{
+        .instr = Instruction.SET,
+        .arg1 = ArgumentDefinition{
+            .ImmediateBitIndex = {},
+        },
+        .arg2 = ArgumentDefinition{
+            .Register8Bit = Register8BitArgumentDefinition{
+                .Offset = 0,
+            },
+        },
+        .base_opcode = 0b11_000_000,
+        .prefix = 0xCB,
+    },
+    OpcodeDefinition{
+        .instr = Instruction.SET,
+        .arg1 = ArgumentDefinition{
+            .ImmediateBitIndex = {},
+        },
+        .arg2 = ArgumentDefinition{
+            .IndirectRegister16Bit = Register16.HL,
+        },
+        .base_opcode = 0b11_000_110,
+        .prefix = 0xCB,
+    },
 };
 
 const Opcode = struct {
@@ -2330,6 +2644,10 @@ const Opcode = struct {
                 .{ opcode, null, null };
 
             var size: usize = 0;
+            if (opcode_definition.prefix != null) {
+                try stream.append(opcode_definition.prefix.?);
+                size += 1;
+            }
             try stream.append(opcode);
             size += 1;
             if (imm1 != null) {
@@ -3243,6 +3561,32 @@ test "translate" {
         \\ ADD SP, 127    ; 84
         \\ ADD SP, 0      ; 85
         \\ ADD SP, -128   ; 86
+        \\ RLCA           ; 87
+        \\ RRCA           ; 88
+        \\ RLA            ; 89
+        \\ RRA            ; 90
+        \\ RLC B          ; 91
+        \\ RLC (HL)       ; 92
+        \\ RRC B          ; 93
+        \\ RRC (HL)       ; 94
+        \\ RL B           ; 95
+        \\ RL (HL)        ; 96
+        \\ RR B           ; 97
+        \\ RR (HL)        ; 98
+        \\ SLA B          ; 99
+        \\ SLA (HL)       ; 100
+        \\ SRA B          ; 101
+        \\ SRA (HL)       ; 102
+        \\ SWAP B         ; 103
+        \\ SWAP (HL)      ; 104
+        \\ SRL B          ; 105
+        \\ SRL (HL)       ; 106
+        \\ BIT 0, B       ; 107
+        \\ BIT 0, (HL)    ; 108
+        \\ RES 0, B       ; 109
+        \\ RES 0, (HL)    ; 110
+        \\ SET 0, B       ; 111
+        \\ SET 0, (HL)    ; 112
     ;
 
     const expected = [_]u8{
@@ -3331,6 +3675,32 @@ test "translate" {
         0b11101000, 0x7F, // ADD SP, 127
         0b11101000, 0x00, // ADD SP, 0
         0b11101000, 0x80, // ADD SP, -128
+        0b00000111, // RLCA
+        0b00001111, // RRCA
+        0b00010111, // RLA
+        0b00011111, // RRA
+        0xCB, 0b00000000, // RLC B
+        0xCB, 0b00000110, // RLC (HL)
+        0xCB, 0b00001000, // RRC B
+        0xCB, 0b00001110, // RRC (HL)
+        0xCB, 0b00010000, // RL B
+        0xCB, 0b00010110, // RL (HL)
+        0xCB, 0b00011000, // RR B
+        0xCB, 0b00011110, // RR (HL)
+        0xCB, 0b00100000, // SLA B
+        0xCB, 0b00100110, // SLA (HL)
+        0xCB, 0b00101000, // SRA B
+        0xCB, 0b00101110, // SRA (HL)
+        0xCB, 0b00110000, // SWAP B
+        0xCB, 0b00110110, // SWAP (HL)
+        0xCB, 0b00111000, // SRL B
+        0xCB, 0b00111110, // SRL (HL)
+        0xCB, 0b01000000, // BIT 0, B
+        0xCB, 0b01000110, // BIT 0, (HL)
+        0xCB, 0b10000000, // RES 0, B
+        0xCB, 0b10000110, // RES 0, (HL)
+        0xCB, 0b11000000, // SET 0, B
+        0xCB, 0b11000110, // SET 0, (HL)
     };
 
     const actual = try translate(input, std.testing.allocator);

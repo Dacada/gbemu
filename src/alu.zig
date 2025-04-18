@@ -89,9 +89,9 @@ pub const AluRegister = packed struct {
 
     fn adder_u4(val1: u4, val2: u4, carry_in: u1) struct { u4, u1 } {
         const tmp, const carry_out_1 = @addWithOverflow(val1, carry_in);
-        const res, const carry_out_2 = @addWithOverflow(tmp, val2);
+        const result, const carry_out_2 = @addWithOverflow(tmp, val2);
         const carry_out = carry_out_1 | carry_out_2;
-        return .{ res, carry_out };
+        return .{ result, carry_out };
     }
 
     fn add_values(self: *AluRegister, val1: u8, val2: u8, with_carry: u1) u8 {
@@ -106,14 +106,14 @@ pub const AluRegister = packed struct {
         const res_lo, const halfcarry_out = AluRegister.adder_u4(val1_lo, val2_lo, carry_in);
         const res_hi, const carry_out = AluRegister.adder_u4(val1_hi, val2_hi, halfcarry_out);
 
-        const res: u8 = (@as(u8, res_hi) << 4) | res_lo;
-        const zero = @intFromBool(res == 0);
+        const result: u8 = (@as(u8, res_hi) << 4) | res_lo;
+        const zero = @intFromBool(result == 0);
 
         self.Lo.C = carry_out;
         self.Lo.H = halfcarry_out;
         self.Lo.Z = zero;
         self.Lo.N = 0;
-        return res;
+        return result;
     }
 
     pub fn add(self: *AluRegister, summand: u8, with_carry: u1) void {
@@ -216,16 +216,89 @@ pub const AluRegister = packed struct {
     }
 
     pub fn add_return(self: *AluRegister, op1: u8, op2: u8, with_carry: u1, z: u1) u8 {
-        const res = self.add_values(op1, op2, with_carry);
+        const result = self.add_values(op1, op2, with_carry);
         self.Lo.Z = z;
-        return res;
+        return result;
     }
 
     pub fn add_adj(self: *const AluRegister, op: u8, prev: u8) u8 {
         const adj: u8 = if ((prev & 0b1000_0000) >> 7 == 1) 0xFF else 0x00;
         const tmp, _ = @addWithOverflow(op, adj);
-        const res, _ = @addWithOverflow(tmp, self.Lo.C);
-        return res;
+        const result, _ = @addWithOverflow(tmp, self.Lo.C);
+        return result;
+    }
+
+    fn shift(self: *AluRegister, val: u8, shift_in: u1, comptime right: bool) u8 {
+        const carry: u1 = if (right)
+            @intCast(val & 0x01)
+        else
+            @intCast((val & 0x80) >> 7);
+
+        const result = if (right)
+            (val >> 1) | (@as(u8, shift_in) << 7)
+        else
+            (val << 1) | shift_in;
+
+        self.Lo.C = carry;
+        self.Lo.Z = @intFromBool(result == 0);
+        self.Lo.H = 0;
+        self.Lo.N = 0;
+
+        return result;
+    }
+
+    pub fn rlc(self: *AluRegister, val: u8) u8 {
+        return self.shift(val, @intCast((val & 0x80) >> 7), false);
+    }
+
+    pub fn rrc(self: *AluRegister, val: u8) u8 {
+        return self.shift(val, @intCast(val & 0x01), true);
+    }
+
+    pub fn rl(self: *AluRegister, val: u8) u8 {
+        return self.shift(val, self.Lo.C, false);
+    }
+
+    pub fn rr(self: *AluRegister, val: u8) u8 {
+        return self.shift(val, self.Lo.C, true);
+    }
+
+    pub fn sla(self: *AluRegister, val: u8) u8 {
+        return self.shift(val, 0, false);
+    }
+
+    pub fn sra(self: *AluRegister, val: u8) u8 {
+        return self.shift(val, @intCast((val & 0x80) >> 7), true);
+    }
+
+    pub fn srl(self: *AluRegister, val: u8) u8 {
+        return self.shift(val, 0, true);
+    }
+
+    pub fn swap(self: *AluRegister, val: u8) u8 {
+        self.Lo.Z = @intFromBool(val == 0);
+        self.Lo.C = 0;
+        self.Lo.H = 0;
+        self.Lo.N = 0;
+        return ((val & 0x0F) << 4) | ((val & 0xF0) >> 4);
+    }
+
+    fn mask(idx: u3) u8 {
+        return @as(u8, 1) << idx;
+    }
+
+    pub fn bit(self: *AluRegister, val: u8, idx: u3) void {
+        self.Lo.Z = @intCast((val & AluRegister.mask(idx)) >> idx);
+        self.Lo.N = 0;
+        self.Lo.H = 1;
+    }
+
+    pub fn res(val: u8, idx: u3) u8 {
+        return val & ~AluRegister.mask(idx);
+    }
+
+    pub fn set(val: u8, idx: u3) u8 {
+        return val | AluRegister.mask(idx);
     }
 };
 
@@ -1415,4 +1488,233 @@ test "add_adj" {
     try std.testing.expectEqual(expected_result, actual);
     try std.testing.expectEqual(expected_h, reg.Lo.H);
     try std.testing.expectEqual(expected_c, reg.Lo.C);
+}
+
+test "rlc" {
+    var reg = AluRegister{
+        .Hi = 0,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 1,
+            .Z = 1,
+            .N = 1,
+            .rest = 0,
+        },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0,
+        .Lo = RegisterFlags{
+            .C = 1,
+            .H = 0,
+            .Z = 0,
+            .N = 0,
+            .rest = 0,
+        },
+    };
+    const input = 0xAA;
+    const expected = 0b01010101;
+
+    const actual = reg.rlc(input);
+
+    try std.testing.expectEqual(expected, actual);
+    try std.testing.expectEqualDeep(expected_reg, reg);
+}
+
+test "rrc" {
+    var reg = AluRegister{
+        .Hi = 0,
+        .Lo = RegisterFlags{ .C = 0, .H = 1, .Z = 1, .N = 1, .rest = 0 },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0,
+        .Lo = RegisterFlags{ .C = 1, .H = 0, .Z = 0, .N = 0, .rest = 0 },
+    };
+    const input = 0b00000001;
+    const expected = 0b10000000;
+
+    const actual = reg.rrc(input);
+
+    try std.testing.expectEqual(expected, actual);
+    try std.testing.expectEqualDeep(expected_reg, reg);
+}
+
+test "rl with carry = 0" {
+    var reg = AluRegister{
+        .Hi = 0,
+        .Lo = RegisterFlags{ .C = 0, .H = 1, .Z = 0, .N = 1, .rest = 0 },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0,
+        .Lo = RegisterFlags{ .C = 1, .H = 0, .Z = 1, .N = 0, .rest = 0 },
+    };
+    const input = 0b10000000;
+    const expected = 0b00000000;
+
+    const actual = reg.rl(input);
+
+    try std.testing.expectEqual(expected, actual);
+    try std.testing.expectEqualDeep(expected_reg, reg);
+}
+
+test "rl with carry = 1" {
+    var reg = AluRegister{
+        .Hi = 0,
+        .Lo = RegisterFlags{ .C = 1, .H = 0, .Z = 0, .N = 0, .rest = 0 },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0,
+        .Lo = RegisterFlags{ .C = 1, .H = 0, .Z = 0, .N = 0, .rest = 0 },
+    };
+    const input = 0b10000000;
+    const expected = 0b00000001;
+
+    const actual = reg.rl(input);
+
+    try std.testing.expectEqual(expected, actual);
+    try std.testing.expectEqualDeep(expected_reg, reg);
+}
+
+test "rr with carry = 0" {
+    var reg = AluRegister{
+        .Hi = 0,
+        .Lo = RegisterFlags{ .C = 0, .H = 1, .Z = 0, .N = 1, .rest = 0 },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0,
+        .Lo = RegisterFlags{ .C = 1, .H = 0, .Z = 1, .N = 0, .rest = 0 },
+    };
+    const input = 0b00000001;
+    const expected = 0b00000000;
+
+    const actual = reg.rr(input);
+
+    try std.testing.expectEqual(expected, actual);
+    try std.testing.expectEqualDeep(expected_reg, reg);
+}
+
+test "rr with carry = 1" {
+    var reg = AluRegister{
+        .Hi = 0,
+        .Lo = RegisterFlags{ .C = 1, .H = 0, .Z = 0, .N = 0, .rest = 0 },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0,
+        .Lo = RegisterFlags{ .C = 1, .H = 0, .Z = 0, .N = 0, .rest = 0 },
+    };
+    const input = 0b00000001;
+    const expected = 0b10000000;
+
+    const actual = reg.rr(input);
+
+    try std.testing.expectEqual(expected, actual);
+    try std.testing.expectEqualDeep(expected_reg, reg);
+}
+
+test "sla" {
+    var reg = AluRegister{
+        .Hi = 0,
+        .Lo = RegisterFlags{ .C = 0, .H = 1, .Z = 1, .N = 1, .rest = 0 },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0,
+        .Lo = RegisterFlags{ .C = 1, .H = 0, .Z = 0, .N = 0, .rest = 0 },
+    };
+    const input = 0b10000001;
+    const expected = 0b00000010;
+
+    const actual = reg.sla(input);
+
+    try std.testing.expectEqual(expected, actual);
+    try std.testing.expectEqualDeep(expected_reg, reg);
+}
+
+test "sra" {
+    var reg = AluRegister{
+        .Hi = 0,
+        .Lo = RegisterFlags{ .C = 0, .H = 1, .Z = 0, .N = 1, .rest = 0 },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0,
+        .Lo = RegisterFlags{ .C = 1, .H = 0, .Z = 1, .N = 0, .rest = 0 },
+    };
+    const input = 0b00000001;
+    const expected = 0b00000000;
+
+    const actual = reg.sra(input);
+
+    try std.testing.expectEqual(expected, actual);
+    try std.testing.expectEqualDeep(expected_reg, reg);
+}
+
+test "srl" {
+    var reg = AluRegister{
+        .Hi = 0,
+        .Lo = RegisterFlags{ .C = 0, .H = 1, .Z = 0, .N = 1, .rest = 0 },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0,
+        .Lo = RegisterFlags{ .C = 1, .H = 0, .Z = 1, .N = 0, .rest = 0 },
+    };
+    const input = 0b00000001;
+    const expected = 0b00000000;
+
+    const actual = reg.srl(input);
+
+    try std.testing.expectEqual(expected, actual);
+    try std.testing.expectEqualDeep(expected_reg, reg);
+}
+
+test "swap" {
+    var reg = AluRegister{
+        .Hi = 0,
+        .Lo = RegisterFlags{ .C = 1, .H = 1, .Z = 1, .N = 1, .rest = 0 },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0,
+        .Lo = RegisterFlags{ .C = 0, .H = 0, .Z = 0, .N = 0, .rest = 0 },
+    };
+    const input = 0xAB;
+    const expected = 0xBA;
+
+    const actual = reg.swap(input);
+
+    try std.testing.expectEqual(expected, actual);
+    try std.testing.expectEqualDeep(expected_reg, reg);
+}
+
+test "bit" {
+    var reg = AluRegister{
+        .Hi = 0,
+        .Lo = RegisterFlags{ .C = 1, .H = 0, .Z = 1, .N = 1, .rest = 0 },
+    };
+    const expected_reg = AluRegister{
+        .Hi = 0,
+        .Lo = RegisterFlags{ .C = 1, .H = 1, .Z = 0, .N = 0, .rest = 0 },
+    };
+    const input = 0b00000000;
+    const bit_index = 3;
+
+    reg.bit(input, bit_index);
+
+    try std.testing.expectEqualDeep(expected_reg, reg);
+}
+
+test "res" {
+    const input = 0b11111111;
+    const bit_index = 3;
+    const expected = 0b11110111;
+
+    const actual = AluRegister.res(input, bit_index);
+
+    try std.testing.expectEqual(expected, actual);
+}
+
+test "set" {
+    const input = 0b00000000;
+    const bit_index = 3;
+    const expected = 0b00001000;
+
+    const actual = AluRegister.set(input, bit_index);
+
+    try std.testing.expectEqual(expected, actual);
 }
