@@ -26,6 +26,8 @@ pub const TestCpuState = struct {
     regSP: u16 = 0,
     regPC: u16 = 0,
 
+    regIME: u1 = 0,
+
     addresses: std.ArrayList(TestRamState),
 
     pub fn init() *TestCpuState {
@@ -140,6 +142,11 @@ pub const TestCpuState = struct {
         return self;
     }
 
+    pub fn rIME(self: *TestCpuState, v: u1) *TestCpuState {
+        self.regIME = v;
+        return self;
+    }
+
     pub fn ram(self: *TestCpuState, addr: u16, val: u8) *TestCpuState {
         // again, rely on this always running under debug context so it will panic
         self.addresses.append(TestRamState{ .address = addr, .value = val }) catch unreachable;
@@ -217,6 +224,7 @@ fn expect_cpu_state(cpu: *const Cpu, state: *TestCpuState) !void {
     try std.testing.expectEqual(state.regL, cpu.reg.HL.Lo);
     try std.testing.expectEqual(state.regSP, cpu.reg.SP.all());
     try std.testing.expectEqual(state.regPC, cpu.reg.PC);
+    try std.testing.expectEqual(state.regIME, cpu.reg.IME);
 
     try std.testing.expectEqualSlices(u8, mmu.vram, cpu.mmu.vram);
     try std.testing.expectEqualSlices(u8, mmu.exram, cpu.mmu.vram);
@@ -242,6 +250,7 @@ fn map_initial_state(cpu: *Cpu, initial_state: *TestCpuState) !void {
     cpu.reg.HL.Lo = initial_state.regL;
     cpu.reg.SP.setAll(initial_state.regSP);
     cpu.reg.PC = initial_state.regPC;
+    cpu.reg.IME = initial_state.regIME;
 
     for (initial_state.addresses.items) |state| {
         try cpu.mmu.write(state.address, state.value);

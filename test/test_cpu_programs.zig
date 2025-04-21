@@ -71,7 +71,7 @@ test "LD only integ test" {
     defer std.testing.allocator.free(program);
     program[program.len - 1] = 0xFD; // Illegal instruction signals end of program
 
-    const cpu = try run_program("LD only integ test", program);
+    const cpu = try run_program("LD only integ test (8-bit)", program);
     defer destroy_cpu(&cpu);
 
     try std.testing.expectEqual(program.len, cpu.reg.PC);
@@ -341,4 +341,66 @@ test "Misc bit operations" {
     try std.testing.expectEqual(0x00, cpu.reg.DE.Lo);
     try std.testing.expectEqual(0x08, cpu.reg.HL.Hi);
     try std.testing.expectEqual(1, cpu.reg.AF.Lo.Z);
+}
+
+test "Jump operations" {
+    // 16-bit Unsigned Multiplication
+
+    const code =
+        \\ ;; Initialize SP
+        \\ LD SP 0xFFF0
+        \\
+        \\ LD B 123
+        \\ LD C 39
+        \\ CALL multiply
+        \\ JP end
+        \\
+        \\ ;; Expect 2 8-bit values on registers B and C
+        \\ ;; Return a 16-bit value on register BC
+        \\ multiply:
+        \\   LD A B
+        \\   CP 0
+        \\   JP Z ret_zero
+        \\   LD A C
+        \\   CP 0
+        \\   JP Z ret_zero
+        \\
+        \\   LD E 0      ;; Here we keep the high byte
+        \\   DEC B       ;; We have C once in A, and how many more times (B-1) it needs to be added in B
+        \\ loop:
+        \\   JP Z ret_ea ;; If B reached 0, we return
+        \\   ADD C       ;; Increase A, the low byte, by C
+        \\   LD D A      ;; Temporarily store the low byte in D
+        \\   LD A E      ;; Operate on the high byte
+        \\   ADC 0       ;; Add the carry, if any, into the high byte
+        \\   LD E A      ;; Copy the high byte back into E
+        \\   LD A D      ;; Restore the low byte to A
+        \\   DEC B       ;; Decrement B
+        \\   JP loop
+        \\
+        \\ ret_ea:
+        \\   LD B E
+        \\   LD C A
+        \\   RET
+        \\
+        \\ ret_zero:
+        \\   LD BC 0
+        \\   RET
+        \\
+        \\ end:
+        \\  NOP
+    ;
+    var program = try lib.assembler.translate(code, std.testing.allocator);
+    defer std.testing.allocator.free(program);
+    program[program.len - 1] = 0xFD; // Illegal instruction signals end of program
+
+    const cpu = try run_program(
+        "Misc bit operations test",
+        program,
+    );
+    defer destroy_cpu(&cpu);
+
+    try std.testing.expectEqual(program.len, cpu.reg.PC);
+
+    try std.testing.expectEqual(123 * 39, cpu.reg.BC.all());
 }

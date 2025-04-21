@@ -51,6 +51,8 @@ const RegisterBank = struct {
 
     IR: u8,
     WZ: alu.RegisterWithHalves,
+
+    IME: u1,
 };
 
 const SelfRefCpuMethod = struct {
@@ -81,6 +83,8 @@ pub const Cpu = struct {
     next_tick: SelfRefCpuMethod,
     next_op_1: CpuOp1Union = undefined,
     next_op_2: CpuOp2Union = undefined,
+
+    debug: bool = false,
 
     pub fn init(mmu_: mmu.Mmu) Cpu {
         return Cpu{
@@ -118,6 +122,7 @@ pub const Cpu = struct {
                     .Hi = 0,
                     .Lo = 0,
                 },
+                .IME = 0,
             },
             .next_tick = SelfRefCpuMethod.init(Cpu.fetchOpcode),
         };
@@ -149,6 +154,10 @@ pub const Cpu = struct {
 
     fn decodeOpcode(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
         // OTHER
+
+        if (self.debug) {
+            std.debug.print("INSTRUCTION: {d}\n", .{self.reg.IR});
+        }
 
         // Prefixed
         if (self.reg.IR == 0xCB) {
@@ -525,6 +534,85 @@ pub const Cpu = struct {
             return self.fetchOpcode();
         }
 
+        // CONTROL FLOW
+
+        // Jump to immediate
+        if (self.reg.IR & 0b11111111 == 0b11000011) {
+            self.reg.WZ.Lo = try self.fetchPC();
+            return SelfRefCpuMethod.init(Cpu.jumpToImmediate2);
+        }
+
+        // Jump to HL
+        if (self.reg.IR & 0b11111111 == 0b11101001) {
+            self.reg.PC = self.reg.HL.all();
+            return self.fetchOpcode();
+        }
+
+        // Jump to immediate conditional
+        if (self.reg.IR & 0b111_00_111 == 0b110_00_010) {
+            self.reg.WZ.Lo = try self.fetchPC();
+            return SelfRefCpuMethod.init(Cpu.jumpToImmediateConditional2);
+        }
+
+        // Jump to relative
+        if (self.reg.IR & 0b11111111 == 0b00011000) {
+            self.reg.WZ.Lo = try self.fetchPC();
+            return SelfRefCpuMethod.init(Cpu.jumpToRelative2);
+        }
+
+        // Jump to relative conditional
+        if (self.reg.IR & 0b111_00_111 == 0b001_00_000) {
+            self.reg.WZ.Lo = try self.fetchPC();
+            const cond: u2 = @intCast((self.reg.IR & 0b00_11_000) >> 3);
+            if (self.reg.AF.cond(cond)) {
+                return SelfRefCpuMethod.init(Cpu.jumpToRelativeConditional2);
+            } else {
+                return SelfRefCpuMethod.init(Cpu.fetchOpcode);
+            }
+        }
+
+        // Call
+        if (self.reg.IR & 0b11111111 == 0b11001101) {
+            self.reg.WZ.Lo = try self.fetchPC();
+            return SelfRefCpuMethod.init(Cpu.call2);
+        }
+
+        // Call conditional
+        if (self.reg.IR & 0b111_00_111 == 0b110_00_100) {
+            self.reg.WZ.Lo = try self.fetchPC();
+            return SelfRefCpuMethod.init(Cpu.callConditional2);
+        }
+
+        // Return
+        if (self.reg.IR & 0b11111111 == 0b11001001) {
+            self.reg.WZ.Lo = try self.mmu.read(self.reg.SP.all());
+            self.reg.SP.inc();
+            return SelfRefCpuMethod.init(Cpu.return2);
+        }
+
+        // Return conditional
+        if (self.reg.IR & 0b111_00_111 == 0b110_00_000) {
+            const cond: u2 = @intCast((self.reg.IR & 0b000_11_000) >> 3);
+            if (self.reg.AF.cond(cond)) {
+                return SelfRefCpuMethod.init(Cpu.returnConditional2);
+            } else {
+                return SelfRefCpuMethod.init(Cpu.fetchOpcode);
+            }
+        }
+
+        // Return interrupt
+        if (self.reg.IR & 0b11111111 == 0b11011001) {
+            self.reg.WZ.Lo = try self.mmu.read(self.reg.SP.all());
+            self.reg.SP.inc();
+            return SelfRefCpuMethod.init(Cpu.returnInterrupt2);
+        }
+
+        // Restart
+        if (self.reg.IR & 0b11_000_111 == 0b11_000_111) {
+            self.reg.SP.dec();
+            return SelfRefCpuMethod.init(Cpu.restart2);
+        }
+
         return CpuError.IllegalInstruction;
     }
 
@@ -796,6 +884,126 @@ pub const Cpu = struct {
     fn addToSPRelative4(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
         self.reg.SP.setAll(self.reg.WZ.all());
         return self.fetchOpcode();
+    }
+
+    fn jumpToImmediate2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        self.reg.WZ.Hi = try self.fetchPC();
+        return SelfRefCpuMethod.init(Cpu.jumpToImmediate3);
+    }
+
+    fn jumpToImmediate3(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        self.reg.PC = self.reg.WZ.all();
+        return SelfRefCpuMethod.init(Cpu.fetchOpcode);
+    }
+
+    fn jumpToImmediateConditional2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        self.reg.WZ.Hi = try self.fetchPC();
+        const cond: u2 = @intCast((self.reg.IR & 0b000_11_000) >> 3);
+        if (self.reg.AF.cond(cond)) {
+            return SelfRefCpuMethod.init(Cpu.jumpToImmediateConditional3);
+        } else {
+            return SelfRefCpuMethod.init(Cpu.fetchOpcode);
+        }
+    }
+
+    fn jumpToImmediateConditional3(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        self.reg.PC = self.reg.WZ.all();
+        return SelfRefCpuMethod.init(Cpu.fetchOpcode);
+    }
+
+    fn jumpToRelative2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        const res = alu.AluRegister.add_interpret_signed_no_flags(self.reg.PC, self.reg.WZ.Lo);
+        self.reg.WZ.setAll(res);
+        return SelfRefCpuMethod.init(Cpu.jumpToRelative3);
+    }
+
+    fn jumpToRelative3(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        self.reg.PC = self.reg.WZ.all();
+        return self.fetchOpcode();
+    }
+
+    fn jumpToRelativeConditional2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        const res = alu.AluRegister.add_interpret_signed_no_flags(self.reg.PC, self.reg.WZ.Lo);
+        self.reg.WZ.setAll(res);
+        return SelfRefCpuMethod.init(Cpu.jumpToRelativeConditional3);
+    }
+
+    fn jumpToRelativeConditional3(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        self.reg.PC = self.reg.WZ.all();
+        return self.fetchOpcode();
+    }
+
+    fn call2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        self.reg.WZ.Hi = try self.fetchPC();
+        return SelfRefCpuMethod.init(Cpu.call3);
+    }
+
+    fn call3(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        self.reg.SP.dec();
+        return SelfRefCpuMethod.init(Cpu.call4);
+    }
+
+    fn call4(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        try self.mmu.write(self.reg.SP.all(), @intCast((self.reg.PC & 0xFF00) >> 8));
+        self.reg.SP.dec();
+        return SelfRefCpuMethod.init(Cpu.call5);
+    }
+
+    fn call5(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        try self.mmu.write(self.reg.SP.all(), @intCast(self.reg.PC & 0x00FF));
+        self.reg.PC = self.reg.WZ.all();
+        return SelfRefCpuMethod.init(Cpu.fetchOpcode);
+    }
+
+    fn callConditional2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        self.reg.WZ.Hi = try self.fetchPC();
+        const cond: u2 = @intCast((self.reg.IR & 0b000_11_000) >> 3);
+        if (self.reg.AF.cond(cond)) {
+            return SelfRefCpuMethod.init(Cpu.call3);
+        } else {
+            return SelfRefCpuMethod.init(Cpu.fetchOpcode);
+        }
+    }
+
+    fn return2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        self.reg.WZ.Hi = try self.mmu.read(self.reg.SP.all());
+        self.reg.SP.inc();
+        return SelfRefCpuMethod.init(Cpu.return3);
+    }
+
+    fn return3(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        self.reg.PC = self.reg.WZ.all();
+        return SelfRefCpuMethod.init(Cpu.fetchOpcode);
+    }
+
+    fn returnConditional2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        self.reg.WZ.Lo = try self.mmu.read(self.reg.SP.all());
+        self.reg.SP.inc();
+        return SelfRefCpuMethod.init(Cpu.return2);
+    }
+
+    fn returnInterrupt2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        self.reg.WZ.Hi = try self.mmu.read(self.reg.SP.all());
+        self.reg.SP.inc();
+        return SelfRefCpuMethod.init(Cpu.returnInterrupt3);
+    }
+
+    fn returnInterrupt3(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        self.reg.PC = self.reg.WZ.all();
+        self.reg.IME = 1;
+        return SelfRefCpuMethod.init(Cpu.fetchOpcode);
+    }
+
+    fn restart2(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        try self.mmu.write(self.reg.SP.all(), @intCast((self.reg.PC & 0xFF00) >> 8));
+        self.reg.SP.dec();
+        return SelfRefCpuMethod.init(Cpu.restart3);
+    }
+
+    fn restart3(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
+        try self.mmu.write(self.reg.SP.all(), @intCast(self.reg.PC & 0x00FF));
+        self.reg.PC = 0x0000 | ((self.reg.IR & 0b00_111_000) >> 3);
+        return SelfRefCpuMethod.init(Cpu.fetchOpcode);
     }
 
     fn aluOpOnMemory(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {

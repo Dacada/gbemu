@@ -300,6 +300,29 @@ pub const AluRegister = packed struct {
     pub fn set(val: u8, idx: u3) u8 {
         return val | AluRegister.mask(idx);
     }
+
+    pub fn cond(self: *const AluRegister, which: u2) bool {
+        return switch (which) {
+            0b00 => self.Lo.Z == 0,
+            0b01 => self.Lo.Z == 1,
+            0b10 => self.Lo.C == 0,
+            0b11 => self.Lo.C == 1,
+        };
+    }
+
+    pub fn add_interpret_signed_no_flags(op: u16, e: u8) u16 {
+        const Z_sign: u1 = @intCast((e & 0b1000_0000) >> 7);
+        const result, const carry = @addWithOverflow(@as(u8, @intCast(op & 0x00FF)), e);
+        const lo = result;
+        const adj: u8 = if (carry == 1 and Z_sign == 0)
+            0x01
+        else if (carry == 0 and Z_sign == 1)
+            0xFF
+        else
+            0x00;
+        const hi, _ = @addWithOverflow(@as(u8, @intCast((op & 0xFF00) >> 8)), adj);
+        return (@as(u16, hi) << 8) | lo;
+    }
 };
 
 test "0b00000001 + 0b00000001" {
@@ -1717,4 +1740,85 @@ test "set" {
     const actual = AluRegister.set(input, bit_index);
 
     try std.testing.expectEqual(expected, actual);
+}
+
+test "cond Z=0 C=0" {
+    var reg = AluRegister{
+        .Hi = 0x00,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+
+    try std.testing.expect(reg.cond(0b00));
+    try std.testing.expect(!reg.cond(0b01));
+    try std.testing.expect(reg.cond(0b10));
+    try std.testing.expect(!reg.cond(0b11));
+}
+
+test "cond Z=0 C=1" {
+    var reg = AluRegister{
+        .Hi = 0x00,
+        .Lo = RegisterFlags{
+            .C = 1,
+            .H = 0,
+            .N = 0,
+            .Z = 0,
+            .rest = 0,
+        },
+    };
+
+    try std.testing.expect(reg.cond(0b00));
+    try std.testing.expect(!reg.cond(0b01));
+    try std.testing.expect(!reg.cond(0b10));
+    try std.testing.expect(reg.cond(0b11));
+}
+
+test "cond Z=1 C=0" {
+    var reg = AluRegister{
+        .Hi = 0x00,
+        .Lo = RegisterFlags{
+            .C = 0,
+            .H = 0,
+            .N = 0,
+            .Z = 1,
+            .rest = 0,
+        },
+    };
+
+    try std.testing.expect(!reg.cond(0b00));
+    try std.testing.expect(reg.cond(0b01));
+    try std.testing.expect(reg.cond(0b10));
+    try std.testing.expect(!reg.cond(0b11));
+}
+
+test "cond Z=1 C=1" {
+    var reg = AluRegister{
+        .Hi = 0x00,
+        .Lo = RegisterFlags{
+            .C = 1,
+            .H = 0,
+            .N = 0,
+            .Z = 1,
+            .rest = 0,
+        },
+    };
+
+    try std.testing.expect(!reg.cond(0b00));
+    try std.testing.expect(reg.cond(0b01));
+    try std.testing.expect(!reg.cond(0b10));
+    try std.testing.expect(reg.cond(0b11));
+}
+
+test "add interpret signed no flags" {
+    try std.testing.expectEqual(0xFFFF, AluRegister.add_interpret_signed_no_flags(0x0000, 0xFF));
+    try std.testing.expectEqual(0x0001, AluRegister.add_interpret_signed_no_flags(0x0000, 0x01));
+    try std.testing.expectEqual(0x0000, AluRegister.add_interpret_signed_no_flags(0x0000, 0x00));
+    try std.testing.expectEqual(0xFFFE, AluRegister.add_interpret_signed_no_flags(0xFFFF, 0xFF));
+    try std.testing.expectEqual(0x0000, AluRegister.add_interpret_signed_no_flags(0xFFFF, 0x01));
+    try std.testing.expectEqual(0xFFFF, AluRegister.add_interpret_signed_no_flags(0xFFFF, 0x00));
 }

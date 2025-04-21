@@ -3318,10 +3318,10 @@ test "rotate accumulator" {
                     TestCpuState.init() // read nop(PC) from ram
                         .rPC(0x0001)
                         .rA(val),
-                    TestCpuState.init() // execute nop | read iot(PC) from ram
+                    TestCpuState.init() // execute nop | read iut(PC) from ram
                         .rPC(0x0002)
                         .rA(val),
-                    TestCpuState.init() // execute iot: operate on reg | read (PC) from ram
+                    TestCpuState.init() // execute iut: operate on reg | read (PC) from ram
                         .rPC(0x0003)
                         .rA(res)
                         .fC(reg.Lo.C)
@@ -3390,10 +3390,10 @@ test "rotate/swap register" {
                         TestCpuState.init() // execute nop | read prefix(PC) from ram
                             .rPC(0x0002)
                             .reg(regIdx, val),
-                        TestCpuState.init() // read iot(PC) from ram
+                        TestCpuState.init() // read iut(PC) from ram
                             .rPC(0x0003)
                             .reg(regIdx, val),
-                        TestCpuState.init() // execute iot: operate on reg | read (PC) from ram
+                        TestCpuState.init() // execute iut: operate on reg | read (PC) from ram
                             .rPC(0x0004)
                             .reg(regIdx, res)
                             .fC(reg.Lo.C)
@@ -3466,15 +3466,15 @@ test "rotate/swap HL indirect" {
                         .rPC(0x0002)
                         .rHL(addr)
                         .ram(addr, val),
-                    TestCpuState.init() // read iot(PC) from ram
+                    TestCpuState.init() // read iut(PC) from ram
                         .rPC(0x0003)
                         .rHL(addr)
                         .ram(addr, val),
-                    TestCpuState.init() // execute iot: read val(HL) from ram
+                    TestCpuState.init() // execute iut: read val(HL) from ram
                         .rPC(0x0003)
                         .rHL(addr)
                         .ram(addr, val),
-                    TestCpuState.init() // execute iot: operate on val | write val to ram
+                    TestCpuState.init() // execute iut: operate on val | write val to ram
                         .rPC(0x0003)
                         .rHL(addr)
                         .ram(addr, res)
@@ -3482,7 +3482,7 @@ test "rotate/swap HL indirect" {
                         .fH(reg.Lo.H)
                         .fN(reg.Lo.N)
                         .fZ(reg.Lo.Z),
-                    TestCpuState.init() // execute iot: read (PC)
+                    TestCpuState.init() // execute iut: read (PC)
                         .rPC(0x0004)
                         .rHL(addr)
                         .ram(addr, res)
@@ -3546,10 +3546,10 @@ test "test bit register" {
                         TestCpuState.init() // execute nop | read prefix(PC) from ram
                             .rPC(0x0002)
                             .reg(regIdx, val),
-                        TestCpuState.init() // read iot(PC) from ram
+                        TestCpuState.init() // read iut(PC) from ram
                             .rPC(0x0003)
                             .reg(regIdx, val),
-                        TestCpuState.init() // execute iot: operate on reg | read (PC) from ram
+                        TestCpuState.init() // execute iut: operate on reg | read (PC) from ram
                             .rPC(0x0004)
                             .reg(regIdx, val)
                             .fC(reg.Lo.C)
@@ -3615,15 +3615,15 @@ test "test bit HL" {
                         .rPC(0x0002)
                         .rHL(addr)
                         .ram(addr, val),
-                    TestCpuState.init() // read iot(PC) from ram
+                    TestCpuState.init() // read iut(PC) from ram
                         .rPC(0x0003)
                         .rHL(addr)
                         .ram(addr, val),
-                    TestCpuState.init() // execute iot: read val(HL) from ram
+                    TestCpuState.init() // execute iut: read val(HL) from ram
                         .rPC(0x0003)
                         .rHL(addr)
                         .ram(addr, val),
-                    TestCpuState.init() // execute iot: operate on val | read(PC)
+                    TestCpuState.init() // execute iut: operate on val | read(PC)
                         .rPC(0x0004)
                         .rHL(addr)
                         .ram(addr, val)
@@ -3682,10 +3682,10 @@ test "set/reset bit register" {
                             TestCpuState.init() // execute nop | read prefix(PC) from ram
                                 .rPC(0x0002)
                                 .reg(regIdx, val),
-                            TestCpuState.init() // read iot(PC) from ram
+                            TestCpuState.init() // read iut(PC) from ram
                                 .rPC(0x0003)
                                 .reg(regIdx, val),
-                            TestCpuState.init() // execute iot: operate on reg | read (PC) from ram
+                            TestCpuState.init() // execute iut: operate on reg | read (PC) from ram
                                 .rPC(0x0004)
                                 .reg(regIdx, res),
                         },
@@ -3740,19 +3740,19 @@ test "set/reset bit HL" {
                             .rPC(0x0002)
                             .rHL(addr)
                             .ram(addr, val),
-                        TestCpuState.init() // read iot(PC) from ram
+                        TestCpuState.init() // read iut(PC) from ram
                             .rPC(0x0003)
                             .rHL(addr)
                             .ram(addr, val),
-                        TestCpuState.init() // execute iot: read val(HL) from ram
+                        TestCpuState.init() // execute iut: read val(HL) from ram
                             .rPC(0x0003)
                             .rHL(addr)
                             .ram(addr, val),
-                        TestCpuState.init() // execute iot: operate on val | write val(HL) to ram
+                        TestCpuState.init() // execute iut: operate on val | write val(HL) to ram
                             .rPC(0x0003)
                             .rHL(addr)
                             .ram(addr, res),
-                        TestCpuState.init() // execute iot: read (PC) from ram
+                        TestCpuState.init() // execute iut: read (PC) from ram
                             .rPC(0x0004)
                             .rHL(addr)
                             .ram(addr, res),
@@ -3760,5 +3760,713 @@ test "set/reset bit HL" {
                 );
             }
         }
+    }
+}
+
+test "test jump immediate" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    const addr = 0xD00D;
+    const instr = 0b11000011;
+
+    const name = try std.fmt.allocPrint(std.testing.allocator, "test jump immediate", .{});
+    defer std.testing.allocator.free(name);
+    try run_test_case(
+        name,
+        rom,
+        exram,
+        &[_]u8{
+            0x00,
+            instr,
+            @intCast(addr & 0x00FF),
+            @intCast((addr & 0xFF00) >> 8),
+        },
+        TestCpuState.init(),
+        &[_]*TestCpuState{
+            TestCpuState.init() // read nop(PC) from ram
+                .rPC(0x0001),
+            TestCpuState.init() // execute nop | read iut(PC) from ram
+                .rPC(0x0002),
+            TestCpuState.init() // execute iut: read lo(PC) from ram
+                .rPC(0x0003),
+            TestCpuState.init() // execute iut: read hi(PC) from ram
+                .rPC(0x0004),
+            TestCpuState.init() // execute iut: write PC
+                .rPC(addr),
+            TestCpuState.init() // execute iut: read (PC) from ram
+                .rPC(addr + 1),
+        },
+    );
+}
+
+test "test jump HL" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    const addr = 0xD00D;
+    const instr = 0b11101001;
+
+    const name = try std.fmt.allocPrint(std.testing.allocator, "test jump HL", .{});
+    defer std.testing.allocator.free(name);
+    try run_test_case(
+        name,
+        rom,
+        exram,
+        &[_]u8{
+            0x00,
+            instr,
+        },
+        TestCpuState.init()
+            .rHL(addr),
+        &[_]*TestCpuState{
+            TestCpuState.init() // read nop(PC) from ram
+                .rPC(0x0001)
+                .rHL(addr),
+            TestCpuState.init() // execute nop | read iut(PC) from ram
+                .rPC(0x0002)
+                .rHL(addr),
+            TestCpuState.init() // execute iut: write PC | read (PC) from ram
+                .rPC(addr + 1)
+                .rHL(addr),
+        },
+    );
+}
+
+test "test jump immediate conditional" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    for (0..4) |cond| {
+        for (0..2) |condTrue| {
+            const addr = 0xD00D;
+            const instr = 0b110_00_010 | (@as(u8, @intCast(cond)) << 3);
+
+            const name = try std.fmt.allocPrint(std.testing.allocator, "test jump immediate conditional (cond={b}) (true={b})", .{ cond, condTrue });
+            defer std.testing.allocator.free(name);
+
+            var states = std.ArrayList(*TestCpuState).init(std.testing.allocator);
+            defer states.deinit();
+
+            var Z: u1 = 0;
+            var C: u1 = 0;
+            if ((cond == 0b00 and condTrue == 0) or (cond == 0b01 and condTrue == 1)) {
+                Z = 1;
+            } else if ((cond == 0b10 and condTrue == 0) or (cond == 0b11 and condTrue == 1)) {
+                C = 1;
+            }
+
+            try states.append(TestCpuState.init() // read nop(PC) from ram
+                .fZ(Z)
+                .fC(C)
+                .rPC(0x0001));
+            try states.append(TestCpuState.init() // execute nop | read iut(PC) from ram
+                .fZ(Z)
+                .fC(C)
+                .rPC(0x0002));
+            try states.append(TestCpuState.init() // execute iut: read lo(PC) from ram
+                .fZ(Z)
+                .fC(C)
+                .rPC(0x0003));
+            try states.append(TestCpuState.init() // execute iut: read hi(PC) from ram | check condition
+                .fZ(Z)
+                .fC(C)
+                .rPC(0x0004));
+
+            if (condTrue == 1) {
+                try states.append(TestCpuState.init() // execute iut: write PC
+                    .fZ(Z)
+                    .fC(C)
+                    .rPC(addr));
+                try states.append(TestCpuState.init() // execute iut: read (PC) from ram
+                    .fZ(Z)
+                    .fC(C)
+                    .rPC(addr + 1));
+            } else {
+                try states.append(TestCpuState.init() // execute iut: read (PC) from ram
+                    .fZ(Z)
+                    .fC(C)
+                    .rPC(0x0005));
+            }
+
+            try run_test_case(
+                name,
+                rom,
+                exram,
+                &[_]u8{
+                    0x00,
+                    instr,
+                    @intCast(addr & 0x00FF),
+                    @intCast((addr & 0xFF00) >> 8),
+                },
+                TestCpuState.init()
+                    .fZ(Z)
+                    .fC(C),
+                states.items,
+            );
+        }
+    }
+}
+
+test "test jump relative" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    inline for (.{ -1, 0, 1 }) |e| {
+        const instr = 0b00011000;
+
+        const name = try std.fmt.allocPrint(std.testing.allocator, "test jump relative (e={d})", .{e});
+        defer std.testing.allocator.free(name);
+        try run_test_case(
+            name,
+            rom,
+            exram,
+            &[_]u8{
+                0x00,
+                instr,
+                @bitCast(@as(i8, e)),
+            },
+            TestCpuState.init(),
+            &[_]*TestCpuState{
+                TestCpuState.init() // read nop(PC) from ram
+                    .rPC(0x0001),
+                TestCpuState.init() // execute nop | read iut(PC) from ram
+                    .rPC(0x0002),
+                TestCpuState.init() // execute iut: read e(PC) from ram
+                    .rPC(0x0003),
+                TestCpuState.init() // execute iut: calculate PC
+                    .rPC(0x0003),
+                TestCpuState.init() // execute iut: write PC | read (PC) from ram
+                    .rPC(0x0003 + e + 1),
+            },
+        );
+    }
+}
+
+test "test jump relative conditional" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    for (0..4) |cond| {
+        for (0..2) |condTrue| {
+            inline for (.{ -1, 0, 1 }) |e| {
+                const instr = 0b001_00_000 | (@as(u8, @intCast(cond)) << 3);
+
+                const name = try std.fmt.allocPrint(std.testing.allocator, "test jump relative conditional (cond={b}) (true={b}) (e={d})", .{ cond, condTrue, e });
+                defer std.testing.allocator.free(name);
+
+                var states = std.ArrayList(*TestCpuState).init(std.testing.allocator);
+                defer states.deinit();
+
+                var Z: u1 = 0;
+                var C: u1 = 0;
+                if ((cond == 0b00 and condTrue == 0) or (cond == 0b01 and condTrue == 1)) {
+                    Z = 1;
+                } else if ((cond == 0b10 and condTrue == 0) or (cond == 0b11 and condTrue == 1)) {
+                    C = 1;
+                }
+
+                try states.append(TestCpuState.init() // read nop(PC) from ram
+                    .fZ(Z)
+                    .fC(C)
+                    .rPC(0x0001));
+                try states.append(TestCpuState.init() // execute nop | read iut(PC) from ram
+                    .fZ(Z)
+                    .fC(C)
+                    .rPC(0x0002));
+                try states.append(TestCpuState.init() // execute iut: read e(PC) from ram | check condition
+                    .fZ(Z)
+                    .fC(C)
+                    .rPC(0x0003));
+
+                if (condTrue == 1) {
+                    try states.append(TestCpuState.init() // execute iut: calculate PC
+                        .fZ(Z)
+                        .fC(C)
+                        .rPC(0x0003));
+                    try states.append(TestCpuState.init() // execute iut: write PC | read (PC) from ram
+                        .fZ(Z)
+                        .fC(C)
+                        .rPC(0x0003 + e + 1));
+                } else {
+                    try states.append(TestCpuState.init() // execute iut: read (PC) from ram
+                        .fZ(Z)
+                        .fC(C)
+                        .rPC(0x0004));
+                }
+
+                try run_test_case(
+                    name,
+                    rom,
+                    exram,
+                    &[_]u8{
+                        0x00,
+                        instr,
+                        @bitCast(@as(i8, e)),
+                    },
+                    TestCpuState.init()
+                        .fZ(Z)
+                        .fC(C),
+                    states.items,
+                );
+            }
+        }
+    }
+}
+
+test "test call" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    const sp = 0xFF50;
+    const addr = 0xD00D;
+    const instr = 0b11001101;
+
+    const name = try std.fmt.allocPrint(std.testing.allocator, "test call", .{});
+    defer std.testing.allocator.free(name);
+    try run_test_case(
+        name,
+        rom,
+        exram,
+        &[_]u8{
+            0x00,
+            instr,
+            @intCast(addr & 0x00FF),
+            @intCast((addr & 0xFF00) >> 8),
+        },
+        TestCpuState.init()
+            .rSP(sp),
+        &[_]*TestCpuState{
+            TestCpuState.init() // read nop(PC) from ram
+                .rPC(0x0001)
+                .rSP(sp),
+            TestCpuState.init() // execute nop | read iut(PC) from ram
+                .rPC(0x0002)
+                .rSP(sp),
+            TestCpuState.init() // execute iut: read lo(PC) from ram
+                .rPC(0x0003)
+                .rSP(sp),
+            TestCpuState.init() // execute iut: read hi(PC) from ram
+                .rPC(0x0004)
+                .rSP(sp),
+            TestCpuState.init() // execute iut: decrement SP
+                .rPC(0x0004)
+                .rSP(sp - 1),
+            TestCpuState.init() // execute iut: write PC_hi to ram(SP-1)
+                .rPC(0x0004)
+                .rSP(sp - 2)
+                .ram(sp - 1, 0x00),
+            TestCpuState.init() // execute iut: write PC_lo to ram(SP-2) | write PC
+                .rPC(addr)
+                .rSP(sp - 2)
+                .ram(sp - 1, 0x00)
+                .ram(sp - 2, 0x04),
+            TestCpuState.init() // execute iut: read (PC) from ram
+                .rPC(addr + 1)
+                .rSP(sp - 2)
+                .ram(sp - 1, 0x00)
+                .ram(sp - 2, 0x04),
+        },
+    );
+}
+
+test "test call conditional" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    for (0..4) |cond| {
+        for (0..2) |condTrue| {
+            const sp = 0xFF50;
+            const addr = 0xD00D;
+            const instr = 0b110_00_100 | (@as(u8, @intCast(cond)) << 3);
+
+            const name = try std.fmt.allocPrint(std.testing.allocator, "test call conditional (cond={b}) (true={b})", .{ cond, condTrue });
+            defer std.testing.allocator.free(name);
+
+            var states = std.ArrayList(*TestCpuState).init(std.testing.allocator);
+            defer states.deinit();
+
+            var Z: u1 = 0;
+            var C: u1 = 0;
+            if ((cond == 0b00 and condTrue == 0) or (cond == 0b01 and condTrue == 1)) {
+                Z = 1;
+            } else if ((cond == 0b10 and condTrue == 0) or (cond == 0b11 and condTrue == 1)) {
+                C = 1;
+            }
+
+            try states.append(TestCpuState.init() // read nop(PC) from ram
+                .fZ(Z)
+                .fC(C)
+                .rPC(0x0001)
+                .rSP(sp));
+            try states.append(TestCpuState.init() // execute nop | read iut(PC) from ram
+                .fZ(Z)
+                .fC(C)
+                .rPC(0x0002)
+                .rSP(sp));
+            try states.append(TestCpuState.init() // execute iut: read lo(PC) from ram
+                .fZ(Z)
+                .fC(C)
+                .rPC(0x0003)
+                .rSP(sp));
+            try states.append(TestCpuState.init() // execute iut: read hi(PC) from ram | check condition
+                .fZ(Z)
+                .fC(C)
+                .rPC(0x0004)
+                .rSP(sp));
+
+            if (condTrue == 1) {
+                try states.append(TestCpuState.init() // execute iut: decrement SP
+                    .fZ(Z)
+                    .fC(C)
+                    .rPC(0x0004)
+                    .rSP(sp - 1));
+                try states.append(TestCpuState.init() // execute iut: write PC_hi to ram(SP-1)
+                    .fZ(Z)
+                    .fC(C)
+                    .rPC(0x0004)
+                    .rSP(sp - 2)
+                    .ram(sp - 1, 0x00));
+                try states.append(TestCpuState.init() // execute iut: write PC_lo to ram(SP-2) | write PC
+                    .fZ(Z)
+                    .fC(C)
+                    .rPC(addr)
+                    .rSP(sp - 2)
+                    .ram(sp - 1, 0x00)
+                    .ram(sp - 2, 0x04));
+                try states.append(TestCpuState.init() // execute iut: read (PC) from ram
+                    .fZ(Z)
+                    .fC(C)
+                    .rPC(addr + 1)
+                    .rSP(sp - 2)
+                    .ram(sp - 1, 0x00)
+                    .ram(sp - 2, 0x04));
+            } else {
+                try states.append(TestCpuState.init() // execute iut: read (PC) from ram
+                    .fZ(Z)
+                    .fC(C)
+                    .rPC(0x0005)
+                    .rSP(sp));
+            }
+
+            try run_test_case(
+                name,
+                rom,
+                exram,
+                &[_]u8{
+                    0x00,
+                    instr,
+                    @intCast(addr & 0x00FF),
+                    @intCast((addr & 0xFF00) >> 8),
+                },
+                TestCpuState.init()
+                    .fZ(Z)
+                    .fC(C)
+                    .rSP(sp),
+                states.items,
+            );
+        }
+    }
+}
+
+test "test ret" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    const sp = 0xFF50;
+    const instr = 0b11001001;
+
+    const name = try std.fmt.allocPrint(std.testing.allocator, "test ret", .{});
+    defer std.testing.allocator.free(name);
+    try run_test_case(
+        name,
+        rom,
+        exram,
+        &[_]u8{
+            0x00,
+            instr,
+        },
+        TestCpuState.init()
+            .rSP(sp)
+            .ram(sp, 0x10)
+            .ram(sp + 1, 0x01),
+        &[_]*TestCpuState{
+            TestCpuState.init() // read nop(PC) from ram
+                .rPC(0x0001)
+                .rSP(sp)
+                .ram(sp, 0x10)
+                .ram(sp + 1, 0x01),
+            TestCpuState.init() // execute nop | read iut(PC) from ram
+                .rPC(0x0002)
+                .rSP(sp)
+                .ram(sp, 0x10)
+                .ram(sp + 1, 0x01),
+            TestCpuState.init() // execute iut: read PC_lo(SP) | inc SP
+                .rPC(0x0002)
+                .rSP(sp + 1)
+                .ram(sp, 0x10)
+                .ram(sp + 1, 0x01),
+            TestCpuState.init() // execute iut: read PC_hi(SP) | inc SP
+                .rPC(0x0002)
+                .rSP(sp + 2)
+                .ram(sp, 0x10)
+                .ram(sp + 1, 0x01),
+            TestCpuState.init() // execute iut: write PC
+                .rPC(0x0110)
+                .rSP(sp + 2)
+                .ram(sp, 0x10)
+                .ram(sp + 1, 0x01),
+            TestCpuState.init() // execute iut: read (PC) from ram
+                .rPC(0x0111)
+                .rSP(sp + 2)
+                .ram(sp, 0x10)
+                .ram(sp + 1, 0x01),
+        },
+    );
+}
+
+test "test ret conditional" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    for (0..4) |cond| {
+        for (0..2) |condTrue| {
+            const sp = 0xFF50;
+            const instr = 0b110_00_000 | (@as(u8, @intCast(cond)) << 3);
+
+            const name = try std.fmt.allocPrint(std.testing.allocator, "test ret conditional (cond={b}) (true={b})", .{ cond, condTrue });
+            defer std.testing.allocator.free(name);
+
+            var states = std.ArrayList(*TestCpuState).init(std.testing.allocator);
+            defer states.deinit();
+
+            var Z: u1 = 0;
+            var C: u1 = 0;
+            if ((cond == 0b00 and condTrue == 0) or (cond == 0b01 and condTrue == 1)) {
+                Z = 1;
+            } else if ((cond == 0b10 and condTrue == 0) or (cond == 0b11 and condTrue == 1)) {
+                C = 1;
+            }
+
+            try states.append(TestCpuState.init() // read nop(PC) from ram
+                .fZ(Z)
+                .fC(C)
+                .rPC(0x0001)
+                .rSP(sp)
+                .ram(sp, 0x10)
+                .ram(sp + 1, 0x01));
+            try states.append(TestCpuState.init() // execute nop | read iut(PC) from ram
+                .fZ(Z)
+                .fC(C)
+                .rPC(0x0002)
+                .rSP(sp)
+                .ram(sp, 0x10)
+                .ram(sp + 1, 0x01));
+            try states.append(TestCpuState.init() // execute iut | check condition
+                .fZ(Z)
+                .fC(C)
+                .rPC(0x0002)
+                .rSP(sp)
+                .ram(sp, 0x10)
+                .ram(sp + 1, 0x01));
+
+            if (condTrue == 1) {
+                try states.append(TestCpuState.init() // execute iut: inc SP | read PC_lo(SP)
+                    .fZ(Z)
+                    .fC(C)
+                    .rPC(0x0002)
+                    .rSP(sp + 1)
+                    .ram(sp, 0x10)
+                    .ram(sp + 1, 0x01));
+                try states.append(TestCpuState.init() // execute iut: inc SP | read PC_hi(SP)
+                    .fZ(Z)
+                    .fC(C)
+                    .rPC(0x0002)
+                    .rSP(sp + 2)
+                    .ram(sp, 0x10)
+                    .ram(sp + 1, 0x01));
+                try states.append(TestCpuState.init() // execute iut: write PC
+                    .fZ(Z)
+                    .fC(C)
+                    .rPC(0x0110)
+                    .rSP(sp + 2)
+                    .ram(sp, 0x10)
+                    .ram(sp + 1, 0x01));
+                try states.append(TestCpuState.init() // execute iut: read (PC) from ram
+                    .fZ(Z)
+                    .fC(C)
+                    .rPC(0x0111)
+                    .rSP(sp + 2)
+                    .ram(sp, 0x10)
+                    .ram(sp + 1, 0x01));
+            } else {
+                try states.append(TestCpuState.init() // execute iut: read (PC) from ram
+                    .fZ(Z)
+                    .fC(C)
+                    .rPC(0x0003)
+                    .rSP(sp)
+                    .ram(sp, 0x10)
+                    .ram(sp + 1, 0x01));
+            }
+
+            try run_test_case(
+                name,
+                rom,
+                exram,
+                &[_]u8{
+                    0x00,
+                    instr,
+                },
+                TestCpuState.init()
+                    .fZ(Z)
+                    .fC(C)
+                    .rSP(sp)
+                    .ram(sp, 0x10)
+                    .ram(sp + 1, 0x01),
+                states.items,
+            );
+        }
+    }
+}
+
+test "test reti" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    const sp = 0xFF50;
+    const instr = 0b11011001;
+
+    const name = try std.fmt.allocPrint(std.testing.allocator, "test reti", .{});
+    defer std.testing.allocator.free(name);
+    try run_test_case(
+        name,
+        rom,
+        exram,
+        &[_]u8{
+            0x00,
+            instr,
+        },
+        TestCpuState.init()
+            .rSP(sp)
+            .ram(sp, 0x10)
+            .ram(sp + 1, 0x01),
+        &[_]*TestCpuState{
+            TestCpuState.init() // read nop(PC) from ram
+                .rPC(0x0001)
+                .rSP(sp)
+                .ram(sp, 0x10)
+                .ram(sp + 1, 0x01),
+            TestCpuState.init() // execute nop | read iut(PC) from ram
+                .rPC(0x0002)
+                .rSP(sp)
+                .ram(sp, 0x10)
+                .ram(sp + 1, 0x01),
+            TestCpuState.init() // execute iut: read PC_lo(SP) | inc SP
+                .rPC(0x0002)
+                .rSP(sp + 1)
+                .ram(sp, 0x10)
+                .ram(sp + 1, 0x01),
+            TestCpuState.init() // execute iut: read PC_hi(SP) | inc SP
+                .rPC(0x0002)
+                .rSP(sp + 2)
+                .ram(sp, 0x10)
+                .ram(sp + 1, 0x01),
+            TestCpuState.init() // execute iut: write PC | set IME
+                .rPC(0x0110)
+                .rSP(sp + 2)
+                .rIME(1)
+                .ram(sp, 0x10)
+                .ram(sp + 1, 0x01),
+            TestCpuState.init() // execute iut: read (PC) from ram
+                .rPC(0x0111)
+                .rSP(sp + 2)
+                .rIME(1)
+                .ram(sp, 0x10)
+                .ram(sp + 1, 0x01),
+        },
+    );
+}
+
+test "test rst" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    for (0..8) |nS| {
+        const n: u3 = @intCast(nS);
+        const sp = 0xFF50;
+        const instr = 0b11_000_111 | (@as(u8, @intCast(n)) << 3);
+        const addr: u16 = @intCast(n);
+
+        const name = try std.fmt.allocPrint(std.testing.allocator, "test rst", .{});
+        defer std.testing.allocator.free(name);
+        try run_test_case(
+            name,
+            rom,
+            exram,
+            &[_]u8{
+                0x00,
+                instr,
+            },
+            TestCpuState.init()
+                .rSP(sp),
+            &[_]*TestCpuState{
+                TestCpuState.init() // read nop(PC) from ram
+                    .rPC(0x0001)
+                    .rSP(sp),
+                TestCpuState.init() // execute nop | read iut(PC) from ram
+                    .rPC(0x0002)
+                    .rSP(sp),
+                TestCpuState.init() // execute iut: decrement SP
+                    .rPC(0x0002)
+                    .rSP(sp - 1),
+                TestCpuState.init() // execute iut: write PC_hi to ram(SP-1)
+                    .rPC(0x0002)
+                    .rSP(sp - 2)
+                    .ram(sp - 1, 0x00),
+                TestCpuState.init() // execute iut: write PC_lo to ram(SP-2) | write PC
+                    .rPC(addr)
+                    .rSP(sp - 2)
+                    .ram(sp - 1, 0x00)
+                    .ram(sp - 2, 0x02),
+                TestCpuState.init() // execute iut: read (PC) from ram
+                    .rPC(addr + 1)
+                    .rSP(sp - 2)
+                    .ram(sp - 1, 0x00)
+                    .ram(sp - 2, 0x02),
+            },
+        );
     }
 }
