@@ -84,7 +84,8 @@ pub const Cpu = struct {
     next_op_1: CpuOp1Union = undefined,
     next_op_2: CpuOp2Union = undefined,
 
-    debug: bool = false,
+    enable_interrupt_next_instruction: bool = false,
+    enable_interrupt_current_instruction: bool = false,
 
     pub fn init(mmu_: mmu.Mmu) Cpu {
         return Cpu{
@@ -139,6 +140,10 @@ pub const Cpu = struct {
 
     pub fn tick(self: *Cpu) (mmu.MmuMemoryError || CpuError)!void {
         self.next_tick = try self.next_tick.func(self);
+        if (self.enable_interrupt_current_instruction and self.next_tick.func == Cpu.decodeOpcode) {
+            self.reg.IME = 1;
+            self.enable_interrupt_current_instruction = false;
+        }
     }
 
     fn fetchPC(self: *Cpu) mmu.MmuMemoryError!u8 {
@@ -153,11 +158,12 @@ pub const Cpu = struct {
     }
 
     fn decodeOpcode(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
-        // OTHER
-
-        if (self.debug) {
-            std.debug.print("INSTRUCTION: {d}\n", .{self.reg.IR});
+        if (self.enable_interrupt_next_instruction) {
+            self.enable_interrupt_next_instruction = false;
+            self.enable_interrupt_current_instruction = true;
         }
+
+        // OTHER
 
         // Prefixed
         if (self.reg.IR == 0xCB) {
@@ -167,6 +173,32 @@ pub const Cpu = struct {
 
         // NOP
         if (self.reg.IR & 0b11111111 == 0b00000000) {
+            return self.fetchOpcode();
+        }
+
+        // HALT
+        if (self.reg.IR & 0b11111111 == 0b01110110) {
+            // TODO
+            return self.fetchOpcode();
+        }
+
+        // STOP
+        if (self.reg.IR & 0b11111111 == 0b00010000) {
+            // TODO
+            return self.fetchOpcode();
+        }
+
+        // DI
+        if (self.reg.IR & 0b11111111 == 0b11110011) {
+            self.enable_interrupt_next_instruction = false;
+            self.enable_interrupt_current_instruction = false;
+            self.reg.IME = 0;
+            return self.fetchOpcode();
+        }
+
+        // EI
+        if (self.reg.IR & 0b11111111 == 0b11111011) {
+            self.enable_interrupt_next_instruction = true;
             return self.fetchOpcode();
         }
 

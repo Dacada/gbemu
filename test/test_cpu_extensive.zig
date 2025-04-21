@@ -4470,3 +4470,70 @@ test "test rst" {
         );
     }
 }
+
+test "test ei di" {
+    const exram = try std.testing.allocator.alloc(u8, 0x2000);
+    defer std.testing.allocator.free(exram);
+
+    const rom = try std.testing.allocator.alloc(u8, 0x8000);
+    defer std.testing.allocator.free(rom);
+
+    const ei = 0xFB;
+    const di = 0xF3;
+
+    const name = try std.fmt.allocPrint(std.testing.allocator, "test ei di", .{});
+    defer std.testing.allocator.free(name);
+    try run_test_case(
+        name,
+        rom,
+        exram,
+        &[_]u8{
+            0x00,
+            di,
+            0x00,
+            ei,
+            0x01, // LD BC, u16
+            0x00,
+            0x00,
+            di,
+            ei,
+            di,
+            0x00,
+            0x00,
+            0x00,
+            0xFD,
+        },
+        TestCpuState.init(),
+        &[_]*TestCpuState{
+            TestCpuState.init() // read nop(PC) from ram
+                .rPC(0x0001),
+            TestCpuState.init() // execute nop | read di(PC) from ram
+                .rPC(0x0002),
+            TestCpuState.init() // execute di: disable interrupts | read nop(PC) from ram
+                .rPC(0x0003),
+            TestCpuState.init() // execute nop | read ei(PC) from ram
+                .rPC(0x0004),
+            TestCpuState.init() // execute ei: schedule interrupt enable | read ld(PC) from ram
+                .rPC(0x0005),
+            TestCpuState.init() // execute ld: read immediate(PC)
+                .rPC(0x0006),
+            TestCpuState.init() // execute ld: read immediate(PC)
+                .rPC(0x0007),
+            TestCpuState.init() // execute ld: read di(PC) from ram | interrupts are enabled
+                .rPC(0x0008)
+                .rIME(1),
+            TestCpuState.init() // execute di: disable interrupts | read ei(PC) from ram
+                .rPC(0x0009),
+            TestCpuState.init() // execute ei: schedule interrupt enable | read di(PC) from ram
+                .rPC(0x000A),
+            TestCpuState.init() // execute di: cancel interrupt enable | read nop(PC) from ram
+                .rPC(0x000B),
+            TestCpuState.init() // execute nop | read nop(PC) from ram
+                .rPC(0x000C),
+            TestCpuState.init() // execute nop | read nop(PC) from ram
+                .rPC(0x000D),
+            TestCpuState.init() // execute nop | read 0xFD(PC) from ram
+                .rPC(0x000E),
+        },
+    );
+}
