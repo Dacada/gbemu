@@ -476,3 +476,77 @@ test "Fibonacci" {
         try std.testing.expectEqual(n, yx);
     }
 }
+
+test "Prime Sieve" {
+    const code =
+        \\ LD SP, 0xFFF0
+        \\
+        \\ LD HL, 0xC000
+        \\ init:
+        \\   LD A, 1
+        \\   LD (HL+), A
+        \\   LD A, L
+        \\   CP 0
+        \\   JP NZ, init
+        \\ LD HL, 0xC000
+        \\
+        \\ LD A, 0
+        \\ LD (HL+), A
+        \\ LD (HL+), A
+        \\
+        \\ LD B, 1
+        \\ loop:
+        \\   INC B
+        \\   LD A, B
+        \\   CP 0
+        \\   JP Z, end
+        \\
+        \\   LD A, (HL)
+        \\   CP 0
+        \\   JP Z, loop
+        \\
+        \\   LD A, B
+        \\   ADD B
+        \\   JP C, loop
+        \\   PUSH HL
+        \\   inner:
+        \\     LD L, A
+        \\     LD (HL), 0
+        \\     ADD B
+        \\     JP NC, inner
+        \\   POP HL
+        \\   JP loop
+        \\
+        \\ end:
+        \\   NOP
+    ;
+    var program = try lib.assembler.translate(code, std.testing.allocator);
+    defer std.testing.allocator.free(program);
+    program[program.len - 1] = 0xFD; // Illegal instruction signals end of program
+
+    const cpu = try run_program(
+        "Generic integ test 2",
+        program,
+    );
+    defer destroy_cpu(&cpu);
+
+    try std.testing.expectEqual(program.len, cpu.reg.PC);
+
+    var primes = [_]u8{1} ** 256;
+    primes[0] = 0;
+    primes[1] = 0;
+
+    for (2..256) |i| {
+        if (primes[i] == 1) {
+            var idx = i + i;
+            while (idx < 256) {
+                primes[idx] = 0;
+                idx += i;
+            }
+        }
+    }
+
+    for (0..256) |i| {
+        try std.testing.expectEqual(primes[i], try cpu.mmu.read(0xC000 + @as(u16, @intCast(i))));
+    }
+}
