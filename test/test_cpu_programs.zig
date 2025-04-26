@@ -327,7 +327,7 @@ test "Misc bit operations" {
     program[program.len - 1] = 0xFD; // Illegal instruction signals end of program
 
     const cpu = try run_program(
-        "Misc bit operations test",
+        "Misc bit operations integ test",
         program,
     );
     defer destroy_cpu(&cpu);
@@ -395,7 +395,7 @@ test "Jump operations" {
     program[program.len - 1] = 0xFD; // Illegal instruction signals end of program
 
     const cpu = try run_program(
-        "Misc bit operations test",
+        "Jump operations integ test",
         program,
     );
     defer destroy_cpu(&cpu);
@@ -403,4 +403,76 @@ test "Jump operations" {
     try std.testing.expectEqual(program.len, cpu.reg.PC);
 
     try std.testing.expectEqual(123 * 39, cpu.reg.BC.all());
+}
+
+// Now tests just for fun
+
+test "Fibonacci" {
+    const code =
+        \\ LD HL, 0xC000
+        \\
+        \\ LD (HL), 1   ;; hl=lsb2
+        \\ INC HL
+        \\ LD (HL), 0   ;; hl=msb2
+        \\ INC HL
+        \\
+        \\ LD (HL), 1   ;; hl=lsb1
+        \\ INC HL
+        \\ LD (HL), 0   ;; hl=msb1
+        \\
+        \\ LD D, 23
+        \\
+        \\ fibonacci_next:
+        \\   LD B (HL)  ;; b=msb1
+        \\   DEC HL     ;; hl=lsb1
+        \\   LD C (HL)  ;; c=lsb1
+        \\   DEC HL     ;; hl=msb2
+        \\   DEC HL     ;; hl=lsb2
+        \\
+        \\   LD A (HL+) ;; a=lsb2 | hl=msb2
+        \\   ADD C      ;; a=lsb1+lsb2
+        \\   LD C A     ;; c=lsb1+lsb2
+        \\   LD A (HL+) ;; a=msb2 | hl=lsb1
+        \\   ADC B      ;; a=msb1+msb2+c
+        \\
+        \\   INC HL     ;; hl=msb1
+        \\   INC HL     ;; hl=lsb0
+        \\   LD (HL) C
+        \\   INC HL     ;; hl=msb0
+        \\   LD (HL) A
+        \\
+        \\   DEC D
+        \\   JP NZ fibonacci_next
+        \\
+        \\ NOP
+    ;
+    var program = try lib.assembler.translate(code, std.testing.allocator);
+    defer std.testing.allocator.free(program);
+    program[program.len - 1] = 0xFD; // Illegal instruction signals end of program
+
+    const cpu = try run_program(
+        "Generic integ test 1",
+        program,
+    );
+    defer destroy_cpu(&cpu);
+
+    try std.testing.expectEqual(program.len, cpu.reg.PC);
+
+    try std.testing.expectEqual(1, try cpu.mmu.read(0xC000));
+    try std.testing.expectEqual(0, try cpu.mmu.read(0xC001));
+    try std.testing.expectEqual(1, try cpu.mmu.read(0xC002));
+    try std.testing.expectEqual(0, try cpu.mmu.read(0xC003));
+
+    var prev_n: usize = 1;
+    var n: usize = 1;
+    for (2..(23 + 1)) |i| {
+        const tmp = n;
+        n += prev_n;
+        prev_n = tmp;
+
+        const x = try cpu.mmu.read(@intCast(0xC000 + i * 2));
+        const y: u16 = @intCast(try cpu.mmu.read(@intCast(0xC000 + i * 2 + 1)));
+        const yx = (y << 8) | x;
+        try std.testing.expectEqual(n, yx);
+    }
 }
