@@ -550,3 +550,49 @@ test "Prime Sieve" {
         try std.testing.expectEqual(primes[i], try cpu.mmu.read(0xC000 + @as(u16, @intCast(i))));
     }
 }
+
+test "Integer Division" {
+    const code =
+        \\ LD B, 80
+        \\ LD C, 7
+        \\ PUSH BC
+        \\ CALL divide
+        \\ POP BC
+        \\ JP end
+        \\
+        \\ divide:
+        \\   POP HL
+        \\   POP DE
+        \\   LD BC, 0
+        \\
+        \\   LD A D
+        \\   loop:
+        \\     SUB E
+        \\     JP C, endloop
+        \\     INC B
+        \\     JP loop
+        \\   endloop:
+        \\     ADD E
+        \\
+        \\   LD C, A
+        \\   PUSH BC
+        \\   PUSH HL
+        \\   RET
+        \\
+        \\ end:
+        \\   NOP
+    ;
+    var program = try lib.assembler.translate(code, std.testing.allocator);
+    defer std.testing.allocator.free(program);
+    program[program.len - 1] = 0xFD; // Illegal instruction signals end of program
+
+    const cpu = try run_program(
+        "Generic integ test 3",
+        program,
+    );
+    defer destroy_cpu(&cpu);
+
+    try std.testing.expectEqual(program.len, cpu.reg.PC);
+    try std.testing.expectEqual(11, cpu.reg.BC.Hi);
+    try std.testing.expectEqual(3, cpu.reg.BC.Lo);
+}
