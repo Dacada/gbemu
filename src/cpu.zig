@@ -138,11 +138,27 @@ pub const Cpu = struct {
         self.reg.PC = 0x0000;
     }
 
-    pub fn tick(self: *Cpu) (mmu.MmuMemoryError || CpuError)!void {
-        self.next_tick = try self.next_tick.func(self);
-        if (self.enable_interrupt_current_instruction and self.next_tick.func == Cpu.decodeOpcode) {
+    pub fn onInstructionStart(self: *Cpu) void {
+        if (self.enable_interrupt_next_instruction) {
+            self.enable_interrupt_next_instruction = false;
+            self.enable_interrupt_current_instruction = true;
+        }
+    }
+
+    pub fn onInstructionEnd(self: *Cpu) void {
+        if (self.enable_interrupt_current_instruction) {
             self.reg.IME = 1;
             self.enable_interrupt_current_instruction = false;
+        }
+    }
+
+    pub fn tick(self: *Cpu) (mmu.MmuMemoryError || CpuError)!void {
+        if (self.next_tick.func == Cpu.decodeOpcode) {
+            self.onInstructionStart();
+        }
+        self.next_tick = try self.next_tick.func(self);
+        if (self.next_tick.func == Cpu.decodeOpcode) {
+            self.onInstructionEnd();
         }
     }
 
@@ -158,11 +174,6 @@ pub const Cpu = struct {
     }
 
     fn decodeOpcode(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
-        if (self.enable_interrupt_next_instruction) {
-            self.enable_interrupt_next_instruction = false;
-            self.enable_interrupt_current_instruction = true;
-        }
-
         // OTHER
 
         // Prefixed
