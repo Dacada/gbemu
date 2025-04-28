@@ -174,133 +174,274 @@ pub const Cpu = struct {
     }
 
     fn decodeOpcode(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
-        // OTHER
+        // Decoding logic from pan docs.
+        const block: u2 = @intCast((self.reg.IR & 0b11_000000) >> 6);
+        return switch (block) {
+            0b00 => self.decodeBlock0(),
+            0b01 => self.decodeBlock1(),
+            0b10 => self.decodeBlock2(),
+            0b11 => self.decodeBlock3(),
+        };
+    }
 
-        // Prefixed
-        if (self.reg.IR == 0xCB) {
-            self.reg.IR = try self.fetchPC();
-            return SelfRefCpuMethod.init(Cpu.decodeOpcodePrefixed);
+    fn decodeBlock0(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        const suffix: u3 = @intCast(self.reg.IR & 0b00_000_111);
+
+        switch (suffix) {
+            0b000 => {
+                const bit5: u1 = @intCast((self.reg.IR & 0b00_100_000) >> 5);
+                const bit43: u2 = @intCast((self.reg.IR & 0b00_011_000) >> 3);
+
+                if (bit5 == 1) {
+                    return self.executeJumpRelativeConditional();
+                }
+
+                switch (bit43) {
+                    0b00 => {
+                        return self.executeNop();
+                    },
+                    0b01 => {
+                        return self.executeLoadImmediateIndirectStackPointer();
+                    },
+                    0b10 => {
+                        return self.executeStop();
+                    },
+                    0b11 => {
+                        return self.executeJumpRelative();
+                    },
+                }
+            },
+            0b001 => {
+                const bit3: u1 = @intCast((self.reg.IR & 0b00_001_000) >> 3);
+
+                if (bit3 == 1) {
+                    return self.executeAddRegister16BitToRegisterHL();
+                } else {
+                    return self.executeLoadImmediateToRegister16Bit();
+                }
+            },
+            0b010 => {
+                const bit3: u1 = @intCast((self.reg.IR & 0b00_001_000) >> 3);
+
+                if (bit3 == 0) {
+                    return self.executeLoadIndirectRegister16BitFromAccumulator();
+                } else {
+                    return self.executeLoadIndirectRegister16BitToAccumulator();
+                }
+            },
+            0b011 => {
+                const bit3: u1 = @intCast((self.reg.IR & 0b00_001_000) >> 3);
+
+                if (bit3 == 0) {
+                    return self.executeIncrementRegister16Bit();
+                } else {
+                    return self.executeDecrementRegister16Bit();
+                }
+            },
+            0b100 => {
+                return self.executeIncrementRegister8Bit();
+            },
+            0b101 => {
+                return self.executeDecrementRegister8Bit();
+            },
+            0b110 => {
+                return self.executeLoadImmediateToRegister8Bit();
+            },
+            0b111 => {
+                const bit543: u3 = @intCast((self.reg.IR & 0b00_111_000) >> 3);
+                switch (bit543) {
+                    0b000 => return self.executeRotateLeftThroughCarryAccumulator(),
+                    0b001 => return self.executeRotateRightThroughCarryAccumulator(),
+                    0b010 => return self.executeRotateLeftAccumulator(),
+                    0b011 => return self.executeRotateRightAccumulator(),
+                    0b100 => return self.executeDecimalAdjustAccumulator(),
+                    0b101 => return self.executeComplementAccumulator(),
+                    0b110 => return self.executeSetCarryFlag(),
+                    0b111 => return self.executeComplementCarryFlag(),
+                }
+            },
         }
+    }
 
-        // NOP
-        if (self.reg.IR & 0b11111111 == 0b00000000) {
-            return self.fetchOpcode();
+    fn decodeBlock1(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        if (self.reg.IR == 0b01_110_110) {
+            return self.executeHalt();
         }
+        return self.executeRegisterToRegisterLoad8Bit();
+    }
 
-        // HALT
-        if (self.reg.IR & 0b11111111 == 0b01110110) {
-            // TODO
-            return self.fetchOpcode();
+    fn decodeBlock2(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        const infix: u3 = @intCast((self.reg.IR & 0b00_111_000) >> 3);
+        return switch (infix) {
+            0b000 => self.executeAddRegister8Bit(),
+            0b001 => self.executeAddRegister8Bit(), // with carry
+            0b010 => self.executeSubRegister8Bit(),
+            0b011 => self.executeSubRegister8Bit(), // with carry
+            0b100 => self.executeAndRegister8Bit(),
+            0b101 => self.executeXorRegister8Bit(),
+            0b110 => self.executeOrRegister8Bit(),
+            0b111 => self.executeCpRegister8Bit(),
+        };
+    }
+
+    fn decodeBlock3(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        const suffix: u3 = @intCast(self.reg.IR & 0b00_000_111);
+        switch (suffix) {
+            0b000 => {
+                const bit5: u1 = @intCast((self.reg.IR & 0b00_100_000) >> 5);
+                if (bit5 == 0) {
+                    return self.executeReturnConditional();
+                }
+
+                const bit43: u2 = @intCast((self.reg.IR & 0b00_011_000) >> 3);
+                return switch (bit43) {
+                    0b00 => self.executeLoadIndirectImmediateStackFromAccumulator(),
+                    0b01 => self.executeAddRelativeImmediateToStackPointer(),
+                    0b10 => self.executeLoadIndirectImmediateStackToAccumulator(),
+                    0b11 => self.executeLoadToHLFromIndirectAdjustedStackPointer(),
+                };
+            },
+            0b001 => {
+                const bit3: u1 = @intCast((self.reg.IR & 0b00_001_000) >> 3);
+                if (bit3 == 0) {
+                    return self.executePop();
+                }
+
+                const bit54: u2 = @intCast((self.reg.IR & 0b00_110_000) >> 4);
+                return switch (bit54) {
+                    0b00 => self.executeReturn(),
+                    0b01 => self.executeReturnFromInterrupt(),
+                    0b10 => self.executeJumpToHL(),
+                    0b11 => self.executeLoadStackPointerFromHL(),
+                };
+            },
+            0b010 => {
+                const bit5: u1 = @intCast((self.reg.IR & 0b00_100_000) >> 5);
+                if (bit5 == 0) {
+                    return self.executeJumpConditional();
+                }
+
+                const bit43: u2 = @intCast((self.reg.IR & 0b00_011_000) >> 3);
+                return switch (bit43) {
+                    0b00 => self.executeLoadIndirectRegisterCStackFromAccumulator(),
+                    0b01 => self.executeLoadIndirectImmediate16BitFromAccumulator(),
+                    0b10 => self.executeLoadIndirectRegisterCStackToAccumulator(),
+                    0b11 => self.executeLoadIndirectImmediate16BitToAccumulator(),
+                };
+            },
+            0b011 => {
+                const infix: u3 = @intCast((self.reg.IR & 0b00_111_000) >> 3);
+                return switch (infix) {
+                    0b000 => self.executeJump(),
+                    0b001 => self.executePrefix(),
+                    0b110 => self.executeDisableInterrupt(),
+                    0b111 => self.executeEnableInterrupt(),
+                    else => CpuError.IllegalInstruction,
+                };
+            },
+            0b100 => {
+                const bit5: u1 = @intCast((self.reg.IR & 0b00_100_000) >> 5);
+                if (bit5 == 1) {
+                    return CpuError.IllegalInstruction;
+                }
+                return self.executeCallConditional();
+            },
+            0b101 => {
+                const bit3: u1 = @intCast((self.reg.IR & 0b00_001_000) >> 3);
+                if (bit3 == 0) {
+                    return self.executePush();
+                }
+
+                if ((self.reg.IR & 0b00_110_000) != 0) {
+                    return CpuError.IllegalInstruction;
+                }
+
+                return self.executeCall();
+            },
+            0b110 => {
+                const infix: u3 = @intCast((self.reg.IR & 0b00_111_000) >> 3);
+                return switch (infix) {
+                    0b000 => self.executeAddImmediate(),
+                    0b001 => self.executeAddImmediate(), // with carry
+                    0b010 => self.executeSubImmediate(),
+                    0b011 => self.executeSubImmediate(), // with carry
+                    0b100 => self.executeAndImmediate(),
+                    0b101 => self.executeXorImmediate(),
+                    0b110 => self.executeOrImmediate(),
+                    0b111 => self.executeCpImmediate(),
+                };
+            },
+            0b111 => {
+                return self.executeCallReset();
+            },
         }
+    }
 
-        // STOP
-        if (self.reg.IR & 0b11111111 == 0b00010000) {
-            // TODO
-            return self.fetchOpcode();
-        }
+    fn executePrefix(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.reg.IR = try self.fetchPC();
+        return SelfRefCpuMethod.init(Cpu.decodeOpcodePrefixed);
+    }
 
-        // DI
-        if (self.reg.IR & 0b11111111 == 0b11110011) {
-            self.enable_interrupt_next_instruction = false;
-            self.enable_interrupt_current_instruction = false;
-            self.reg.IME = 0;
-            return self.fetchOpcode();
-        }
+    fn executeNop(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        return self.fetchOpcode();
+    }
 
-        // EI
-        if (self.reg.IR & 0b11111111 == 0b11111011) {
-            self.enable_interrupt_next_instruction = true;
-            return self.fetchOpcode();
-        }
+    fn executeHalt(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        // TODO
+        return self.fetchOpcode();
+    }
 
-        // LOAD 8-BIT
+    fn executeStop(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        // TODO
+        return self.fetchOpcode();
+    }
 
-        // Load register (register)
-        if (self.reg.IR & 0b11_000_111 == 0b01_000_110) { // from indirect HL
+    fn executeDisableInterrupt(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.enable_interrupt_next_instruction = false;
+        self.enable_interrupt_current_instruction = false;
+        self.reg.IME = 0;
+        return self.fetchOpcode();
+    }
+
+    fn executeEnableInterrupt(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.enable_interrupt_next_instruction = true;
+        return self.fetchOpcode();
+    }
+
+    fn executeRegisterToRegisterLoad8Bit(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        if (self.reg.IR & 0b00_000_111 == 0b00_000_110) { // from indirect HL
             self.reg.WZ.Lo = try self.mmu.read(self.reg.HL.all());
             return SelfRefCpuMethod.init(Cpu.loadRegisterIndirectHL2);
         }
-        if (self.reg.IR & 0b11_111_000 == 0b01_110_000) { // to indirect HL
+        if (self.reg.IR & 0b00_111_000 == 0b00_110_000) { // to indirect HL
             const from: u3 = @intCast(self.reg.IR & 0b00_000_111);
             const from_ptr = self.ptrReg8Bit(from);
             try self.mmu.write(self.reg.HL.all(), from_ptr.*);
             return SelfRefCpuMethod.init(Cpu.fetchOpcode);
         }
-        if (self.reg.IR & 0b11_000_000 == 0b01_000_000) {
-            const to: u3 = @intCast((self.reg.IR & 0b00_111_000) >> 3);
-            const from: u3 = @intCast(self.reg.IR & 0b00_000_111);
-            const to_ptr = self.ptrReg8Bit(to);
-            const from_ptr = self.ptrReg8Bit(from);
-            to_ptr.* = from_ptr.*;
-            return self.fetchOpcode();
-        }
 
+        const to: u3 = @intCast((self.reg.IR & 0b00_111_000) >> 3);
+        const from: u3 = @intCast(self.reg.IR & 0b00_000_111);
+        const to_ptr = self.ptrReg8Bit(to);
+        const from_ptr = self.ptrReg8Bit(from);
+        to_ptr.* = from_ptr.*;
+        return self.fetchOpcode();
+    }
+
+    fn executeLoadImmediateToRegister8Bit(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
         // Load register (immediate)
-        if (self.reg.IR & 0b11_111_111 == 0b00_110_110) { // to indirect HL
+        if (self.reg.IR & 0b00_111_000 == 0b00_110_000) { // to indirect HL
             self.reg.WZ.Lo = try self.fetchPC();
             return SelfRefCpuMethod.init(Cpu.loadRegisterImmediateIndirectHL2);
         }
-        if (self.reg.IR & 0b11_000_111 == 0b00_000_110) {
-            self.reg.WZ.Lo = try self.fetchPC();
-            return SelfRefCpuMethod.init(Cpu.loadRegisterImmediate2);
-        }
 
-        // Load accumulator (indirect)
-        if (self.reg.IR & 0b111_0_1111 == 0b000_0_1010) {
-            const reg: u2 = @intCast((self.reg.IR & 0b000_10_000) >> 4);
-            const reg_ptr = self.ptrReg16Bit(reg);
-            self.reg.WZ.Lo = try self.mmu.read(reg_ptr.all());
-            return SelfRefCpuMethod.init(Cpu.loadAccumulatorIndirect2);
-        }
+        self.reg.WZ.Lo = try self.fetchPC();
+        return SelfRefCpuMethod.init(Cpu.loadRegisterImmediate2);
+    }
 
-        // Load from accumulator (indirect)
-        if (self.reg.IR & 0b111_0_1111 == 0b000_0_0010) {
-            const reg: u2 = @intCast((self.reg.IR & 0b000_10_000) >> 4);
-            const reg_ptr = self.ptrReg16Bit(reg);
-            try self.mmu.write(reg_ptr.all(), self.reg.AF.Hi);
-            return SelfRefCpuMethod.init(Cpu.fetchOpcode);
-        }
-
-        // Load accumulator (direct)
-        if (self.reg.IR & 0b11111111 == 0b11111010) {
-            self.reg.WZ.Lo = try self.fetchPC();
-            return SelfRefCpuMethod.init(Cpu.loadAccumulatorDirect2);
-        }
-
-        // Load from accumulator (direct)
-        if (self.reg.IR & 0b11111111 == 0b11101010) {
-            self.reg.WZ.Lo = try self.fetchPC();
-            return SelfRefCpuMethod.init(Cpu.loadFromAccumulatorDirect2);
-        }
-
-        // Load accumulator (indirect 0xFF00+C)
-        if (self.reg.IR & 0b11111111 == 0b11110010) {
-            const addr = 0xFF00 | @as(u16, self.reg.BC.Lo);
-            self.reg.WZ.Lo = try self.mmu.read(addr);
-            return SelfRefCpuMethod.init(Cpu.loadAccumulatorIndirectHigh2);
-        }
-
-        // Load from accumulator (indirect 0xFF00+C)
-        if (self.reg.IR & 0b11111111 == 0b11100010) {
-            const addr = 0xFF00 | @as(u16, self.reg.BC.Lo);
-            try self.mmu.write(addr, self.reg.AF.Hi);
-            return SelfRefCpuMethod.init(Cpu.fetchOpcode);
-        }
-
-        // Load accumulator (direct 0xFF00+immediate)
-        if (self.reg.IR & 0b11111111 == 0b11110000) {
-            self.reg.WZ.Lo = try self.fetchPC();
-            return SelfRefCpuMethod.init(Cpu.loadAccumulatorDirectHigh2);
-        }
-
-        // Load from accumulator (direct 0xFF00+immediate)
-        if (self.reg.IR & 0b11111111 == 0b11100000) {
-            self.reg.WZ.Lo = try self.fetchPC();
-            return SelfRefCpuMethod.init(Cpu.loadFromAccumulatorDirectHigh2);
-        }
-
-        // Load accumulator (indirect HL)
-        if (self.reg.IR & 0b111_0_1111 == 0b001_0_1010) {
+    fn executeLoadIndirectRegister16BitToAccumulator(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        // Indirect HL
+        if (self.reg.IR & 0b00_1_00000 == 0b00_1_00000) {
             self.reg.WZ.Lo = try self.mmu.read(self.reg.HL.all());
             const incdec: u1 = @intCast((self.reg.IR & 0b000_1_0000) >> 4);
             switch (incdec) {
@@ -310,8 +451,15 @@ pub const Cpu = struct {
             return SelfRefCpuMethod.init(Cpu.loadAccumulatorIndirectHL2);
         }
 
-        // Load from accumulator (indirect HL)
-        if (self.reg.IR & 0b111_0_1111 == 0b001_0_0010) {
+        const reg: u2 = @intCast((self.reg.IR & 0b000_10_000) >> 4);
+        const reg_ptr = self.ptrReg16Bit(reg);
+        self.reg.WZ.Lo = try self.mmu.read(reg_ptr.all());
+        return SelfRefCpuMethod.init(Cpu.loadAccumulatorIndirect2);
+    }
+
+    fn executeLoadIndirectRegister16BitFromAccumulator(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        // Indirect HL
+        if (self.reg.IR & 0b00_1_00000 == 0b00_1_00000) {
             try self.mmu.write(self.reg.HL.all(), self.reg.AF.Hi);
             const incdec: u1 = @intCast((self.reg.IR & 0b000_1_0000) >> 4);
             switch (incdec) {
@@ -321,348 +469,339 @@ pub const Cpu = struct {
             return SelfRefCpuMethod.init(Cpu.fetchOpcode);
         }
 
-        // LOAD 16-BIT
+        // if (self.reg.IR & 0b11_1_0_1_111 == 0b00_0_0_0_010) {
+        const reg: u2 = @intCast((self.reg.IR & 0b000_10_000) >> 4);
+        const reg_ptr = self.ptrReg16Bit(reg);
+        try self.mmu.write(reg_ptr.all(), self.reg.AF.Hi);
+        return SelfRefCpuMethod.init(Cpu.fetchOpcode);
+    }
 
-        // Load 16-bit register
-        if (self.reg.IR & 0b11_00_1111 == 0b00_00_0001) {
-            self.reg.WZ.Lo = try self.fetchPC();
-            return SelfRefCpuMethod.init(Cpu.load16bitRegister2);
-        }
+    fn executeLoadIndirectImmediate16BitToAccumulator(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.reg.WZ.Lo = try self.fetchPC();
+        return SelfRefCpuMethod.init(Cpu.loadAccumulatorDirect2);
+    }
 
-        // Load from stack pointer (direct)
-        if (self.reg.IR & 0b11111111 == 0b00001000) {
-            self.reg.WZ.Lo = try self.fetchPC();
-            return SelfRefCpuMethod.init(Cpu.loadFrmStackPointerDirect2);
-        }
+    fn executeLoadIndirectImmediate16BitFromAccumulator(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.reg.WZ.Lo = try self.fetchPC();
+        return SelfRefCpuMethod.init(Cpu.loadFromAccumulatorDirect2);
+    }
 
-        // Load stack pointer from HL
-        if (self.reg.IR & 0b11111111 == 0b11111001) {
-            self.reg.SP.setAll(self.reg.HL.all());
-            return SelfRefCpuMethod.init(Cpu.fetchOpcode);
-        }
+    fn executeLoadIndirectRegisterCStackToAccumulator(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        const addr = 0xFF00 | @as(u16, self.reg.BC.Lo);
+        self.reg.WZ.Lo = try self.mmu.read(addr);
+        return SelfRefCpuMethod.init(Cpu.loadAccumulatorIndirectHigh2);
+    }
 
-        // Push register
-        if (self.reg.IR & 0b11_00_1111 == 0b11_00_0101) {
-            self.reg.SP.dec();
-            return SelfRefCpuMethod.init(Cpu.pushRegister2);
-        }
+    fn executeLoadIndirectRegisterCStackFromAccumulator(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        const addr = 0xFF00 | @as(u16, self.reg.BC.Lo);
+        try self.mmu.write(addr, self.reg.AF.Hi);
+        return SelfRefCpuMethod.init(Cpu.fetchOpcode);
+    }
 
-        // Pop register
-        if (self.reg.IR & 0b11_00_1111 == 0b11_00_0001) {
-            self.reg.WZ.Lo = try self.mmu.read(self.reg.SP.all());
-            self.reg.SP.inc();
-            return SelfRefCpuMethod.init(Cpu.popRegister2);
-        }
+    fn executeLoadIndirectImmediateStackToAccumulator(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.reg.WZ.Lo = try self.fetchPC();
+        return SelfRefCpuMethod.init(Cpu.loadAccumulatorDirectHigh2);
+    }
 
-        // Load HL from adjusted SP
-        if (self.reg.IR & 0b11111111 == 0b11111000) {
-            self.reg.WZ.Lo = try self.fetchPC();
-            return SelfRefCpuMethod.init(Cpu.loadHLfromAdjustedSP2);
-        }
+    fn executeLoadIndirectImmediateStackFromAccumulator(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.reg.WZ.Lo = try self.fetchPC();
+        return SelfRefCpuMethod.init(Cpu.loadFromAccumulatorDirectHigh2);
+    }
 
-        // ARITHMETIC 8-BIT
+    fn executeLoadImmediateToRegister16Bit(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.reg.WZ.Lo = try self.fetchPC();
+        return SelfRefCpuMethod.init(Cpu.load16bitRegister2);
+    }
 
-        // Add register
-        if (self.reg.IR & 0b1111_0_111 == 0b1000_0_110) { // indirect HL
+    fn executeLoadImmediateIndirectStackPointer(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.reg.WZ.Lo = try self.fetchPC();
+        return SelfRefCpuMethod.init(Cpu.loadFrmStackPointerDirect2);
+    }
+
+    fn executeLoadStackPointerFromHL(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.reg.SP.setAll(self.reg.HL.all());
+        return SelfRefCpuMethod.init(Cpu.fetchOpcode);
+    }
+
+    fn executePush(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.reg.SP.dec();
+        return SelfRefCpuMethod.init(Cpu.pushRegister2);
+    }
+
+    fn executePop(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.reg.WZ.Lo = try self.mmu.read(self.reg.SP.all());
+        self.reg.SP.inc();
+        return SelfRefCpuMethod.init(Cpu.popRegister2);
+    }
+
+    fn executeLoadToHLFromIndirectAdjustedStackPointer(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.reg.WZ.Lo = try self.fetchPC();
+        return SelfRefCpuMethod.init(Cpu.loadHLfromAdjustedSP2);
+    }
+
+    fn executeAddRegister8Bit(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        if (self.reg.IR & 0b00000_111 == 0b00000_110) { // indirect HL
             self.reg.WZ.Lo = try self.mmu.read(self.reg.HL.all());
             return SelfRefCpuMethod.init(Cpu.doAdd);
         }
-        if (self.reg.IR & 0b1111_0_000 == 0b1000_0_000) {
-            const reg: u3 = @intCast(self.reg.IR & 0b0000_0_111);
-            const reg_ptr = self.ptrReg8Bit(reg);
-            self.reg.WZ.Lo = reg_ptr.*;
-            return self.doAdd();
-        }
 
-        // Add immediate
-        if (self.reg.IR & 0b1111_0_111 == 0b1100_0_110) {
-            self.reg.WZ.Lo = try self.fetchPC();
-            return SelfRefCpuMethod.init(Cpu.doAdd);
-        }
+        const reg: u3 = @intCast(self.reg.IR & 0b0000_0_111);
+        const reg_ptr = self.ptrReg8Bit(reg);
+        self.reg.WZ.Lo = reg_ptr.*;
+        return self.doAdd();
+    }
 
-        // Subtract register
-        if (self.reg.IR & 0b1111_0_111 == 0b1001_0_110) { // indirect HL
+    fn executeAddImmediate(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.reg.WZ.Lo = try self.fetchPC();
+        return SelfRefCpuMethod.init(Cpu.doAdd);
+    }
+
+    fn executeSubRegister8Bit(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        if (self.reg.IR & 0b00000_111 == 0b00000_110) { // indirect HL
             self.reg.WZ.Lo = try self.mmu.read(self.reg.HL.all());
             return SelfRefCpuMethod.init(Cpu.doSub);
         }
-        if (self.reg.IR & 0b1111_0_000 == 0b1001_0_000) {
-            const reg: u3 = @intCast(self.reg.IR & 0b0000_0_111);
-            const reg_ptr = self.ptrReg8Bit(reg);
-            self.reg.WZ.Lo = reg_ptr.*;
-            return self.doSub();
-        }
 
-        // Subtract immediate
-        if (self.reg.IR & 0b1111_0_111 == 0b1101_0_110) {
-            self.reg.WZ.Lo = try self.fetchPC();
-            return SelfRefCpuMethod.init(Cpu.doSub);
-        }
+        const reg: u3 = @intCast(self.reg.IR & 0b0000_0_111);
+        const reg_ptr = self.ptrReg8Bit(reg);
+        self.reg.WZ.Lo = reg_ptr.*;
+        return self.doSub();
+    }
 
-        // Compare register
-        if (self.reg.IR & 0b11111111 == 0b10111110) { // indirect HL
+    fn executeSubImmediate(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.reg.WZ.Lo = try self.fetchPC();
+        return SelfRefCpuMethod.init(Cpu.doSub);
+    }
+
+    fn executeCpRegister8Bit(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        if (self.reg.IR & 0b00000_111 == 0b00000_110) { // indirect HL
             self.reg.WZ.Lo = try self.mmu.read(self.reg.HL.all());
             return SelfRefCpuMethod.init(Cpu.doCmp);
         }
-        if (self.reg.IR & 0b11111000 == 0b10111000) {
-            const reg: u3 = @intCast(self.reg.IR & 0b0000_0_111);
-            const reg_ptr = self.ptrReg8Bit(reg);
-            self.reg.WZ.Lo = reg_ptr.*;
-            return self.doCmp();
-        }
 
-        // Compare immediate
-        if (self.reg.IR & 0b11111111 == 0b11111110) {
-            self.reg.WZ.Lo = try self.fetchPC();
-            return SelfRefCpuMethod.init(Cpu.doCmp);
-        }
+        const reg: u3 = @intCast(self.reg.IR & 0b0000_0_111);
+        const reg_ptr = self.ptrReg8Bit(reg);
+        self.reg.WZ.Lo = reg_ptr.*;
+        return self.doCmp();
+    }
 
-        // Increment register
-        if (self.reg.IR & 0b11111111 == 0b00110100) { // indirect HL
+    fn executeCpImmediate(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.reg.WZ.Lo = try self.fetchPC();
+        return SelfRefCpuMethod.init(Cpu.doCmp);
+    }
+
+    fn executeIncrementRegister8Bit(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        if (self.reg.IR & 0b00_111_000 == 0b00_110_000) { // indirect HL
             self.reg.WZ.Lo = try self.mmu.read(self.reg.HL.all());
             return SelfRefCpuMethod.init(Cpu.incrementRegisterHL2);
         }
-        if (self.reg.IR & 0b11_000_111 == 0b00_000_100) {
-            const reg: u3 = @intCast((self.reg.IR & 0b00_111_000) >> 3);
-            const reg_ptr = self.ptrReg8Bit(reg);
-            reg_ptr.* = self.reg.AF.inc(reg_ptr.*);
-            return self.fetchOpcode();
-        }
 
-        // Decrement register
-        if (self.reg.IR & 0b11111111 == 0b00110101) { // indirect HL
+        const reg: u3 = @intCast((self.reg.IR & 0b00_111_000) >> 3);
+        const reg_ptr = self.ptrReg8Bit(reg);
+        reg_ptr.* = self.reg.AF.inc(reg_ptr.*);
+        return self.fetchOpcode();
+    }
+
+    fn executeDecrementRegister8Bit(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        if (self.reg.IR & 0b00_111_000 == 0b00_110_000) { // indirect HL
             self.reg.WZ.Lo = try self.mmu.read(self.reg.HL.all());
             return SelfRefCpuMethod.init(Cpu.decrementRegisterHL2);
         }
-        if (self.reg.IR & 0b11_000_111 == 0b00_000_101) {
-            const reg: u3 = @intCast((self.reg.IR & 0b00_111_000) >> 3);
-            const reg_ptr = self.ptrReg8Bit(reg);
-            reg_ptr.* = self.reg.AF.dec(reg_ptr.*);
-            return self.fetchOpcode();
-        }
 
-        // AND register
-        if (self.reg.IR & 0b11111111 == 0b10100110) { // indirect HL
+        const reg: u3 = @intCast((self.reg.IR & 0b00_111_000) >> 3);
+        const reg_ptr = self.ptrReg8Bit(reg);
+        reg_ptr.* = self.reg.AF.dec(reg_ptr.*);
+        return self.fetchOpcode();
+    }
+
+    fn executeAndRegister8Bit(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        if (self.reg.IR & 0b00000_111 == 0b00000_110) { // indirect HL
             self.reg.WZ.Lo = try self.mmu.read(self.reg.HL.all());
             return SelfRefCpuMethod.init(Cpu.doAnd);
         }
-        if (self.reg.IR & 0b11111_000 == 0b10100_000) {
-            const reg: u3 = @intCast(self.reg.IR & 0b00000_111);
-            const reg_ptr = self.ptrReg8Bit(reg);
-            self.reg.WZ.Lo = reg_ptr.*;
-            return self.doAnd();
-        }
 
-        // AND immediate
-        if (self.reg.IR & 0b11111111 == 0b11100110) {
-            self.reg.WZ.Lo = try self.fetchPC();
-            return SelfRefCpuMethod.init(Cpu.doAnd);
-        }
+        const reg: u3 = @intCast(self.reg.IR & 0b00000_111);
+        const reg_ptr = self.ptrReg8Bit(reg);
+        self.reg.WZ.Lo = reg_ptr.*;
+        return self.doAnd();
+    }
 
-        // OR register
-        if (self.reg.IR & 0b11111111 == 0b10110110) { // indirect HL
+    fn executeAndImmediate(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.reg.WZ.Lo = try self.fetchPC();
+        return SelfRefCpuMethod.init(Cpu.doAnd);
+    }
+
+    fn executeOrRegister8Bit(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        if (self.reg.IR & 0b00000_111 == 0b00000_110) { // indirect HL
             self.reg.WZ.Lo = try self.mmu.read(self.reg.HL.all());
             return SelfRefCpuMethod.init(Cpu.doOr);
         }
-        if (self.reg.IR & 0b11111_000 == 0b10110_000) {
-            const reg: u3 = @intCast(self.reg.IR & 0b00000_111);
-            const reg_ptr = self.ptrReg8Bit(reg);
-            self.reg.WZ.Lo = reg_ptr.*;
-            return self.doOr();
-        }
 
-        // OR immediate
-        if (self.reg.IR & 0b11111111 == 0b11110110) {
-            self.reg.WZ.Lo = try self.fetchPC();
-            return SelfRefCpuMethod.init(Cpu.doOr);
-        }
+        const reg: u3 = @intCast(self.reg.IR & 0b00000_111);
+        const reg_ptr = self.ptrReg8Bit(reg);
+        self.reg.WZ.Lo = reg_ptr.*;
+        return self.doOr();
+    }
 
-        // XOR register
-        if (self.reg.IR & 0b11111111 == 0b10101110) { // indirect HL
+    fn executeOrImmediate(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.reg.WZ.Lo = try self.fetchPC();
+        return SelfRefCpuMethod.init(Cpu.doOr);
+    }
+
+    fn executeXorRegister8Bit(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        if (self.reg.IR & 0b00000_111 == 0b00000_110) { // indirect HL
             self.reg.WZ.Lo = try self.mmu.read(self.reg.HL.all());
             return SelfRefCpuMethod.init(Cpu.doXor);
         }
-        if (self.reg.IR & 0b11111_000 == 0b10101_000) {
-            const reg: u3 = @intCast(self.reg.IR & 0b00000_111);
-            const reg_ptr = self.ptrReg8Bit(reg);
-            self.reg.WZ.Lo = reg_ptr.*;
-            return self.doXor();
-        }
 
-        // XOR immediate
-        if (self.reg.IR & 0b11111111 == 0b11101110) {
-            self.reg.WZ.Lo = try self.fetchPC();
-            return SelfRefCpuMethod.init(Cpu.doXor);
-        }
+        const reg: u3 = @intCast(self.reg.IR & 0b00000_111);
+        const reg_ptr = self.ptrReg8Bit(reg);
+        self.reg.WZ.Lo = reg_ptr.*;
+        return self.doXor();
+    }
 
-        // Complement carry flag
-        if (self.reg.IR & 0b11111111 == 0b00111111) {
-            self.reg.AF.ccf();
-            return self.fetchOpcode();
-        }
+    fn executeXorImmediate(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.reg.WZ.Lo = try self.fetchPC();
+        return SelfRefCpuMethod.init(Cpu.doXor);
+    }
 
-        // Set carry flag
-        if (self.reg.IR & 0b11111111 == 0b00110111) {
-            self.reg.AF.scf();
-            return self.fetchOpcode();
-        }
+    fn executeComplementCarryFlag(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.reg.AF.ccf();
+        return self.fetchOpcode();
+    }
 
-        // Decimal adjust accumulator
-        if (self.reg.IR & 0b11111111 == 0b00100111) {
-            self.reg.AF.daa();
-            return self.fetchOpcode();
-        }
+    fn executeSetCarryFlag(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.reg.AF.scf();
+        return self.fetchOpcode();
+    }
 
-        // Complement accumulator
-        if (self.reg.IR & 0b11111111 == 0b00101111) {
-            self.reg.AF.cpl();
-            return self.fetchOpcode();
-        }
+    fn executeDecimalAdjustAccumulator(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.reg.AF.daa();
+        return self.fetchOpcode();
+    }
 
-        // ARITHMETIC 16-BIT
+    fn executeComplementAccumulator(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.reg.AF.cpl();
+        return self.fetchOpcode();
+    }
 
-        // Inc/Dec register 16-bit
-        if (self.reg.IR & 0b11_00_0_111 == 0b00_00_0_011) {
-            const incdec: u1 = @intCast((self.reg.IR & 0b00_00_1_000) >> 3);
-            const reg_code: u2 = @intCast((self.reg.IR & 0b00_11_0_000) >> 4);
-            const reg_ptr = self.ptrReg16Bit(reg_code);
-            if (incdec == 0) {
-                reg_ptr.inc();
-            } else {
-                reg_ptr.dec();
-            }
+    fn executeIncrementRegister16Bit(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        const reg_code: u2 = @intCast((self.reg.IR & 0b00_11_0_000) >> 4);
+        const reg_ptr = self.ptrReg16Bit(reg_code);
+        reg_ptr.inc();
+        return SelfRefCpuMethod.init(Cpu.fetchOpcode);
+    }
+
+    fn executeDecrementRegister16Bit(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        const reg_code: u2 = @intCast((self.reg.IR & 0b00_11_0_000) >> 4);
+        const reg_ptr = self.ptrReg16Bit(reg_code);
+        reg_ptr.dec();
+        return SelfRefCpuMethod.init(Cpu.fetchOpcode);
+    }
+
+    fn executeAddRegister16BitToRegisterHL(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        const reg_code: u2 = @intCast((self.reg.IR & 0b00_11_0000) >> 4);
+        const reg_ptr = self.ptrReg16Bit(reg_code);
+        self.reg.HL.Lo = self.reg.AF.add_return(self.reg.HL.Lo, reg_ptr.Lo, 0, self.reg.AF.Lo.Z);
+        return SelfRefCpuMethod.init(Cpu.addRegister162);
+    }
+
+    fn executeAddRelativeImmediateToStackPointer(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.reg.WZ.Lo = try self.fetchPC();
+        return SelfRefCpuMethod.init(Cpu.addToSPRelative2);
+    }
+
+    fn executeRotateLeftThroughCarryAccumulator(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.reg.AF.Hi = self.reg.AF.rlc(self.reg.AF.Hi);
+        self.reg.AF.Lo.Z = 0;
+        return self.fetchOpcode();
+    }
+
+    fn executeRotateRightThroughCarryAccumulator(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.reg.AF.Hi = self.reg.AF.rrc(self.reg.AF.Hi);
+        self.reg.AF.Lo.Z = 0;
+        return self.fetchOpcode();
+    }
+
+    fn executeRotateLeftAccumulator(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.reg.AF.Hi = self.reg.AF.rl(self.reg.AF.Hi);
+        self.reg.AF.Lo.Z = 0;
+        return self.fetchOpcode();
+    }
+
+    fn executeRotateRightAccumulator(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.reg.AF.Hi = self.reg.AF.rr(self.reg.AF.Hi);
+        self.reg.AF.Lo.Z = 0;
+        return self.fetchOpcode();
+    }
+
+    fn executeJump(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.reg.WZ.Lo = try self.fetchPC();
+        return SelfRefCpuMethod.init(Cpu.jumpToImmediate2);
+    }
+
+    fn executeJumpToHL(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.reg.PC = self.reg.HL.all();
+        return self.fetchOpcode();
+    }
+
+    fn executeJumpConditional(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.reg.WZ.Lo = try self.fetchPC();
+        return SelfRefCpuMethod.init(Cpu.jumpToImmediateConditional2);
+    }
+
+    fn executeJumpRelative(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.reg.WZ.Lo = try self.fetchPC();
+        return SelfRefCpuMethod.init(Cpu.jumpToRelative2);
+    }
+
+    fn executeJumpRelativeConditional(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.reg.WZ.Lo = try self.fetchPC();
+        const cond: u2 = @intCast((self.reg.IR & 0b00_11_000) >> 3);
+        if (self.reg.AF.cond(cond)) {
+            return SelfRefCpuMethod.init(Cpu.jumpToRelativeConditional2);
+        } else {
             return SelfRefCpuMethod.init(Cpu.fetchOpcode);
         }
+    }
 
-        // Add register 16-bit
-        if (self.reg.IR & 0b11_00_1111 == 0b00_00_1001) {
-            const reg_code: u2 = @intCast((self.reg.IR & 0b00_11_0000) >> 4);
-            const reg_ptr = self.ptrReg16Bit(reg_code);
-            self.reg.HL.Lo = self.reg.AF.add_return(self.reg.HL.Lo, reg_ptr.Lo, 0, self.reg.AF.Lo.Z);
-            return SelfRefCpuMethod.init(Cpu.addRegister162);
+    fn executeCall(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.reg.WZ.Lo = try self.fetchPC();
+        return SelfRefCpuMethod.init(Cpu.call2);
+    }
+
+    fn executeCallConditional(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.reg.WZ.Lo = try self.fetchPC();
+        return SelfRefCpuMethod.init(Cpu.callConditional2);
+    }
+
+    fn executeReturn(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.reg.WZ.Lo = try self.mmu.read(self.reg.SP.all());
+        self.reg.SP.inc();
+        return SelfRefCpuMethod.init(Cpu.return2);
+    }
+
+    fn executeReturnConditional(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        const cond: u2 = @intCast((self.reg.IR & 0b000_11_000) >> 3);
+        if (self.reg.AF.cond(cond)) {
+            return SelfRefCpuMethod.init(Cpu.returnConditional2);
+        } else {
+            return SelfRefCpuMethod.init(Cpu.fetchOpcode);
         }
+    }
 
-        // Add to SP relative
-        if (self.reg.IR & 0b11111111 == 0b11101000) {
-            self.reg.WZ.Lo = try self.fetchPC();
-            return SelfRefCpuMethod.init(Cpu.addToSPRelative2);
-        }
+    fn executeReturnFromInterrupt(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.reg.WZ.Lo = try self.mmu.read(self.reg.SP.all());
+        self.reg.SP.inc();
+        return SelfRefCpuMethod.init(Cpu.returnInterrupt2);
+    }
 
-        // ROTATE
-
-        // Rotate left circular (accumulator)
-        if (self.reg.IR & 0b11111111 == 0b00000111) {
-            self.reg.AF.Hi = self.reg.AF.rlc(self.reg.AF.Hi);
-            self.reg.AF.Lo.Z = 0;
-            return self.fetchOpcode();
-        }
-
-        // Rotate right circular (accumulator)
-        if (self.reg.IR & 0b11111111 == 0b00001111) {
-            self.reg.AF.Hi = self.reg.AF.rrc(self.reg.AF.Hi);
-            self.reg.AF.Lo.Z = 0;
-            return self.fetchOpcode();
-        }
-
-        // Rotate left through carry (accumulator)
-        if (self.reg.IR & 0b11111111 == 0b00010111) {
-            self.reg.AF.Hi = self.reg.AF.rl(self.reg.AF.Hi);
-            self.reg.AF.Lo.Z = 0;
-            return self.fetchOpcode();
-        }
-
-        // Rotate right through carry (accumulator)
-        if (self.reg.IR & 0b11111111 == 0b00011111) {
-            self.reg.AF.Hi = self.reg.AF.rr(self.reg.AF.Hi);
-            self.reg.AF.Lo.Z = 0;
-            return self.fetchOpcode();
-        }
-
-        // CONTROL FLOW
-
-        // Jump to immediate
-        if (self.reg.IR & 0b11111111 == 0b11000011) {
-            self.reg.WZ.Lo = try self.fetchPC();
-            return SelfRefCpuMethod.init(Cpu.jumpToImmediate2);
-        }
-
-        // Jump to HL
-        if (self.reg.IR & 0b11111111 == 0b11101001) {
-            self.reg.PC = self.reg.HL.all();
-            return self.fetchOpcode();
-        }
-
-        // Jump to immediate conditional
-        if (self.reg.IR & 0b111_00_111 == 0b110_00_010) {
-            self.reg.WZ.Lo = try self.fetchPC();
-            return SelfRefCpuMethod.init(Cpu.jumpToImmediateConditional2);
-        }
-
-        // Jump to relative
-        if (self.reg.IR & 0b11111111 == 0b00011000) {
-            self.reg.WZ.Lo = try self.fetchPC();
-            return SelfRefCpuMethod.init(Cpu.jumpToRelative2);
-        }
-
-        // Jump to relative conditional
-        if (self.reg.IR & 0b111_00_111 == 0b001_00_000) {
-            self.reg.WZ.Lo = try self.fetchPC();
-            const cond: u2 = @intCast((self.reg.IR & 0b00_11_000) >> 3);
-            if (self.reg.AF.cond(cond)) {
-                return SelfRefCpuMethod.init(Cpu.jumpToRelativeConditional2);
-            } else {
-                return SelfRefCpuMethod.init(Cpu.fetchOpcode);
-            }
-        }
-
-        // Call
-        if (self.reg.IR & 0b11111111 == 0b11001101) {
-            self.reg.WZ.Lo = try self.fetchPC();
-            return SelfRefCpuMethod.init(Cpu.call2);
-        }
-
-        // Call conditional
-        if (self.reg.IR & 0b111_00_111 == 0b110_00_100) {
-            self.reg.WZ.Lo = try self.fetchPC();
-            return SelfRefCpuMethod.init(Cpu.callConditional2);
-        }
-
-        // Return
-        if (self.reg.IR & 0b11111111 == 0b11001001) {
-            self.reg.WZ.Lo = try self.mmu.read(self.reg.SP.all());
-            self.reg.SP.inc();
-            return SelfRefCpuMethod.init(Cpu.return2);
-        }
-
-        // Return conditional
-        if (self.reg.IR & 0b111_00_111 == 0b110_00_000) {
-            const cond: u2 = @intCast((self.reg.IR & 0b000_11_000) >> 3);
-            if (self.reg.AF.cond(cond)) {
-                return SelfRefCpuMethod.init(Cpu.returnConditional2);
-            } else {
-                return SelfRefCpuMethod.init(Cpu.fetchOpcode);
-            }
-        }
-
-        // Return interrupt
-        if (self.reg.IR & 0b11111111 == 0b11011001) {
-            self.reg.WZ.Lo = try self.mmu.read(self.reg.SP.all());
-            self.reg.SP.inc();
-            return SelfRefCpuMethod.init(Cpu.returnInterrupt2);
-        }
-
-        // Restart
-        if (self.reg.IR & 0b11_000_111 == 0b11_000_111) {
-            self.reg.SP.dec();
-            return SelfRefCpuMethod.init(Cpu.restart2);
-        }
-
-        return CpuError.IllegalInstruction;
+    fn executeCallReset(self: *Cpu) (mmu.MmuMemoryError || CpuError)!SelfRefCpuMethod {
+        self.reg.SP.dec();
+        return SelfRefCpuMethod.init(Cpu.restart2);
     }
 
     fn decodeOpcodePrefixed(self: *Cpu) mmu.MmuMemoryError!SelfRefCpuMethod {
-        // TODO: this is how instruction decoding will be done in general eventually, in chunks (and likely calling
-        // sub-functions for better readability, the variety of opcodes here is just low enough to not need that)
-
         const op1: u2 = @intCast((self.reg.IR & 0b11_000_000) >> 6);
         const op2: u3 = @intCast((self.reg.IR & 0b00_111_000) >> 3);
         const regIdx: u3 = @intCast(self.reg.IR & 0b00_000_111);
