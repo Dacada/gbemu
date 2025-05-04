@@ -1,18 +1,12 @@
 const std = @import("std");
 const testutil = @import("testutil.zig");
-const run_test_case = testutil.run_test_case;
+const runTestCase = testutil.runTestCase;
 const TestCpuState = testutil.TestCpuState;
 const alu = @import("lib").alu;
 
 // IUT = Instruction Under Test
 
 test "Load register (register)" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     for (0..(0b111 + 1)) |from| {
         if (from == 0b110) {
             continue;
@@ -28,10 +22,8 @@ test "Load register (register)" {
 
             const name = try std.fmt.allocPrint(std.testing.allocator, "Load register (from={b} to={b})", .{ from, to });
             defer std.testing.allocator.free(name);
-            try run_test_case(
+            try runTestCase(
                 name,
-                rom,
-                exram,
                 &[_]u8{
                     0x00,
                     instr,
@@ -57,12 +49,6 @@ test "Load register (register)" {
 }
 
 test "Load register (immediate)" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     for (0..(0b111 + 1)) |to| {
         if (to == 0b110) {
             continue;
@@ -74,10 +60,8 @@ test "Load register (immediate)" {
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "Load register (immediate) (to={b})", .{to});
         defer std.testing.allocator.free(name);
-        try run_test_case(
+        try runTestCase(
             name,
-            rom,
-            exram,
             &[_]u8{
                 0x00,
                 instr,
@@ -101,12 +85,6 @@ test "Load register (immediate)" {
 }
 
 test "Load register (indirect HL)" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     for (0..(0b111 + 1)) |to| {
         if (to == 0b110) {
             continue;
@@ -119,10 +97,8 @@ test "Load register (indirect HL)" {
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "Load register (indirect HL) (to={b})", .{to});
         defer std.testing.allocator.free(name);
-        try run_test_case(
+        try runTestCase(
             name,
-            rom,
-            exram,
             &[_]u8{
                 0x00,
                 instr,
@@ -155,12 +131,6 @@ test "Load register (indirect HL)" {
 }
 
 test "Load from register (indirect HL)" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     for (0..(0b111 + 1)) |from| {
         if (from == 0b110) {
             continue;
@@ -173,10 +143,8 @@ test "Load from register (indirect HL)" {
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "LD from register (indirect HL) (from={b})", .{from});
         defer std.testing.allocator.free(name);
-        try run_test_case(
+        try runTestCase(
             name,
-            rom,
-            exram,
             &[_]u8{
                 0x00,
                 instr,
@@ -210,21 +178,13 @@ test "Load from register (indirect HL)" {
 }
 
 test "Load from immediate data (indirect HL)" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     // Constants
     const instr: u8 = 0b00_110_110;
     const test_value: u8 = 0xFF;
     const test_addr: u16 = 0xD0D0;
 
-    try run_test_case(
+    try runTestCase(
         "Load from immediate data (indirect HL)",
-        rom,
-        exram,
         &[_]u8{
             0x00,
             instr,
@@ -256,12 +216,6 @@ test "Load from immediate data (indirect HL)" {
 }
 
 test "Load accumulator (indirect)" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     for (0..2) |from| {
         // Constants
         const instr: u8 = @intCast(0b000_0_1010 | (from << 4));
@@ -270,10 +224,8 @@ test "Load accumulator (indirect)" {
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "Load accumulator (indirect) (from={b})", .{from});
         defer std.testing.allocator.free(name);
-        try run_test_case(
+        try runTestCase(
             name,
-            rom,
-            exram,
             &[_]u8{
                 0x00,
                 instr,
@@ -306,12 +258,6 @@ test "Load accumulator (indirect)" {
 }
 
 test "Load from accumulator (indirect)" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     for (0..2) |from| {
         // Constants
         const instr: u8 = @intCast(0b000_0_0010 | (from << 4));
@@ -320,10 +266,8 @@ test "Load from accumulator (indirect)" {
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "Load from accumulator (indirect) (from={b})", .{from});
         defer std.testing.allocator.free(name);
-        try run_test_case(
+        try runTestCase(
             name,
-            rom,
-            exram,
             &[_]u8{
                 0x00,
                 instr,
@@ -357,21 +301,13 @@ test "Load from accumulator (indirect)" {
 }
 
 test "Load accumulator (direct)" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     // Constants
     const instr: u8 = 0b11111010;
     const test_value: u8 = 0xFF;
     const test_addr: u16 = 0xD00D;
 
-    try run_test_case(
+    try runTestCase(
         "Load accumulator (direct)",
-        rom,
-        exram,
         &[_]u8{
             0x00,
             instr,
@@ -406,21 +342,13 @@ test "Load accumulator (direct)" {
 }
 
 test "Load from accumulator (direct)" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     // Constants
     const instr: u8 = 0b11101010;
     const test_value: u8 = 0xFF;
     const test_addr: u16 = 0xD00D;
 
-    try run_test_case(
+    try runTestCase(
         "Load from accumulator (direct)",
-        rom,
-        exram,
         &[_]u8{
             0x00,
             instr,
@@ -456,21 +384,13 @@ test "Load from accumulator (direct)" {
 }
 
 test "Load accumulator (indirect 0xFF00 + C)" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     // Constants
     const instr: u8 = 0b11110010;
     const test_value: u8 = 0xFF;
     const test_addr: u16 = 0xFFAA;
 
-    try run_test_case(
+    try runTestCase(
         "Load accumulator (indirect 0xFF00 + C)",
-        rom,
-        exram,
         &[_]u8{
             0x00,
             instr,
@@ -502,21 +422,13 @@ test "Load accumulator (indirect 0xFF00 + C)" {
 }
 
 test "Load from accumulator (indirect 0xFF00 + C)" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     // Constants
     const instr: u8 = 0b11100010;
     const test_value: u8 = 0xFF;
     const test_addr: u16 = 0xFFAA;
 
-    try run_test_case(
+    try runTestCase(
         "Load from accumulator (indirect 0xFF00 + C)",
-        rom,
-        exram,
         &[_]u8{
             0x00,
             instr,
@@ -549,21 +461,13 @@ test "Load from accumulator (indirect 0xFF00 + C)" {
 }
 
 test "Load accumulator (direct 0xFF00 + n)" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     // Constants
     const instr: u8 = 0b11110000;
     const test_value: u8 = 0xFF;
     const test_addr: u16 = 0xFFAA;
 
-    try run_test_case(
+    try runTestCase(
         "Load accumulator (direct 0xFF00 + n)",
-        rom,
-        exram,
         &[_]u8{
             0x00,
             instr,
@@ -594,21 +498,13 @@ test "Load accumulator (direct 0xFF00 + n)" {
 }
 
 test "Load from accumulator (direct 0xFF00 + n)" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     // Constants
     const instr: u8 = 0b11100000;
     const test_value: u8 = 0xFF;
     const test_addr: u16 = 0xFFAA;
 
-    try run_test_case(
+    try runTestCase(
         "Load from accumulator (direct 0xFF00 + n)",
-        rom,
-        exram,
         &[_]u8{
             0x00,
             instr,
@@ -640,12 +536,6 @@ test "Load from accumulator (direct 0xFF00 + n)" {
 }
 
 test "Load accumulator (indirect HL)" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     inline for (0..2) |incdec| {
         // Constants
         const instr: u8 = @intCast(0b00101010 | (incdec << 4));
@@ -659,10 +549,8 @@ test "Load accumulator (indirect HL)" {
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "Load accumulator (indirect HL) (inc/dec={b})", .{incdec});
         defer std.testing.allocator.free(name);
-        try run_test_case(
+        try runTestCase(
             name,
-            rom,
-            exram,
             &[_]u8{
                 0x00,
                 instr,
@@ -695,12 +583,6 @@ test "Load accumulator (indirect HL)" {
 }
 
 test "Load from accumulator (indirect HL)" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     inline for (0..2) |incdec| {
         // Constants
         const instr: u8 = @intCast(0b00100010 | (incdec << 4));
@@ -714,10 +596,8 @@ test "Load from accumulator (indirect HL)" {
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "Load from accumulator (indirect HL) (inc/dev={b})", .{incdec});
         defer std.testing.allocator.free(name);
-        try run_test_case(
+        try runTestCase(
             name,
-            rom,
-            exram,
             &[_]u8{
                 0x00,
                 instr,
@@ -751,12 +631,6 @@ test "Load from accumulator (indirect HL)" {
 }
 
 test "Load 16-bit register" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     inline for (0..(0b11 + 1)) |reg| {
         // Constants
         const instr: u8 = @intCast(0b00000001 | (reg << 4));
@@ -764,10 +638,8 @@ test "Load 16-bit register" {
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "Load 16-bit register (reg={b})", .{reg});
         defer std.testing.allocator.free(name);
-        try run_test_case(
+        try runTestCase(
             name,
-            rom,
-            exram,
             &[_]u8{
                 0x00,
                 instr,
@@ -794,21 +666,13 @@ test "Load 16-bit register" {
 }
 
 test "Load from stack pointer (direct)" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     // Constants
     const instr = 0b00001000;
     const test_addr = 0xD00D;
     const test_value = 0xFFAA;
 
-    try run_test_case(
+    try runTestCase(
         "Load from stack pointer (direct)",
-        rom,
-        exram,
         &[_]u8{
             0x00,
             instr,
@@ -850,20 +714,12 @@ test "Load from stack pointer (direct)" {
 }
 
 test "Load stack pointer from HL" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     // Constants
     const instr = 0b11111001;
     const test_value = 0xFFAA;
 
-    try run_test_case(
+    try runTestCase(
         "Load stack pointer from HL",
-        rom,
-        exram,
         &[_]u8{
             0x00,
             instr,
@@ -891,12 +747,6 @@ test "Load stack pointer from HL" {
 }
 
 test "Push to stack" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     inline for (0..(0b11 + 1)) |reg| {
         // Constants
         const instr: u8 = @intCast(0b11000101 | (reg << 4));
@@ -905,10 +755,8 @@ test "Push to stack" {
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "Push to stack (reg={b})", .{reg});
         defer std.testing.allocator.free(name);
-        try run_test_case(
+        try runTestCase(
             name,
-            rom,
-            exram,
             &[_]u8{
                 0x00,
                 instr,
@@ -953,12 +801,6 @@ test "Push to stack" {
 }
 
 test "Pop from stack" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     inline for (0..(0b11 + 1)) |reg| {
         // Constants
         const instr: u8 = @intCast(0b11000001 | (reg << 4));
@@ -967,10 +809,8 @@ test "Pop from stack" {
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "Pop from stack (reg={b})", .{reg});
         defer std.testing.allocator.free(name);
-        try run_test_case(
+        try runTestCase(
             name,
-            rom,
-            exram,
             &[_]u8{
                 0x00,
                 instr,
@@ -1013,12 +853,6 @@ test "Pop from stack" {
 }
 
 test "Load HL from adjusted SP" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     inline for (.{ 0x00, 0x01, 0x04, 0x0F, 0xF4, 0xFF }) |e| {
         // Constants
         const instr: u8 = 0b11111000;
@@ -1042,10 +876,8 @@ test "Load HL from adjusted SP" {
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "Load HL from adjusted SP (e={d})", .{e});
         defer std.testing.allocator.free(name);
-        try run_test_case(
+        try runTestCase(
             name,
-            rom,
-            exram,
             &[_]u8{
                 0x00,
                 instr,
@@ -1082,12 +914,6 @@ test "Load HL from adjusted SP" {
 }
 
 test "Add (register)" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     for (0..4) |with_carry| {
         inline for (.{ 0x00, 0x01, 0x4, 0xF, 0x44, 0xFF }) |val| {
             for (0..(0b111 + 1)) |reg| {
@@ -1120,10 +946,8 @@ test "Add (register)" {
 
                 const name = try std.fmt.allocPrint(std.testing.allocator, "Add (reg={b}) (val={x}) (with_carry={b})", .{ reg, val, with_carry });
                 defer std.testing.allocator.free(name);
-                try run_test_case(
+                try runTestCase(
                     name,
-                    rom,
-                    exram,
                     &[_]u8{
                         0x00,
                         instr,
@@ -1156,12 +980,6 @@ test "Add (register)" {
 }
 
 test "Add (register A)" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     for (0..4) |with_carry| {
         inline for (.{ 0x00, 0x01, 0x4, 0xF, 0x44, 0xFF }) |val| {
             // Constants
@@ -1186,10 +1004,8 @@ test "Add (register A)" {
 
             const name = try std.fmt.allocPrint(std.testing.allocator, "Add (reg=111) (val={x}) (with_carry={b})", .{ val, with_carry });
             defer std.testing.allocator.free(name);
-            try run_test_case(
+            try runTestCase(
                 name,
-                rom,
-                exram,
                 &[_]u8{
                     0x00,
                     instr,
@@ -1217,12 +1033,6 @@ test "Add (register A)" {
 }
 
 test "Add (indirect HL)" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     for (0..4) |with_carry| {
         inline for (.{ 0x00, 0x01, 0x4, 0xF, 0x44, 0xFF }) |val| {
             // Constants
@@ -1249,10 +1059,8 @@ test "Add (indirect HL)" {
 
             const name = try std.fmt.allocPrint(std.testing.allocator, "Add (indirect HL) (val={x}) (with_carry={b})", .{ val, with_carry });
             defer std.testing.allocator.free(name);
-            try run_test_case(
+            try runTestCase(
                 name,
-                rom,
-                exram,
                 &[_]u8{
                     0x00,
                     instr,
@@ -1294,12 +1102,6 @@ test "Add (indirect HL)" {
 }
 
 test "Add (immediate)" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     for (0..4) |with_carry| {
         inline for (.{ 0x00, 0x01, 0x4, 0xF, 0x44, 0xFF }) |val| {
             // Constants
@@ -1325,10 +1127,8 @@ test "Add (immediate)" {
 
             const name = try std.fmt.allocPrint(std.testing.allocator, "Add (immediate) (val={x}) (with_carry={b})", .{ val, with_carry });
             defer std.testing.allocator.free(name);
-            try run_test_case(
+            try runTestCase(
                 name,
-                rom,
-                exram,
                 &[_]u8{
                     0x00,
                     instr,
@@ -1361,12 +1161,6 @@ test "Add (immediate)" {
 }
 
 test "Sub (register)" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     for (0..4) |with_carry| {
         inline for (.{ 0x00, 0x01, 0xC, 0xF, 0xCC, 0xFF }) |val| {
             for (0..(0b111 + 1)) |reg| {
@@ -1399,10 +1193,8 @@ test "Sub (register)" {
 
                 const name = try std.fmt.allocPrint(std.testing.allocator, "Sub (reg={b}) (val={x}) (with_carry={b})", .{ reg, val, with_carry });
                 defer std.testing.allocator.free(name);
-                try run_test_case(
+                try runTestCase(
                     name,
-                    rom,
-                    exram,
                     &[_]u8{
                         0x00,
                         instr,
@@ -1435,12 +1227,6 @@ test "Sub (register)" {
 }
 
 test "Sub (register A)" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     for (0..4) |with_carry| {
         inline for (.{ 0x00, 0x01, 0xC, 0xF, 0xCC, 0xFF }) |val| {
             // Constants
@@ -1465,10 +1251,8 @@ test "Sub (register A)" {
 
             const name = try std.fmt.allocPrint(std.testing.allocator, "Sub (reg=111) (val={x}) (with_carry={b})", .{ val, with_carry });
             defer std.testing.allocator.free(name);
-            try run_test_case(
+            try runTestCase(
                 name,
-                rom,
-                exram,
                 &[_]u8{
                     0x00,
                     instr,
@@ -1496,12 +1280,6 @@ test "Sub (register A)" {
 }
 
 test "Sub (indirect HL)" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     for (0..4) |with_carry| {
         inline for (.{ 0x00, 0x01, 0x4, 0xF, 0x44, 0xFF }) |val| {
             // Constants
@@ -1528,10 +1306,8 @@ test "Sub (indirect HL)" {
 
             const name = try std.fmt.allocPrint(std.testing.allocator, "Sub (indirect HL) (val={x}) (with_carry={b})", .{ val, with_carry });
             defer std.testing.allocator.free(name);
-            try run_test_case(
+            try runTestCase(
                 name,
-                rom,
-                exram,
                 &[_]u8{
                     0x00,
                     instr,
@@ -1573,12 +1349,6 @@ test "Sub (indirect HL)" {
 }
 
 test "Sub (immediate)" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     for (0..4) |with_carry| {
         inline for (.{ 0x00, 0x01, 0x4, 0xF, 0x44, 0xFF }) |val| {
             // Constants
@@ -1604,10 +1374,8 @@ test "Sub (immediate)" {
 
             const name = try std.fmt.allocPrint(std.testing.allocator, "Sub (immediate) (val={x}) (with_carry={b})", .{ val, with_carry });
             defer std.testing.allocator.free(name);
-            try run_test_case(
+            try runTestCase(
                 name,
-                rom,
-                exram,
                 &[_]u8{
                     0x00,
                     instr,
@@ -1640,12 +1408,6 @@ test "Sub (immediate)" {
 }
 
 test "CP (register)" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     inline for (.{ 0x00, 0x01, 0xC, 0xF, 0xCC, 0xFF }) |val| {
         for (0..(0b111 + 1)) |reg| {
             if (reg == 0b110 or reg == 0b111) {
@@ -1674,10 +1436,8 @@ test "CP (register)" {
 
             const name = try std.fmt.allocPrint(std.testing.allocator, "CP (reg={b}) (val={x})", .{ reg, val });
             defer std.testing.allocator.free(name);
-            try run_test_case(
+            try runTestCase(
                 name,
-                rom,
-                exram,
                 &[_]u8{
                     0x00,
                     instr,
@@ -1707,12 +1467,6 @@ test "CP (register)" {
 }
 
 test "CP (register A)" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     inline for (.{ 0x00, 0x01, 0xC, 0xF, 0xCC, 0xFF }) |val| {
         // Constants
         const val_u8: u8 = @intCast(val);
@@ -1733,10 +1487,8 @@ test "CP (register A)" {
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "CP (reg=111) (val={x})", .{val});
         defer std.testing.allocator.free(name);
-        try run_test_case(
+        try runTestCase(
             name,
-            rom,
-            exram,
             &[_]u8{
                 0x00,
                 instr,
@@ -1761,12 +1513,6 @@ test "CP (register A)" {
 }
 
 test "CP (indirect HL)" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     inline for (.{ 0x00, 0x01, 0x4, 0xF, 0x44, 0xFF }) |val| {
         // Constants
         const val_u8: u8 = @intCast(val);
@@ -1791,10 +1537,8 @@ test "CP (indirect HL)" {
             val,
         });
         defer std.testing.allocator.free(name);
-        try run_test_case(
+        try runTestCase(
             name,
-            rom,
-            exram,
             &[_]u8{
                 0x00,
                 instr,
@@ -1832,12 +1576,6 @@ test "CP (indirect HL)" {
 }
 
 test "CP (immediate)" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     inline for (.{ 0x00, 0x01, 0x4, 0xF, 0x44, 0xFF }) |val| {
         // Constants
         const val_u8: u8 = @intCast(val);
@@ -1859,10 +1597,8 @@ test "CP (immediate)" {
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "CP (immediate) (val={x})", .{val});
         defer std.testing.allocator.free(name);
-        try run_test_case(
+        try runTestCase(
             name,
-            rom,
-            exram,
             &[_]u8{
                 0x00,
                 instr,
@@ -1891,12 +1627,6 @@ test "CP (immediate)" {
 }
 
 test "INC/DEC Register" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     inline for (.{ 0, 1 }) |incdec| {
         inline for (.{ 0x00, 0xFF, 0xF0, 0x0F, 0xAA }) |test_val| {
             inline for (0..(0b111 + 1)) |reg| {
@@ -1924,10 +1654,8 @@ test "INC/DEC Register" {
 
                 const name = try std.fmt.allocPrint(std.testing.allocator, "INC/DEC (inc/dec={b}) (test_val={x}) (reg={b})", .{ incdec, test_val, reg });
                 defer std.testing.allocator.free(name);
-                try run_test_case(
+                try runTestCase(
                     name,
-                    rom,
-                    exram,
                     &[_]u8{
                         0x00,
                         instr,
@@ -1954,12 +1682,6 @@ test "INC/DEC Register" {
 }
 
 test "INC/DEC Indirect" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     inline for (.{ 0, 1 }) |incdec| {
         inline for (.{ 0x00, 0xFF, 0x0F, 0xF0, 0xAA }) |test_val| {
             // Constants
@@ -1983,10 +1705,8 @@ test "INC/DEC Indirect" {
 
             const name = try std.fmt.allocPrint(std.testing.allocator, "INC/DEC Indirect (inc/dec={b}) (test_val={x})", .{ incdec, test_val });
             defer std.testing.allocator.free(name);
-            try run_test_case(
+            try runTestCase(
                 name,
-                rom,
-                exram,
                 &[_]u8{
                     0x00,
                     instr,
@@ -2025,12 +1745,6 @@ test "INC/DEC Indirect" {
 }
 
 test "AND register" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     inline for (0..(0b111 + 1)) |reg| {
         if (reg == 0b110 or reg == 0b111) {
             continue;
@@ -2054,10 +1768,8 @@ test "AND register" {
 
             const name = try std.fmt.allocPrint(std.testing.allocator, "AND register (reg={b}) (test_val={x})", .{ reg, test_val });
             defer std.testing.allocator.free(name);
-            try run_test_case(
+            try runTestCase(
                 name,
-                rom,
-                exram,
                 &[_]u8{
                     0x00,
                     instr,
@@ -2086,12 +1798,6 @@ test "AND register" {
 }
 
 test "AND register A" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     inline for (.{ 0x00, 0xFF, 0x0F, 0xF0, 0xAA }) |test_val| {
         // Constants
         const instr: u8 = 0b10100_111;
@@ -2110,10 +1816,8 @@ test "AND register A" {
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "AND register A (test_val={x})", .{test_val});
         defer std.testing.allocator.free(name);
-        try run_test_case(
+        try runTestCase(
             name,
-            rom,
-            exram,
             &[_]u8{
                 0x00,
                 instr,
@@ -2137,12 +1841,6 @@ test "AND register A" {
 }
 
 test "AND indirect HL" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     inline for (.{ 0x00, 0xFF, 0x0F, 0xF0, 0xAA }) |test_val| {
         // Constants
         const instr: u8 = 0b10100_110;
@@ -2163,10 +1861,8 @@ test "AND indirect HL" {
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "AND indirect HL (test_val={x})", .{test_val});
         defer std.testing.allocator.free(name);
-        try run_test_case(
+        try runTestCase(
             name,
-            rom,
-            exram,
             &[_]u8{
                 0x00,
                 instr,
@@ -2203,12 +1899,6 @@ test "AND indirect HL" {
 }
 
 test "AND immediate" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     inline for (.{ 0x00, 0xFF, 0x0F, 0xF0, 0xAA }) |test_val| {
         // Constants
         const instr: u8 = 0b11100110;
@@ -2228,10 +1918,8 @@ test "AND immediate" {
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "AND immediate (test_val={x})", .{test_val});
         defer std.testing.allocator.free(name);
-        try run_test_case(
+        try runTestCase(
             name,
-            rom,
-            exram,
             &[_]u8{
                 0x00,
                 instr,
@@ -2259,12 +1947,6 @@ test "AND immediate" {
 }
 
 test "OR register" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     inline for (0..(0b111 + 1)) |reg| {
         if (reg == 0b110 or reg == 0b111) {
             continue;
@@ -2288,10 +1970,8 @@ test "OR register" {
 
             const name = try std.fmt.allocPrint(std.testing.allocator, "OR register (reg={b}) (test_val={x})", .{ reg, test_val });
             defer std.testing.allocator.free(name);
-            try run_test_case(
+            try runTestCase(
                 name,
-                rom,
-                exram,
                 &[_]u8{
                     0x00,
                     instr,
@@ -2320,12 +2000,6 @@ test "OR register" {
 }
 
 test "OR register A" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     inline for (.{ 0x00, 0xFF, 0x0F, 0xF0, 0xAA }) |test_val| {
         // Constants
         const instr: u8 = 0b10110_111;
@@ -2344,10 +2018,8 @@ test "OR register A" {
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "OR register A (test_val={x})", .{test_val});
         defer std.testing.allocator.free(name);
-        try run_test_case(
+        try runTestCase(
             name,
-            rom,
-            exram,
             &[_]u8{
                 0x00,
                 instr,
@@ -2371,12 +2043,6 @@ test "OR register A" {
 }
 
 test "OR indirect HL" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     inline for (.{ 0x00, 0xFF, 0x0F, 0xF0, 0xAA }) |test_val| {
         // Constants
         const instr: u8 = 0b10110_110;
@@ -2397,10 +2063,8 @@ test "OR indirect HL" {
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "OR indirect HL (test_val={x})", .{test_val});
         defer std.testing.allocator.free(name);
-        try run_test_case(
+        try runTestCase(
             name,
-            rom,
-            exram,
             &[_]u8{
                 0x00,
                 instr,
@@ -2437,12 +2101,6 @@ test "OR indirect HL" {
 }
 
 test "OR immediate" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     inline for (.{ 0x00, 0xFF, 0x0F, 0xF0, 0xAA }) |test_val| {
         // Constants
         const instr: u8 = 0b11110110;
@@ -2462,10 +2120,8 @@ test "OR immediate" {
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "OR immediate (test_val={x})", .{test_val});
         defer std.testing.allocator.free(name);
-        try run_test_case(
+        try runTestCase(
             name,
-            rom,
-            exram,
             &[_]u8{
                 0x00,
                 instr,
@@ -2493,12 +2149,6 @@ test "OR immediate" {
 }
 
 test "XOR register" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     inline for (0..(0b111 + 1)) |reg| {
         if (reg == 0b110 or reg == 0b111) {
             continue;
@@ -2522,10 +2172,8 @@ test "XOR register" {
 
             const name = try std.fmt.allocPrint(std.testing.allocator, "XOR register (reg={b}) (test_val={x})", .{ reg, test_val });
             defer std.testing.allocator.free(name);
-            try run_test_case(
+            try runTestCase(
                 name,
-                rom,
-                exram,
                 &[_]u8{
                     0x00,
                     instr,
@@ -2554,12 +2202,6 @@ test "XOR register" {
 }
 
 test "XOR register A" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     inline for (.{ 0x00, 0xFF, 0x0F, 0xF0, 0xAA }) |test_val| {
         // Constants
         const instr: u8 = 0b10101_111;
@@ -2578,10 +2220,8 @@ test "XOR register A" {
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "XOR register A (test_val={x})", .{test_val});
         defer std.testing.allocator.free(name);
-        try run_test_case(
+        try runTestCase(
             name,
-            rom,
-            exram,
             &[_]u8{
                 0x00,
                 instr,
@@ -2605,12 +2245,6 @@ test "XOR register A" {
 }
 
 test "XOR indirect HL" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     inline for (.{ 0x00, 0xFF, 0x0F, 0xF0, 0xAA }) |test_val| {
         // Constants
         const instr: u8 = 0b10101_110;
@@ -2631,10 +2265,8 @@ test "XOR indirect HL" {
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "XOR indirect HL (test_val={x})", .{test_val});
         defer std.testing.allocator.free(name);
-        try run_test_case(
+        try runTestCase(
             name,
-            rom,
-            exram,
             &[_]u8{
                 0x00,
                 instr,
@@ -2671,12 +2303,6 @@ test "XOR indirect HL" {
 }
 
 test "XOR immediate" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     inline for (.{ 0x00, 0xFF, 0x0F, 0xF0, 0xAA }) |test_val| {
         // Constants
         const instr: u8 = 0b11101110;
@@ -2696,10 +2322,8 @@ test "XOR immediate" {
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "XOR immediate (test_val={x})", .{test_val});
         defer std.testing.allocator.free(name);
-        try run_test_case(
+        try runTestCase(
             name,
-            rom,
-            exram,
             &[_]u8{
                 0x00,
                 instr,
@@ -2727,12 +2351,6 @@ test "XOR immediate" {
 }
 
 test "Complement carry flag" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     inline for (0..2) |carry| {
         inline for (0..2) |halfcarry| {
             inline for (0..2) |subtract| {
@@ -2742,10 +2360,8 @@ test "Complement carry flag" {
 
                     const name = try std.fmt.allocPrint(std.testing.allocator, "Complement carry flag (C={b}) (H={b}) (N={b})", .{ carry, halfcarry, subtract });
                     defer std.testing.allocator.free(name);
-                    try run_test_case(
+                    try runTestCase(
                         name,
-                        rom,
-                        exram,
                         &[_]u8{
                             0x00,
                             instr,
@@ -2784,12 +2400,6 @@ test "Complement carry flag" {
 }
 
 test "Set carry flag" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     inline for (0..2) |carry| {
         inline for (0..2) |halfcarry| {
             inline for (0..2) |subtract| {
@@ -2799,10 +2409,8 @@ test "Set carry flag" {
 
                     const name = try std.fmt.allocPrint(std.testing.allocator, "Set carry flag (C={b}) (H={b}) (N={b})", .{ carry, halfcarry, subtract });
                     defer std.testing.allocator.free(name);
-                    try run_test_case(
+                    try runTestCase(
                         name,
-                        rom,
-                        exram,
                         &[_]u8{
                             0x00,
                             instr,
@@ -2841,12 +2449,6 @@ test "Set carry flag" {
 }
 
 test "Decimal adjust accumulator" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     // Constants
     const instr: u8 = 0b00100111;
 
@@ -2867,10 +2469,8 @@ test "Decimal adjust accumulator" {
     };
     res.daa();
 
-    try run_test_case(
+    try runTestCase(
         "Decimal adjust accumulator",
-        rom,
-        exram,
         &[_]u8{
             0x00,
             instr,
@@ -2902,12 +2502,6 @@ test "Decimal adjust accumulator" {
 }
 
 test "Complement accumulator" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     // Constants
     const instr: u8 = 0b00101111;
     const test_value = 0xAA;
@@ -2924,10 +2518,8 @@ test "Complement accumulator" {
     };
     res.cpl();
 
-    try run_test_case(
+    try runTestCase(
         "Complement accumulator",
-        rom,
-        exram,
         &[_]u8{
             0x00,
             instr,
@@ -2950,12 +2542,6 @@ test "Complement accumulator" {
 }
 
 test "Inc/Dec register 16" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     inline for (.{ 0b0, 0b1 }) |incdec| {
         inline for (.{ 0xFFFF, 0x0FFF, 0x00FF, 0x000F, 0x0000 }) |val| {
             for (0..(0b11 + 1)) |reg| {
@@ -2970,10 +2556,8 @@ test "Inc/Dec register 16" {
 
                 const name = try std.fmt.allocPrint(std.testing.allocator, "Increment register 16 (reg={b}) (val={x}) (incdec={b})", .{ reg, value, incdec });
                 defer std.testing.allocator.free(name);
-                try run_test_case(
+                try runTestCase(
                     name,
-                    rom,
-                    exram,
                     &[_]u8{
                         0x00,
                         instr,
@@ -3002,12 +2586,6 @@ test "Inc/Dec register 16" {
 }
 
 test "Add register 16" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     inline for (.{ 0xFFFF, 0x0F0F, 0xF0F0, 0x000F, 0x0F00, 0x0000, 0x0101, 0xF1F1 }) |val| {
         inline for (.{ 0b0, 0b1 }) |carry| {
             inline for (.{ 0b0, 0b1 }) |zero| {
@@ -3046,10 +2624,8 @@ test "Add register 16" {
 
                             const name = try std.fmt.allocPrint(std.testing.allocator, "Add register 16 (val={x}) (C={b}) (Z={b}) (H={b}) (N={b})", .{ val, carry, zero, halfcarry, subtract });
                             defer std.testing.allocator.free(name);
-                            try run_test_case(
+                            try runTestCase(
                                 name,
-                                rom,
-                                exram,
                                 &[_]u8{
                                     0x00,
                                     instr,
@@ -3107,12 +2683,6 @@ test "Add register 16" {
 }
 
 test "Add register HL" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     inline for (.{ 0xFFFF, 0x0F0F, 0xF0F0, 0x000F, 0x0F00, 0x0000, 0x0101, 0xF1F1 }) |val| {
         inline for (.{ 0b0, 0b1 }) |carry| {
             inline for (.{ 0b0, 0b1 }) |zero| {
@@ -3144,10 +2714,8 @@ test "Add register HL" {
 
                         const name = try std.fmt.allocPrint(std.testing.allocator, "Add register HL (val={x}) (C={b}) (Z={b}) (H={b}) (N={b})", .{ val, carry, zero, halfcarry, subtract });
                         defer std.testing.allocator.free(name);
-                        try run_test_case(
+                        try runTestCase(
                             name,
-                            rom,
-                            exram,
                             &[_]u8{
                                 0x00,
                                 instr,
@@ -3199,12 +2767,6 @@ test "Add register HL" {
 }
 
 test "Add SP relative" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     inline for (.{ 0x00, 0x01, 0x04, 0x0F, 0xF4, 0xFF }) |e| {
         // Constants
         const instr: u8 = 0b11101000;
@@ -3228,10 +2790,8 @@ test "Add SP relative" {
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "Add SP relative (e={d})", .{e});
         defer std.testing.allocator.free(name);
-        try run_test_case(
+        try runTestCase(
             name,
-            rom,
-            exram,
             &[_]u8{
                 0x00,
                 instr,
@@ -3271,12 +2831,6 @@ test "Add SP relative" {
 }
 
 test "rotate accumulator" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     inline for (.{ 0b00, 0b01, 0b10, 0b11 }) |op| {
         const aluop: fn (*alu.AluRegister, u8) u8 = switch (op) {
             0b00 => alu.AluRegister.rlc,
@@ -3303,10 +2857,8 @@ test "rotate accumulator" {
 
             const name = try std.fmt.allocPrint(std.testing.allocator, "rotate accumulator ({d}) (op={b})", .{ val, op });
             defer std.testing.allocator.free(name);
-            try run_test_case(
+            try runTestCase(
                 name,
-                rom,
-                exram,
                 &[_]u8{
                     0x00,
                     instr,
@@ -3335,12 +2887,6 @@ test "rotate accumulator" {
 }
 
 test "rotate/swap register" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     inline for (.{ 0b000, 0b001, 0b010, 0b011, 0b100, 0b101, 0b110, 0b111 }) |op| {
         const aluop: fn (*alu.AluRegister, u8) u8 = switch (op) {
             0b000 => alu.AluRegister.rlc,
@@ -3371,10 +2917,8 @@ test "rotate/swap register" {
 
                 const name = try std.fmt.allocPrint(std.testing.allocator, "rotate/swap register ({d}) (op={b}) (reg={b})", .{ val, op, regIdx });
                 defer std.testing.allocator.free(name);
-                try run_test_case(
+                try runTestCase(
                     name,
-                    rom,
-                    exram,
                     &[_]u8{
                         0x00,
                         0xCB,
@@ -3408,12 +2952,6 @@ test "rotate/swap register" {
 }
 
 test "rotate/swap HL indirect" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     inline for (.{ 0b000, 0b001, 0b010, 0b011, 0b100, 0b101, 0b110, 0b111 }) |op| {
         const aluop: fn (*alu.AluRegister, u8) u8 = switch (op) {
             0b000 => alu.AluRegister.rlc,
@@ -3444,10 +2982,8 @@ test "rotate/swap HL indirect" {
 
             const name = try std.fmt.allocPrint(std.testing.allocator, "rotate/swap HL indirect ({d}) (op={b})", .{ val, op });
             defer std.testing.allocator.free(name);
-            try run_test_case(
+            try runTestCase(
                 name,
-                rom,
-                exram,
                 &[_]u8{
                     0x00,
                     0xCB,
@@ -3497,12 +3033,6 @@ test "rotate/swap HL indirect" {
 }
 
 test "test bit register" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     inline for (0..8) |regIdxS| {
         if (regIdxS == 0b110) {
             continue;
@@ -3527,10 +3057,8 @@ test "test bit register" {
 
                 const name = try std.fmt.allocPrint(std.testing.allocator, "test bit register ({d}) (bit={b}) (reg={b})", .{ val, bitIdx, regIdx });
                 defer std.testing.allocator.free(name);
-                try run_test_case(
+                try runTestCase(
                     name,
-                    rom,
-                    exram,
                     &[_]u8{
                         0x00,
                         0xCB,
@@ -3564,12 +3092,6 @@ test "test bit register" {
 }
 
 test "test bit HL" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     inline for (0..8) |bitIdxS| {
         if (bitIdxS == 0b110) {
             continue;
@@ -3593,10 +3115,8 @@ test "test bit HL" {
 
             const name = try std.fmt.allocPrint(std.testing.allocator, "test bit register HL indirect ({d}) (bit={b})", .{ val, bitIdx });
             defer std.testing.allocator.free(name);
-            try run_test_case(
+            try runTestCase(
                 name,
-                rom,
-                exram,
                 &[_]u8{
                     0x00,
                     0xCB,
@@ -3638,12 +3158,6 @@ test "test bit HL" {
 }
 
 test "set/reset bit register" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     for (0..2) |setResetS| {
         const setReset: u1 = @intCast(setResetS);
         for (0..8) |regIdxS| {
@@ -3663,10 +3177,8 @@ test "set/reset bit register" {
 
                     const name = try std.fmt.allocPrint(std.testing.allocator, "set/reset bit register ({d}) (bit={b}) (reg={b})", .{ val, bitIdx, regIdx });
                     defer std.testing.allocator.free(name);
-                    try run_test_case(
+                    try runTestCase(
                         name,
-                        rom,
-                        exram,
                         &[_]u8{
                             0x00,
                             0xCB,
@@ -3697,12 +3209,6 @@ test "set/reset bit register" {
 }
 
 test "set/reset bit HL" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     for (0..2) |setResetS| {
         const setReset: u1 = @intCast(setResetS);
         for (0..8) |bitIdxS| {
@@ -3718,10 +3224,8 @@ test "set/reset bit HL" {
 
                 const name = try std.fmt.allocPrint(std.testing.allocator, "set/reset bit register HL indirect ({d}) (bit={b})", .{ val, bitIdx });
                 defer std.testing.allocator.free(name);
-                try run_test_case(
+                try runTestCase(
                     name,
-                    rom,
-                    exram,
                     &[_]u8{
                         0x00,
                         0xCB,
@@ -3764,21 +3268,13 @@ test "set/reset bit HL" {
 }
 
 test "test jump immediate" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     const addr = 0xD00D;
     const instr = 0b11000011;
 
     const name = try std.fmt.allocPrint(std.testing.allocator, "test jump immediate", .{});
     defer std.testing.allocator.free(name);
-    try run_test_case(
+    try runTestCase(
         name,
-        rom,
-        exram,
         &[_]u8{
             0x00,
             instr,
@@ -3804,21 +3300,13 @@ test "test jump immediate" {
 }
 
 test "test jump HL" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     const addr = 0xD00D;
     const instr = 0b11101001;
 
     const name = try std.fmt.allocPrint(std.testing.allocator, "test jump HL", .{});
     defer std.testing.allocator.free(name);
-    try run_test_case(
+    try runTestCase(
         name,
-        rom,
-        exram,
         &[_]u8{
             0x00,
             instr,
@@ -3840,12 +3328,6 @@ test "test jump HL" {
 }
 
 test "test jump immediate conditional" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     for (0..4) |cond| {
         for (0..2) |condTrue| {
             const addr = 0xD00D;
@@ -3898,10 +3380,8 @@ test "test jump immediate conditional" {
                     .rPC(0x0005));
             }
 
-            try run_test_case(
+            try runTestCase(
                 name,
-                rom,
-                exram,
                 &[_]u8{
                     0x00,
                     instr,
@@ -3918,21 +3398,13 @@ test "test jump immediate conditional" {
 }
 
 test "test jump relative" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     inline for (.{ -1, 0, 1 }) |e| {
         const instr = 0b00011000;
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "test jump relative (e={d})", .{e});
         defer std.testing.allocator.free(name);
-        try run_test_case(
+        try runTestCase(
             name,
-            rom,
-            exram,
             &[_]u8{
                 0x00,
                 instr,
@@ -3956,12 +3428,6 @@ test "test jump relative" {
 }
 
 test "test jump relative conditional" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     for (0..4) |cond| {
         for (0..2) |condTrue| {
             inline for (.{ -1, 0, 1 }) |e| {
@@ -4010,10 +3476,8 @@ test "test jump relative conditional" {
                         .rPC(0x0004));
                 }
 
-                try run_test_case(
+                try runTestCase(
                     name,
-                    rom,
-                    exram,
                     &[_]u8{
                         0x00,
                         instr,
@@ -4030,22 +3494,14 @@ test "test jump relative conditional" {
 }
 
 test "test call" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     const sp = 0xFF50;
     const addr = 0xD00D;
     const instr = 0b11001101;
 
     const name = try std.fmt.allocPrint(std.testing.allocator, "test call", .{});
     defer std.testing.allocator.free(name);
-    try run_test_case(
+    try runTestCase(
         name,
-        rom,
-        exram,
         &[_]u8{
             0x00,
             instr,
@@ -4089,12 +3545,6 @@ test "test call" {
 }
 
 test "test call conditional" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     for (0..4) |cond| {
         for (0..2) |condTrue| {
             const sp = 0xFF50;
@@ -4170,10 +3620,8 @@ test "test call conditional" {
                     .rSP(sp));
             }
 
-            try run_test_case(
+            try runTestCase(
                 name,
-                rom,
-                exram,
                 &[_]u8{
                     0x00,
                     instr,
@@ -4191,21 +3639,13 @@ test "test call conditional" {
 }
 
 test "test ret" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     const sp = 0xFF50;
     const instr = 0b11001001;
 
     const name = try std.fmt.allocPrint(std.testing.allocator, "test ret", .{});
     defer std.testing.allocator.free(name);
-    try run_test_case(
+    try runTestCase(
         name,
-        rom,
-        exram,
         &[_]u8{
             0x00,
             instr,
@@ -4250,12 +3690,6 @@ test "test ret" {
 }
 
 test "test ret conditional" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     for (0..4) |cond| {
         for (0..2) |condTrue| {
             const sp = 0xFF50;
@@ -4336,10 +3770,8 @@ test "test ret conditional" {
                     .ram(sp + 1, 0x01));
             }
 
-            try run_test_case(
+            try runTestCase(
                 name,
-                rom,
-                exram,
                 &[_]u8{
                     0x00,
                     instr,
@@ -4357,21 +3789,13 @@ test "test ret conditional" {
 }
 
 test "test reti" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     const sp = 0xFF50;
     const instr = 0b11011001;
 
     const name = try std.fmt.allocPrint(std.testing.allocator, "test reti", .{});
     defer std.testing.allocator.free(name);
-    try run_test_case(
+    try runTestCase(
         name,
-        rom,
-        exram,
         &[_]u8{
             0x00,
             instr,
@@ -4418,12 +3842,6 @@ test "test reti" {
 }
 
 test "test rst" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     for (0..8) |nS| {
         const n: u3 = @intCast(nS);
         const sp = 0xFF50;
@@ -4432,10 +3850,8 @@ test "test rst" {
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "test rst", .{});
         defer std.testing.allocator.free(name);
-        try run_test_case(
+        try runTestCase(
             name,
-            rom,
-            exram,
             &[_]u8{
                 0x00,
                 instr,
@@ -4472,21 +3888,13 @@ test "test rst" {
 }
 
 test "test ei di" {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    const rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
     const ei = 0xFB;
     const di = 0xF3;
 
     const name = try std.fmt.allocPrint(std.testing.allocator, "test ei di", .{});
     defer std.testing.allocator.free(name);
-    try run_test_case(
+    try runTestCase(
         name,
-        rom,
-        exram,
         &[_]u8{
             0x00,
             di,

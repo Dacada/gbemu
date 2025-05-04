@@ -1,8 +1,8 @@
 const std = @import("std");
 const lib = @import("lib");
 const testutil = @import("testutil.zig");
-const run_program = testutil.run_program;
-const destroy_cpu = testutil.destroy_cpu;
+const runProgram = testutil.runProgram;
+const destroyCpu = testutil.destroyCpu;
 const TestCpuState = testutil.TestCpuState;
 
 test "LD only integ test" {
@@ -71,8 +71,8 @@ test "LD only integ test" {
     defer std.testing.allocator.free(program);
     program[program.len - 1] = 0xFD; // Illegal instruction signals end of program
 
-    const cpu = try run_program("LD only integ test (8-bit)", program);
-    defer destroy_cpu(&cpu);
+    var cpu = try runProgram("LD only integ test (8-bit)", program);
+    defer destroyCpu(&cpu);
 
     try std.testing.expectEqual(program.len, cpu.reg.PC);
 
@@ -140,11 +140,11 @@ test "LD only integ test (16-bit)" {
     defer std.testing.allocator.free(program);
     program[program.len - 1] = 0xFD; // Illegal instruction signals end of program
 
-    const cpu = try run_program(
+    var cpu = try runProgram(
         "LD only integ test (16-bit)",
         program,
     );
-    defer destroy_cpu(&cpu);
+    defer destroyCpu(&cpu);
 
     try std.testing.expectEqual(program.len, cpu.reg.PC);
 
@@ -224,11 +224,11 @@ test "Arithmetic (8-bit)" {
     defer std.testing.allocator.free(program);
     program[program.len - 1] = 0xFD; // Illegal instruction signals end of program
 
-    const cpu = try run_program(
+    var cpu = try runProgram(
         "Arithmetic integ test (8-bit)",
         program,
     );
-    defer destroy_cpu(&cpu);
+    defer destroyCpu(&cpu);
 
     try std.testing.expectEqual(program.len, cpu.reg.PC);
 
@@ -288,11 +288,11 @@ test "Arithmetic (16-bit)" {
     defer std.testing.allocator.free(program);
     program[program.len - 1] = 0xFD; // Illegal instruction signals end of program
 
-    const cpu = try run_program(
+    var cpu = try runProgram(
         "Arithmetic integ test (16-bit)",
         program,
     );
-    defer destroy_cpu(&cpu);
+    defer destroyCpu(&cpu);
 
     try std.testing.expectEqual(program.len, cpu.reg.PC);
 
@@ -326,11 +326,11 @@ test "Misc bit operations" {
     defer std.testing.allocator.free(program);
     program[program.len - 1] = 0xFD; // Illegal instruction signals end of program
 
-    const cpu = try run_program(
+    var cpu = try runProgram(
         "Misc bit operations integ test",
         program,
     );
-    defer destroy_cpu(&cpu);
+    defer destroyCpu(&cpu);
 
     try std.testing.expectEqual(program.len, cpu.reg.PC);
 
@@ -394,11 +394,11 @@ test "Jump operations" {
     defer std.testing.allocator.free(program);
     program[program.len - 1] = 0xFD; // Illegal instruction signals end of program
 
-    const cpu = try run_program(
+    var cpu = try runProgram(
         "Jump operations integ test",
         program,
     );
-    defer destroy_cpu(&cpu);
+    defer destroyCpu(&cpu);
 
     try std.testing.expectEqual(program.len, cpu.reg.PC);
 
@@ -450,18 +450,18 @@ test "Fibonacci" {
     defer std.testing.allocator.free(program);
     program[program.len - 1] = 0xFD; // Illegal instruction signals end of program
 
-    const cpu = try run_program(
+    var cpu = try runProgram(
         "Generic integ test 1",
         program,
     );
-    defer destroy_cpu(&cpu);
+    defer destroyCpu(&cpu);
 
     try std.testing.expectEqual(program.len, cpu.reg.PC);
 
-    try std.testing.expectEqual(1, try cpu.mmu.read(0xC000));
-    try std.testing.expectEqual(0, try cpu.mmu.read(0xC001));
-    try std.testing.expectEqual(1, try cpu.mmu.read(0xC002));
-    try std.testing.expectEqual(0, try cpu.mmu.read(0xC003));
+    try std.testing.expectEqual(1, cpu.mmu.read(0xC000));
+    try std.testing.expectEqual(0, cpu.mmu.read(0xC001));
+    try std.testing.expectEqual(1, cpu.mmu.read(0xC002));
+    try std.testing.expectEqual(0, cpu.mmu.read(0xC003));
 
     var prev_n: usize = 1;
     var n: usize = 1;
@@ -470,8 +470,8 @@ test "Fibonacci" {
         n += prev_n;
         prev_n = tmp;
 
-        const x = try cpu.mmu.read(@intCast(0xC000 + i * 2));
-        const y: u16 = @intCast(try cpu.mmu.read(@intCast(0xC000 + i * 2 + 1)));
+        const x = cpu.mmu.read(@intCast(0xC000 + i * 2));
+        const y: u16 = @intCast(cpu.mmu.read(@intCast(0xC000 + i * 2 + 1)));
         const yx = (y << 8) | x;
         try std.testing.expectEqual(n, yx);
     }
@@ -524,11 +524,11 @@ test "Prime Sieve" {
     defer std.testing.allocator.free(program);
     program[program.len - 1] = 0xFD; // Illegal instruction signals end of program
 
-    const cpu = try run_program(
+    var cpu = try runProgram(
         "Generic integ test 2",
         program,
     );
-    defer destroy_cpu(&cpu);
+    defer destroyCpu(&cpu);
 
     try std.testing.expectEqual(program.len, cpu.reg.PC);
 
@@ -547,7 +547,7 @@ test "Prime Sieve" {
     }
 
     for (0..256) |i| {
-        try std.testing.expectEqual(primes[i], try cpu.mmu.read(0xC000 + @as(u16, @intCast(i))));
+        try std.testing.expectEqual(primes[i], cpu.mmu.read(0xC000 + @as(u16, @intCast(i))));
     }
 }
 
@@ -586,11 +586,11 @@ test "Integer Division" {
     defer std.testing.allocator.free(program);
     program[program.len - 1] = 0xFD; // Illegal instruction signals end of program
 
-    const cpu = try run_program(
+    var cpu = try runProgram(
         "Generic integ test 3",
         program,
     );
-    defer destroy_cpu(&cpu);
+    defer destroyCpu(&cpu);
 
     try std.testing.expectEqual(program.len, cpu.reg.PC);
     try std.testing.expectEqual(11, cpu.reg.BC.Hi);

@@ -1,6 +1,5 @@
 const std = @import("std");
 const Cpu = @import("lib").cpu.Cpu;
-const CpuError = @import("lib").cpu.CpuError;
 const Mmu = @import("lib").mmu.Mmu;
 
 const TestRamState = struct {
@@ -186,28 +185,43 @@ pub const TestCpuState = struct {
     }
 };
 
-fn make_cpu(rom: []const u8, exram: []u8) !Cpu {
-    var mmu = try Mmu.init(rom, exram, std.testing.allocator);
+fn setFlagRead(flagOpaque: *anyopaque) u8 {
+    const flag: *bool = @ptrCast(flagOpaque);
+    flag.* = true;
+    return 0;
+}
+
+fn setFlagWrite(flagOpaque: *anyopaque, _: u8) void {
+    const flag: *bool = @ptrCast(flagOpaque);
+    flag.* = true;
+}
+
+fn makeMmu() !Mmu {
+    var mmu = try Mmu.init(std.testing.allocator);
     mmu.zeroize();
+    return mmu;
+}
+
+fn makeCpu() !Cpu {
+    const mmu = try makeMmu();
     var cpu = Cpu.init(mmu);
     cpu.zeroize_regs();
     return cpu;
 }
 
-pub fn destroy_cpu(cpu: *const Cpu) void {
+pub fn destroyCpu(cpu: *const Cpu) void {
     cpu.mmu.deinit();
 }
 
-fn expect_cpu_state(cpu: *const Cpu, state: *TestCpuState) !void {
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-    @memset(exram, 0);
-    var mmu = try Mmu.init(cpu.mmu.rom, exram, std.testing.allocator);
+fn expectCpuState(cpu: *const Cpu, state: *TestCpuState, program: []const u8) !void {
+    var mmu = try makeMmu();
     defer mmu.deinit();
-    mmu.zeroize();
 
+    for (program, 0..) |instr, i| {
+        mmu.memory[i] = instr;
+    }
     for (state.addresses.items) |s| {
-        try mmu.write(s.address, s.value);
+        mmu.write(s.address, s.value);
     }
 
     try std.testing.expectEqual(state.flagZ, cpu.reg.AF.Lo.Z);
@@ -226,16 +240,10 @@ fn expect_cpu_state(cpu: *const Cpu, state: *TestCpuState) !void {
     try std.testing.expectEqual(state.regPC, cpu.reg.PC);
     try std.testing.expectEqual(state.regIME, cpu.reg.IME);
 
-    try std.testing.expectEqualSlices(u8, mmu.vram, cpu.mmu.vram);
-    try std.testing.expectEqualSlices(u8, mmu.exram, cpu.mmu.vram);
-    try std.testing.expectEqualSlices(u8, mmu.wram, cpu.mmu.wram);
-    try std.testing.expectEqualSlices(u8, mmu.oam, cpu.mmu.oam);
-    try std.testing.expectEqualSlices(u8, mmu.io, cpu.mmu.io);
-    try std.testing.expectEqualSlices(u8, mmu.hram, cpu.mmu.hram);
-    try std.testing.expectEqual(mmu.ie, cpu.mmu.ie);
+    try std.testing.expectEqualSlices(u8, mmu.memory, cpu.mmu.memory);
 }
 
-fn map_initial_state(cpu: *Cpu, initial_state: *TestCpuState) !void {
+fn mapInitialState(cpu: *Cpu, initial_state: *TestCpuState, program: []const u8) !void {
     cpu.reg.AF.Lo.Z = initial_state.flagZ;
     cpu.reg.AF.Lo.N = initial_state.flagN;
     cpu.reg.AF.Lo.H = initial_state.flagH;
@@ -253,57 +261,50 @@ fn map_initial_state(cpu: *Cpu, initial_state: *TestCpuState) !void {
     cpu.reg.IME = initial_state.regIME;
 
     for (initial_state.addresses.items) |state| {
-        try cpu.mmu.write(state.address, state.value);
+        cpu.mmu.write(state.address, state.value);
+    }
+    for (program, 0..) |instr, idx| {
+        cpu.mmu.memory[idx] = instr;
     }
 
     initial_state.deinit();
 }
 
-pub fn run_test_case(name: []const u8, rom: []u8, exram: []u8, program: []const u8, initial_state: *TestCpuState, ticks: []const *TestCpuState) !void {
-    var cpu = try make_cpu(rom, exram);
-    defer destroy_cpu(&cpu);
+pub fn runTestCase(name: []const u8, program: []const u8, initial_state: *TestCpuState, ticks: []const *TestCpuState) !void {
+    var cpu = try makeCpu();
+    defer destroyCpu(&cpu);
 
-    @memset(rom, 0);
-    for (program, 0..) |instr, idx| {
-        rom[idx] = instr;
-    }
-
-    try map_initial_state(&cpu, initial_state);
+    try mapInitialState(&cpu, initial_state, program);
 
     defer for (ticks) |state| {
         state.deinit();
     };
 
     for (ticks, 1..) |state, idx| {
-        try cpu.tick();
-        expect_cpu_state(&cpu, state) catch |err| {
+        cpu.tick();
+        try std.testing.expect(!cpu.mmu.illegalMemoryOperationHappened);
+        try std.testing.expect(!cpu.illegalInstructionExecuted);
+        expectCpuState(&cpu, state, program) catch |err| {
             std.debug.print("{s}:\n  Failed on tick {d}\n", .{ name, idx });
             return err;
         };
     }
 }
 
-pub fn run_program(name: []const u8, program: []const u8) !Cpu {
+pub fn runProgram(name: []const u8, program: []const u8) !Cpu {
     std.debug.print("Running program: {s}\n", .{name});
+    var cpu = try makeCpu();
 
-    var rom = try std.testing.allocator.alloc(u8, 0x8000);
-    defer std.testing.allocator.free(rom);
-
-    const exram = try std.testing.allocator.alloc(u8, 0x2000);
-    defer std.testing.allocator.free(exram);
-
-    var cpu = try make_cpu(rom, exram);
-
-    @memset(rom, 0);
     for (program, 0..) |instr, idx| {
-        rom[idx] = instr;
+        cpu.mmu.memory[idx] = instr;
     }
 
     while (true) {
-        cpu.tick() catch |err| switch (err) {
-            CpuError.IllegalInstruction => break,
-            else => return err,
-        };
+        cpu.tick();
+        if (cpu.illegalInstructionExecuted) {
+            break;
+        }
+        try std.testing.expect(!cpu.mmu.illegalMemoryOperationHappened);
     }
 
     return cpu;
