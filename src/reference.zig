@@ -1,20 +1,14 @@
+const std = @import("std");
 const Mmu = @import("mmu.zig").Mmu;
 
 pub const DelayedReferenceMmu = struct {
     addr: u16,
     mmu: *Mmu,
-
-    pub fn read(self: *DelayedReferenceMmu) u8 {
-        return self.mmu.read(self.addr);
-    }
-
-    pub fn write(self: *DelayedReferenceMmu, val: u8) void {
-        self.mmu.write(self.addr, val);
-    }
 };
 
-pub const DelayedReference = union {
+pub const DelayedReference = union(enum) {
     mmuRef: DelayedReferenceMmu,
+    ptrRef: *u8,
 
     pub fn fromMmu(mmu: *Mmu, addr: u16) DelayedReference {
         return DelayedReference{
@@ -25,15 +19,41 @@ pub const DelayedReference = union {
         };
     }
 
-    pub fn read(self: *DelayedReference) u8 {
-        return switch (self.*) {
-            .mmuRef => |*x| x.read(),
+    pub fn fromPointer(ptr: *u8) DelayedReference {
+        return DelayedReference{
+            .ptrRef = ptr,
         };
     }
 
-    pub fn write(self: *DelayedReference, val: u8) u8 {
-        switch (self.*) {
-            .mmuRef => |*x| x.write(val),
+    pub fn read(self: DelayedReference) u8 {
+        return switch (self) {
+            .mmuRef => |mmuRef| mmuRef.mmu.read(mmuRef.addr),
+            .ptrRef => |ptrRef| ptrRef.*,
+        };
+    }
+
+    pub fn write(self: DelayedReference, val: u8) void {
+        switch (self) {
+            .mmuRef => |mmuRef| mmuRef.mmu.write(mmuRef.addr, val),
+            .ptrRef => |ptrRef| ptrRef.* = val,
         }
     }
 };
+
+test "mmu reference" {
+    var mmu = try Mmu.init(std.testing.allocator);
+    defer mmu.deinit();
+    mmu.zeroize();
+
+    const ref = DelayedReference.fromMmu(&mmu, 0xA000);
+    ref.write(123);
+    try std.testing.expectEqual(123, ref.read());
+}
+
+test "ptr reference" {
+    var val: u8 = 0;
+
+    const ref = DelayedReference.fromPointer(&val);
+    ref.write(123);
+    try std.testing.expectEqual(123, val);
+}
