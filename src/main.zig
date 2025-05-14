@@ -14,9 +14,8 @@ pub fn main() !void {
         \\ ADD B
     ;
     const program = try lib.assembler.translate(code, allocator);
-    emulator.mapRom(program);
-
-    emulator.mmu.memory[program.len] = 0xFD;
+    emulator.mmu.mapRom(program);
+    emulator.mmu._memory[program.len] = 0xFD;
 
     emulator.run() catch {};
 

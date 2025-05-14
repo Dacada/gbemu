@@ -20,19 +20,13 @@ pub const Emulator = struct {
         };
     }
 
-    pub fn mapRom(self: *Emulator, program: []const u8) void {
-        for (program, 0..) |instr, idx| {
-            self.mmu.memory[idx] = instr;
-        }
-    }
-
     pub fn run(self: *Emulator) EmulatorError {
         while (true) {
             self.cpu.tick();
-            if (self.cpu.illegalInstructionExecuted) {
+            if (self.cpu.illegalInstructionExecuted()) {
                 return EmulatorError.IllegalInstruction;
             }
-            if (self.mmu.illegalMemoryOperationHappened) {
+            if (self.mmu.illegalMemoryOperationHappened()) {
                 return EmulatorError.IllegalMemoryAccess;
             }
         }

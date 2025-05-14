@@ -5,17 +5,17 @@ const DelayedReference = @import("reference.zig").DelayedReference;
 var STATIC_EMULATED_MEMORY: [0xFFFF + 1]u8 = undefined;
 
 pub const Mmu = struct {
-    memory: []u8,
-    illegalMemoryOperationHappened: bool = false,
+    _memory: []u8,
+    _illegalMemoryOperationHappened: bool = false,
 
     pub fn init() Mmu {
         return Mmu{
-            .memory = &STATIC_EMULATED_MEMORY,
+            ._memory = &STATIC_EMULATED_MEMORY,
         };
     }
 
     pub fn zeroize(self: *Mmu) void {
-        @memset(self.memory, 0);
+        @memset(self._memory, 0);
     }
 
     pub fn delayedReference(self: *Mmu, addr: u16) DelayedReference {
@@ -38,22 +38,38 @@ pub const Mmu = struct {
         }
     }
 
+    pub fn mapRom(self: *Mmu, program: []const u8) void {
+        for (program, 0..) |instr, idx| {
+            self._memory[idx] = instr;
+        }
+    }
+
+    pub fn dumpMemory(self: *const Mmu, buffer: []u8) void {
+        for (self._memory, 0..) |byte, idx| {
+            buffer[idx] = byte;
+        }
+    }
+
     pub fn write(self: *Mmu, addr: u16, val: u8) void {
         if (!Mmu.isAccessLegal(addr, true)) {
             std.log.warn("Illegal write of value 0x{X:0>2} to address 0x{X:0>4}", .{ val, addr });
-            self.illegalMemoryOperationHappened = true;
+            self._illegalMemoryOperationHappened = true;
             return;
         }
-        self.memory[addr] = val;
+        self._memory[addr] = val;
     }
 
     pub fn read(self: *Mmu, addr: u16) u8 {
         if (!Mmu.isAccessLegal(addr, false)) {
             std.log.warn("Illegal read from address 0x{X:0>4}", .{addr});
-            self.illegalMemoryOperationHappened = true;
+            self._illegalMemoryOperationHappened = true;
             return 0;
         }
-        return self.memory[addr];
+        return self._memory[addr];
+    }
+
+    pub fn illegalMemoryOperationHappened(self: *const Mmu) bool {
+        return self._illegalMemoryOperationHappened;
     }
 };
 
@@ -64,7 +80,10 @@ test "mmu zeroize" {
 
     mmu.zeroize();
 
-    try std.testing.expectEqualSlices(u8, &expected, mmu.memory);
+    var actual: [0xFFFF + 1]u8 = undefined;
+    mmu.dumpMemory(&actual);
+
+    try std.testing.expectEqualSlices(u8, &expected, &actual);
 }
 
 test "mmu delayed reference" {
@@ -75,10 +94,8 @@ test "mmu delayed reference" {
     const value: u8 = 123;
 
     const ref = mmu.delayedReference(addr);
-    try std.testing.expectEqual(0, mmu.memory[addr]);
     try std.testing.expectEqual(0, ref.read());
     ref.write(value);
-    try std.testing.expectEqual(value, mmu.memory[addr]);
     try std.testing.expectEqual(value, ref.read());
 }
 
@@ -101,8 +118,7 @@ test "mmu illegal write" {
     const value: u8 = 123;
 
     mmu.write(addr, value);
-    try std.testing.expectEqual(0, mmu.memory[addr]);
-    try std.testing.expect(mmu.illegalMemoryOperationHappened);
+    try std.testing.expect(mmu.illegalMemoryOperationHappened());
 }
 
 test "mmu illegal read" {
@@ -113,5 +129,5 @@ test "mmu illegal read" {
 
     const res = mmu.read(addr);
     try std.testing.expectEqual(0, res);
-    try std.testing.expect(mmu.illegalMemoryOperationHappened);
+    try std.testing.expect(mmu.illegalMemoryOperationHappened());
 }

@@ -41,8 +41,7 @@ pub const DelayedReference = union(enum) {
 };
 
 test "mmu reference" {
-    var mmu = try Mmu.init(std.testing.allocator);
-    defer mmu.deinit();
+    var mmu = Mmu.init();
     mmu.zeroize();
 
     const ref = DelayedReference.fromMmu(&mmu, 0xA000);

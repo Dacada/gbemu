@@ -96,7 +96,11 @@ pub const Cpu = struct {
     enable_interrupt_next_instruction: bool = false,
     enable_interrupt_current_instruction: bool = false,
 
-    illegalInstructionExecuted: bool = false,
+    _illegalInstructionExecuted: bool = false,
+
+    pub fn illegalInstructionExecuted(self: *const Cpu) bool {
+        return self._illegalInstructionExecuted;
+    }
 
     pub fn init(mmu_: mmu.Mmu) Cpu {
         return Cpu{
@@ -386,7 +390,8 @@ pub const Cpu = struct {
     }
 
     fn executeIllegalInstruction(self: *Cpu) SelfRefCpuMethod {
-        self.illegalInstructionExecuted = true;
+        self._illegalInstructionExecuted = true;
+        std.log.warn("Attempt to decode illegal instruction 0x{X:0>2} on address 0x{X:0>4}", .{ self.reg.IR, self.reg.PC });
         // close enough for now, this should stall the cpu in a state where it never services interrupts, etc
         return SelfRefCpuMethod.init(Cpu.decodeOpcode);
     }
