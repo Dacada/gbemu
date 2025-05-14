@@ -1,24 +1,21 @@
 const std = @import("std");
 const DelayedReference = @import("reference.zig").DelayedReference;
 
+// Every instance of Mmu is a view into this memory region.
+var STATIC_EMULATED_MEMORY: [0xFFFF + 1]u8 = undefined;
+
 pub const Mmu = struct {
     memory: []u8,
     illegalMemoryOperationHappened: bool = false,
-    allocator: std.mem.Allocator,
 
-    pub fn init(allocator: std.mem.Allocator) !Mmu {
+    pub fn init() Mmu {
         return Mmu{
-            .memory = try allocator.alloc(u8, 0xFFFF + 1),
-            .allocator = allocator,
+            .memory = &STATIC_EMULATED_MEMORY,
         };
     }
 
     pub fn zeroize(self: *Mmu) void {
         @memset(self.memory, 0);
-    }
-
-    pub fn deinit(self: *const Mmu) void {
-        self.allocator.free(self.memory);
     }
 
     pub fn delayedReference(self: *Mmu, addr: u16) DelayedReference {
@@ -61,8 +58,7 @@ pub const Mmu = struct {
 };
 
 test "mmu zeroize" {
-    var mmu = try Mmu.init(std.testing.allocator);
-    defer mmu.deinit();
+    var mmu = Mmu.init();
 
     const expected = [_]u8{0} ** 0x10000;
 
@@ -72,8 +68,7 @@ test "mmu zeroize" {
 }
 
 test "mmu delayed reference" {
-    var mmu = try Mmu.init(std.testing.allocator);
-    defer mmu.deinit();
+    var mmu = Mmu.init();
     mmu.zeroize();
 
     const addr: u16 = 0x8888;
@@ -88,8 +83,7 @@ test "mmu delayed reference" {
 }
 
 test "mmu write/read" {
-    var mmu = try Mmu.init(std.testing.allocator);
-    defer mmu.deinit();
+    var mmu = Mmu.init();
     mmu.zeroize();
 
     const addr: u16 = 0x8888;
@@ -100,8 +94,7 @@ test "mmu write/read" {
 }
 
 test "mmu illegal write" {
-    var mmu = try Mmu.init(std.testing.allocator);
-    defer mmu.deinit();
+    var mmu = Mmu.init();
     mmu.zeroize();
 
     const addr: u16 = 0x0000;
@@ -113,8 +106,7 @@ test "mmu illegal write" {
 }
 
 test "mmu illegal read" {
-    var mmu = try Mmu.init(std.testing.allocator);
-    defer mmu.deinit();
+    var mmu = Mmu.init();
     mmu.zeroize();
 
     const addr: u16 = 0xE000;

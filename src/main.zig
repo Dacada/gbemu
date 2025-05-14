@@ -6,30 +6,20 @@ pub fn main() !void {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    var mmu = try lib.mmu.Mmu.init(allocator);
-    mmu.zeroize();
-    var cpu = lib.cpu.Cpu.init(mmu);
-    cpu.zeroize_regs();
+    var emulator = lib.emulator.Emulator.init();
 
     const code =
         \\ LD A, 2
         \\ LD B, 2
         \\ ADD B
     ;
-
     const program = try lib.assembler.translate(code, allocator);
-    for (program, 0..) |instr, idx| {
-        mmu.memory[idx] = instr;
-    }
-    mmu.memory[program.len] = 0xFD;
+    emulator.mapRom(program);
 
-    while (true) {
-        cpu.tick();
-        if (cpu.illegalInstructionExecuted) {
-            break;
-        }
-    }
+    emulator.mmu.memory[program.len] = 0xFD;
+
+    emulator.run() catch {};
 
     const stdout = std.io.getStdOut().writer();
-    try stdout.print("2+2={d}\n", .{cpu.reg.AF.Hi});
+    try stdout.print("2+2={d}\n", .{emulator.cpu.reg.AF.Hi});
 }

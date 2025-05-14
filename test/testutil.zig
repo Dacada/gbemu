@@ -197,7 +197,7 @@ fn setFlagWrite(flagOpaque: *anyopaque, _: u8) void {
 }
 
 fn makeMmu() !Mmu {
-    var mmu = try Mmu.init(std.testing.allocator);
+    var mmu = Mmu.init();
     mmu.zeroize();
     return mmu;
 }
@@ -214,14 +214,12 @@ pub fn destroyCpu(cpu: *const Cpu) void {
 }
 
 fn expectCpuState(cpu: *const Cpu, state: *TestCpuState, program: []const u8) !void {
-    var mmu = try makeMmu();
-    defer mmu.deinit();
-
+    var expectedMemory: [0xFFFF + 1]u8 = undefined;
     for (program, 0..) |instr, i| {
-        mmu.memory[i] = instr;
+        expectedMemory[i] = instr;
     }
     for (state.addresses.items) |s| {
-        mmu.write(s.address, s.value);
+        expectedMemory[s.address] = s.value;
     }
 
     try std.testing.expectEqual(state.flagZ, cpu.reg.AF.Lo.Z);
@@ -240,7 +238,7 @@ fn expectCpuState(cpu: *const Cpu, state: *TestCpuState, program: []const u8) !v
     try std.testing.expectEqual(state.regPC, cpu.reg.PC);
     try std.testing.expectEqual(state.regIME, cpu.reg.IME);
 
-    try std.testing.expectEqualSlices(u8, mmu.memory, cpu.mmu.memory);
+    try std.testing.expectEqualSlices(u8, expectedMemory, cpu.mmu.memory);
 }
 
 fn mapInitialState(cpu: *Cpu, initial_state: *TestCpuState, program: []const u8) !void {
