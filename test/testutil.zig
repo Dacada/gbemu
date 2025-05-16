@@ -202,9 +202,9 @@ fn makeMmu() !Mmu {
     return mmu;
 }
 
-fn makeCpu() !Cpu {
+fn makeCpu(breakpoint: ?u8) !Cpu {
     const mmu = try makeMmu();
-    var cpu = Cpu.init(mmu);
+    var cpu = Cpu.init(mmu, breakpoint);
     cpu.zeroize_regs();
     return cpu;
 }
@@ -266,7 +266,7 @@ fn mapInitialState(cpu: *Cpu, initial_state: *TestCpuState, program: []const u8)
 }
 
 pub fn runTestCase(name: []const u8, program: []const u8, initial_state: *TestCpuState, ticks: []const *TestCpuState) !void {
-    var cpu = try makeCpu();
+    var cpu = try makeCpu(null);
 
     try mapInitialState(&cpu, initial_state, program);
 
@@ -287,15 +287,17 @@ pub fn runTestCase(name: []const u8, program: []const u8, initial_state: *TestCp
 
 pub fn runProgram(name: []const u8, program: []const u8) !Cpu {
     std.debug.print("Running program: {s}\n", .{name});
-    var cpu = try makeCpu();
+    var cpu = try makeCpu(0x40);
 
     cpu.mmu.mapRom(program);
 
     while (true) {
         cpu.tick();
-        if (cpu.illegalInstructionExecuted()) {
+        if (cpu.breakpointHappened()) {
+            cpu.reg.PC -= 1;
             break;
         }
+        try std.testing.expect(!cpu.illegalInstructionExecuted());
         try std.testing.expect(!cpu.mmu.illegalMemoryOperationHappened());
     }
 

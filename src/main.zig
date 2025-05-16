@@ -6,16 +6,18 @@ pub fn main() !void {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    var emulator = lib.emulator.Emulator.init();
+    var emulator = lib.emulator.Emulator.init(.{
+        .breakpoint_instruction = 0x40,
+    });
 
     const code =
         \\ LD A, 2
         \\ LD B, 2
         \\ ADD B
+        \\ LD B, B
     ;
     const program = try lib.assembler.translate(code, allocator);
     emulator.mmu.mapRom(program);
-    emulator.mmu._memory[program.len] = 0xFD;
 
     emulator.run() catch {};
 

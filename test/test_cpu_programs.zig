@@ -64,11 +64,10 @@ test "LD only integ test" {
         \\ ; Final verification marker
         \\ LD A, 0x99
         \\ LD (0xC00F), A                                         
-        \\ NOP
+        \\ LD B, B  ; end of program breakpoint
     ;
-    var program = try lib.assembler.translate(code, std.testing.allocator);
+    const program = try lib.assembler.translate(code, std.testing.allocator);
     defer std.testing.allocator.free(program);
-    program[program.len - 1] = 0xFD; // Illegal instruction signals end of program
 
     var cpu = try runProgram("LD only integ test (8-bit)", program);
 
@@ -132,11 +131,10 @@ test "LD only integ test (16-bit)" {
         \\ ; Final verification marker                                             
         \\ LD A, 0x99                                                            
         \\ LD (0xC01F), A                                                        
-        \\ NOP
+        \\ LD B, B  ; end of program breakpoint
     ;
-    var program = try lib.assembler.translate(code, std.testing.allocator);
+    const program = try lib.assembler.translate(code, std.testing.allocator);
     defer std.testing.allocator.free(program);
-    program[program.len - 1] = 0xFD; // Illegal instruction signals end of program
 
     var cpu = try runProgram(
         "LD only integ test (16-bit)",
@@ -215,11 +213,10 @@ test "Arithmetic (8-bit)" {
         \\ LD (HL), C
         \\ INC L
         \\ LD (HL), D
-        \\ NOP
+        \\ LD B, B  ; end of program breakpoint
     ;
-    var program = try lib.assembler.translate(code, std.testing.allocator);
+    const program = try lib.assembler.translate(code, std.testing.allocator);
     defer std.testing.allocator.free(program);
-    program[program.len - 1] = 0xFD; // Illegal instruction signals end of program
 
     var cpu = try runProgram(
         "Arithmetic integ test (8-bit)",
@@ -278,11 +275,10 @@ test "Arithmetic (16-bit)" {
         \\ ADD HL, BC         ; HL = 0x1235
         \\ ADD HL, DE         ; HL = 0x2345
         \\ ADD SP, -4         ; SP = 0xFFEC
-        \\ NOP
+        \\ LD B, B  ; end of program breakpoint
     ;
-    var program = try lib.assembler.translate(code, std.testing.allocator);
+    const program = try lib.assembler.translate(code, std.testing.allocator);
     defer std.testing.allocator.free(program);
-    program[program.len - 1] = 0xFD; // Illegal instruction signals end of program
 
     var cpu = try runProgram(
         "Arithmetic integ test (16-bit)",
@@ -315,11 +311,10 @@ test "Misc bit operations" {
         \\ RES 3, E         ; E = 0000 0000
         \\ LD H, 0x08       ; H = 0000 1000
         \\ BIT 3, H         ; Zero flag = 0 (bit 3 is set)
-        \\ NOP
+        \\ LD B, B  ; end of program breakpoint
     ;
-    var program = try lib.assembler.translate(code, std.testing.allocator);
+    const program = try lib.assembler.translate(code, std.testing.allocator);
     defer std.testing.allocator.free(program);
-    program[program.len - 1] = 0xFD; // Illegal instruction signals end of program
 
     const cpu = try runProgram(
         "Misc bit operations integ test",
@@ -382,11 +377,10 @@ test "Jump operations" {
         \\   RET
         \\
         \\ end:
-        \\  NOP
+        \\  LD B, B  ; end of program breakpoint
     ;
-    var program = try lib.assembler.translate(code, std.testing.allocator);
+    const program = try lib.assembler.translate(code, std.testing.allocator);
     defer std.testing.allocator.free(program);
-    program[program.len - 1] = 0xFD; // Illegal instruction signals end of program
 
     const cpu = try runProgram(
         "Jump operations integ test",
@@ -437,11 +431,10 @@ test "Fibonacci" {
         \\   DEC D
         \\   JP NZ fibonacci_next
         \\
-        \\ NOP
+        \\ LD B, B  ; end of program breakpoint
     ;
-    var program = try lib.assembler.translate(code, std.testing.allocator);
+    const program = try lib.assembler.translate(code, std.testing.allocator);
     defer std.testing.allocator.free(program);
-    program[program.len - 1] = 0xFD; // Illegal instruction signals end of program
 
     var cpu = try runProgram(
         "Generic integ test 1",
@@ -510,11 +503,10 @@ test "Prime Sieve" {
         \\   JP loop
         \\
         \\ end:
-        \\   NOP
+        \\   LD B, B  ; end of program breakpoint
     ;
-    var program = try lib.assembler.translate(code, std.testing.allocator);
+    const program = try lib.assembler.translate(code, std.testing.allocator);
     defer std.testing.allocator.free(program);
-    program[program.len - 1] = 0xFD; // Illegal instruction signals end of program
 
     var cpu = try runProgram(
         "Generic integ test 2",
@@ -571,11 +563,10 @@ test "Integer Division" {
         \\   RET
         \\
         \\ end:
-        \\   NOP
+        \\   LD B, B  ; end of program breakpoint
     ;
-    var program = try lib.assembler.translate(code, std.testing.allocator);
+    const program = try lib.assembler.translate(code, std.testing.allocator);
     defer std.testing.allocator.free(program);
-    program[program.len - 1] = 0xFD; // Illegal instruction signals end of program
 
     const cpu = try runProgram(
         "Generic integ test 3",

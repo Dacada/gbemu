@@ -98,11 +98,22 @@ pub const Cpu = struct {
 
     _illegalInstructionExecuted: bool = false,
 
+    breakpoint_instruction: ?u8,
+    _breakpoint_happened: bool = false,
+
     pub fn illegalInstructionExecuted(self: *const Cpu) bool {
         return self._illegalInstructionExecuted;
     }
 
-    pub fn init(mmu_: mmu.Mmu) Cpu {
+    pub fn breakpointHappened(self: *const Cpu) bool {
+        return self._breakpoint_happened;
+    }
+
+    pub fn instructionBoundary(self: *const Cpu) bool {
+        return self.next_tick.func == Cpu.decodeOpcode;
+    }
+
+    pub fn init(mmu_: mmu.Mmu, breakpoint_instruction: ?u8) Cpu {
         return Cpu{
             .mmu = mmu_,
             .reg = RegisterBank{
@@ -140,6 +151,7 @@ pub const Cpu = struct {
                 },
                 .IME = 0,
             },
+            .breakpoint_instruction = breakpoint_instruction,
             .next_tick = SelfRefCpuMethod.init(Cpu.fetchOpcode),
         };
     }
@@ -168,11 +180,11 @@ pub const Cpu = struct {
     }
 
     pub fn tick(self: *Cpu) void {
-        if (self.next_tick.func == Cpu.decodeOpcode) {
+        if (self.instructionBoundary()) {
             self.onInstructionStart();
         }
         self.next_tick = self.next_tick.func(self);
-        if (self.next_tick.func == Cpu.decodeOpcode) {
+        if (self.instructionBoundary()) {
             self.onInstructionEnd();
         }
     }
@@ -180,6 +192,10 @@ pub const Cpu = struct {
     // DECODE //
 
     fn decodeOpcode(self: *Cpu) SelfRefCpuMethod {
+        if (self.breakpoint_instruction != null and self.reg.IR == self.breakpoint_instruction) {
+            self._breakpoint_happened = true;
+        }
+
         // Decoding logic from pan docs.
         const block: u2 = @intCast((self.reg.IR & 0b11_000000) >> 6);
         return switch (block) {
