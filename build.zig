@@ -46,7 +46,7 @@ pub fn build(b: *std.Build) void {
     });
     lib_unit_tests.root_module.addImport("lib", lib_module); // emulator functionality
 
-    // We add a run artifact so that the unit tests can be run
+    // We add a run artifact so that lib unit tests can be run
     const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
 
     // Extra stuff to test outside the functional code (lib)
@@ -57,8 +57,19 @@ pub fn build(b: *std.Build) void {
     });
     extended_unit_tests.root_module.addImport("lib", lib_module); // emulator functionality
 
-    // We add a run artifact so that the unit tests can be run
+    // We add a run artifact so that the extended tests can be run
     const run_extended_unit_tests = b.addRunArtifact(extended_unit_tests);
+
+    // Unit tests for exe are included here
+    const exe_unit_tests = b.addTest(.{
+        .root_source_file = b.path(exe_source),
+        .target = target,
+        .optimize = optimize,
+    });
+    exe_unit_tests.root_module.addImport("lib", lib_module); // emulator functionality
+
+    // We add a run artifact so that exe unit tests can be run
+    const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
 
     // Create a run step and make it run the emulator
     const run_step = b.step("run", "Run the app");
@@ -68,4 +79,5 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_lib_unit_tests.step);
     test_step.dependOn(&run_extended_unit_tests.step);
+    test_step.dependOn(&run_exe_unit_tests.step);
 }
