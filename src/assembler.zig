@@ -1,15 +1,6 @@
 const std = @import("std");
-const builtin = @import("builtin");
 
-const logger = std.log.scoped(.the_module);
-
-fn logError(comptime fmt: []const u8, args: anytype) void {
-    if (!builtin.is_test) {
-        logger.err(fmt, args);
-    } else {
-        logger.warn(fmt, args);
-    }
-}
+const logger = std.log.scoped(.assembler);
 
 pub const AssemblerError = error{
     InvalidInstruction,
@@ -208,24 +199,24 @@ test "toUpper" {
 
 fn validateLabel(source: []const u8, line: usize) !void {
     if (source[0] != '_' and !std.ascii.isAlphabetic(source[0])) {
-        logError("Line {d}: Invalid label '{s}'.", .{ line, source });
+        logger.err("Line {d}: Invalid label '{s}'.", .{ line, source });
         return AssemblerError.InvalidLabel;
     }
     if (std.meta.stringToEnum(Register8, source) != null) {
-        logError("Line {d}: Invalid label '{s}' is actually a Register8", .{ line, source });
+        logger.err("Line {d}: Invalid label '{s}' is actually a Register8", .{ line, source });
         return AssemblerError.InvalidLabel;
     }
     if (std.meta.stringToEnum(Register16, source) != null) {
-        logError("Line {d}: Invalid label '{s}' is actually a Register16", .{ line, source });
+        logger.err("Line {d}: Invalid label '{s}' is actually a Register16", .{ line, source });
         return AssemblerError.InvalidLabel;
     }
     if (std.meta.stringToEnum(Condition, source) != null) {
-        logError("Line {d}: Invalid label '{s}' is actually a Condition", .{ line, source });
+        logger.err("Line {d}: Invalid label '{s}' is actually a Condition", .{ line, source });
         return AssemblerError.InvalidLabel;
     }
     for (source) |c| {
         if (!std.ascii.isAlphanumeric(c) and c != '_') {
-            logError("Line {d}: Invalid label '{s}'.", .{ line, source });
+            logger.err("Line {d}: Invalid label '{s}'.", .{ line, source });
             return AssemblerError.InvalidLabel;
         }
     }
@@ -412,7 +403,7 @@ const Argument = struct {
         defer allocator.free(token_upper);
         const res = Argument.fromTokenInner(token_upper, allocator) catch |e| {
             if (e == AssemblerError.MissmatchedParenthesis) {
-                logError("Line {d}: Missmatched parenthesis '{s}'", .{ token.line, token.source });
+                logger.err("Line {d}: Missmatched parenthesis '{s}'", .{ token.line, token.source });
             }
             return e;
         };
@@ -2750,7 +2741,7 @@ const Opcode = struct {
         defer allocator.free(token_capital);
         const instr = std.meta.stringToEnum(Instruction, token_capital);
         if (instr == null) {
-            logError("Line {d}: Invalid instruction '{s}'", .{ token.line, token.source });
+            logger.err("Line {d}: Invalid instruction '{s}'", .{ token.line, token.source });
             return AssemblerError.InvalidInstruction;
         }
         return Opcode{
@@ -2770,7 +2761,7 @@ const Opcode = struct {
             self.arg2 = arg;
             return;
         }
-        logError("Line {d}: Too many arguments for instruction '{s}'", .{ self.line, @tagName(self.instr) });
+        logger.err("Line {d}: Too many arguments for instruction '{s}'", .{ self.line, @tagName(self.instr) });
         return AssemblerError.InvalidArgumentCount;
     }
 
@@ -2866,7 +2857,7 @@ const Opcode = struct {
             return stream.items[stream.items.len - size ..];
         }
 
-        logError("Line {d}: Invalid instruction/argument combination.", .{self.line});
+        logger.err("Line {d}: Invalid instruction/argument combination.", .{self.line});
         return latest_error orelse AssemblerError.InvalidInstructionArguments;
     }
 };
@@ -3387,7 +3378,7 @@ pub fn parser(input: []const Token, allocator: std.mem.Allocator) !struct { std.
 
                 try validateLabel(token.source, token.line);
                 if (labels.contains(upper)) {
-                    logError("Line {d}: Redefinition of label '{s}'", .{ token.line, token.source });
+                    logger.err("Line {d}: Redefinition of label '{s}'", .{ token.line, token.source });
                     return AssemblerError.RedefinedLabel;
                 }
                 try labels.put(upper, idx);
@@ -3566,7 +3557,7 @@ pub fn assembler(input: []const Opcode, labelMap: *std.StringHashMap(usize), all
             const label = pair.key_ptr.*;
             const location = labelMap.get(label);
             if (location == null) {
-                logError("Undefined label {s}", .{label});
+                logger.err("Undefined label {s}", .{label});
                 return AssemblerError.UndefinedLabel;
             }
             const lsb: u8 = @intCast(location.? & 0xFF);

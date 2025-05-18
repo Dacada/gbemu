@@ -4,6 +4,8 @@ const DelayedReference = @import("reference.zig").DelayedReference;
 // Every instance of Mmu is a view into this memory region.
 var STATIC_EMULATED_MEMORY: [0xFFFF + 1]u8 = undefined;
 
+const logger = std.log.scoped(.mmu);
+
 pub const Mmu = struct {
     _memory: []u8,
     _illegalMemoryOperationHappened: bool = false,
@@ -52,7 +54,7 @@ pub const Mmu = struct {
 
     pub fn write(self: *Mmu, addr: u16, val: u8) void {
         if (!Mmu.isAccessLegal(addr, true)) {
-            std.log.warn("Illegal write of value 0x{X:0>2} to address 0x{X:0>4}", .{ val, addr });
+            logger.warn("Illegal write of value 0x{X:0>2} to address 0x{X:0>4}", .{ val, addr });
             self._illegalMemoryOperationHappened = true;
             return;
         }
@@ -61,7 +63,7 @@ pub const Mmu = struct {
 
     pub fn read(self: *Mmu, addr: u16) u8 {
         if (!Mmu.isAccessLegal(addr, false)) {
-            std.log.warn("Illegal read from address 0x{X:0>4}", .{addr});
+            logger.warn("Illegal read from address 0x{X:0>4}", .{addr});
             self._illegalMemoryOperationHappened = true;
             return 0;
         }

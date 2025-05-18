@@ -3,6 +3,8 @@ const mmu = @import("mmu.zig");
 const alu = @import("alu.zig");
 const DelayedReference = @import("reference.zig").DelayedReference;
 
+const logger = std.log.scoped(.cpu);
+
 // The reason for this union is that we implement BC, DE, HL as RegisterWithHalves but AF as AluRegister so this union
 // allows us to use them indistinctively.
 const StackRegister = union(enum) {
@@ -407,7 +409,7 @@ pub const Cpu = struct {
 
     fn executeIllegalInstruction(self: *Cpu) SelfRefCpuMethod {
         self._illegalInstructionExecuted = true;
-        std.log.warn("Attempt to decode illegal instruction 0x{X:0>2} on address 0x{X:0>4}", .{ self.reg.IR, self.reg.PC });
+        logger.warn("Attempt to decode illegal instruction 0x{X:0>2} on address 0x{X:0>4}", .{ self.reg.IR, self.reg.PC });
         // close enough for now, this should stall the cpu in a state where it never services interrupts, etc
         return SelfRefCpuMethod.init(Cpu.decodeOpcode);
     }
