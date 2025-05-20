@@ -69,7 +69,7 @@ test "LD only integ test" {
     const program = try lib.assembler.translate(code, std.testing.allocator);
     defer std.testing.allocator.free(program);
 
-    var cpu = try runProgram("LD only integ test (8-bit)", program);
+    var cpu = try runProgram(program);
 
     try std.testing.expectEqual(program.len, cpu.reg.PC);
 
@@ -136,10 +136,7 @@ test "LD only integ test (16-bit)" {
     const program = try lib.assembler.translate(code, std.testing.allocator);
     defer std.testing.allocator.free(program);
 
-    var cpu = try runProgram(
-        "LD only integ test (16-bit)",
-        program,
-    );
+    var cpu = try runProgram(program);
 
     try std.testing.expectEqual(program.len, cpu.reg.PC);
 
@@ -218,10 +215,7 @@ test "Arithmetic (8-bit)" {
     const program = try lib.assembler.translate(code, std.testing.allocator);
     defer std.testing.allocator.free(program);
 
-    var cpu = try runProgram(
-        "Arithmetic integ test (8-bit)",
-        program,
-    );
+    var cpu = try runProgram(program);
 
     try std.testing.expectEqual(program.len, cpu.reg.PC);
 
@@ -280,10 +274,7 @@ test "Arithmetic (16-bit)" {
     const program = try lib.assembler.translate(code, std.testing.allocator);
     defer std.testing.allocator.free(program);
 
-    var cpu = try runProgram(
-        "Arithmetic integ test (16-bit)",
-        program,
-    );
+    var cpu = try runProgram(program);
 
     try std.testing.expectEqual(program.len, cpu.reg.PC);
 
@@ -316,10 +307,7 @@ test "Misc bit operations" {
     const program = try lib.assembler.translate(code, std.testing.allocator);
     defer std.testing.allocator.free(program);
 
-    const cpu = try runProgram(
-        "Misc bit operations integ test",
-        program,
-    );
+    const cpu = try runProgram(program);
 
     try std.testing.expectEqual(program.len, cpu.reg.PC);
 
@@ -382,10 +370,7 @@ test "Jump operations" {
     const program = try lib.assembler.translate(code, std.testing.allocator);
     defer std.testing.allocator.free(program);
 
-    const cpu = try runProgram(
-        "Jump operations integ test",
-        program,
-    );
+    const cpu = try runProgram(program);
 
     try std.testing.expectEqual(program.len, cpu.reg.PC);
 
@@ -436,10 +421,7 @@ test "Fibonacci" {
     const program = try lib.assembler.translate(code, std.testing.allocator);
     defer std.testing.allocator.free(program);
 
-    var cpu = try runProgram(
-        "Generic integ test 1",
-        program,
-    );
+    var cpu = try runProgram(program);
 
     try std.testing.expectEqual(program.len, cpu.reg.PC);
 
@@ -508,10 +490,7 @@ test "Prime Sieve" {
     const program = try lib.assembler.translate(code, std.testing.allocator);
     defer std.testing.allocator.free(program);
 
-    var cpu = try runProgram(
-        "Generic integ test 2",
-        program,
-    );
+    var cpu = try runProgram(program);
 
     try std.testing.expectEqual(program.len, cpu.reg.PC);
 
@@ -568,10 +547,7 @@ test "Integer Division" {
     const program = try lib.assembler.translate(code, std.testing.allocator);
     defer std.testing.allocator.free(program);
 
-    const cpu = try runProgram(
-        "Generic integ test 3",
-        program,
-    );
+    const cpu = try runProgram(program);
 
     try std.testing.expectEqual(program.len, cpu.reg.PC);
     try std.testing.expectEqual(11, cpu.reg.BC.Hi);

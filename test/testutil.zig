@@ -2,6 +2,8 @@ const std = @import("std");
 const Cpu = @import("lib").cpu.Cpu;
 const Mmu = @import("lib").mmu.Mmu;
 
+const logger = std.log.scoped(.testutil);
+
 const TestRamState = struct {
     address: u16,
     value: u8,
@@ -279,14 +281,13 @@ pub fn runTestCase(name: []const u8, program: []const u8, initial_state: *TestCp
         try std.testing.expect(!cpu.mmu.illegalMemoryOperationHappened());
         try std.testing.expect(!cpu.illegalInstructionExecuted());
         expectCpuState(&cpu, state, program) catch |err| {
-            std.debug.print("{s}:\n  Failed on tick {d}\n", .{ name, idx });
+            logger.debug("{s}: Failed on tick {d}", .{ name, idx });
             return err;
         };
     }
 }
 
-pub fn runProgram(name: []const u8, program: []const u8) !Cpu {
-    std.debug.print("Running program: {s}\n", .{name});
+pub fn runProgram(program: []const u8) !Cpu {
     var cpu = try makeCpu(0x40);
 
     cpu.mmu.mapRom(program);

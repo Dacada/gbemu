@@ -2,9 +2,10 @@ const std = @import("std");
 
 pub fn build(b: *std.Build) void {
     // Source paths
-    const exe_source = "src/main.zig";
-    const lib_source = "src/lib.zig";
-    const test_source = "test/test.zig";
+    const exe_source = b.path("src/main.zig");
+    const lib_source = b.path("src/lib.zig");
+    const test_source = b.path("test/test.zig");
+    const test_runner_source = b.path("test/runner.zig");
 
     // Compiler options passed in
     const target = b.standardTargetOptions(.{});
@@ -13,19 +14,19 @@ pub fn build(b: *std.Build) void {
     // Lib contains the emulator functionality itself
     const lib = b.addStaticLibrary(.{
         .name = "gbemu",
-        .root_source_file = b.path(lib_source),
+        .root_source_file = lib_source,
         .target = target,
         .optimize = optimize,
     });
     b.installArtifact(lib);
     const lib_module = b.addModule("lib", .{
-        .root_source_file = b.path(lib_source),
+        .root_source_file = lib_source,
     });
 
     // Exe is the emulator executable
     const exe = b.addExecutable(.{
         .name = "gbemu",
-        .root_source_file = b.path(exe_source),
+        .root_source_file = exe_source,
         .target = target,
         .optimize = optimize,
     });
@@ -40,7 +41,8 @@ pub fn build(b: *std.Build) void {
 
     // Unit tests for lib are included here
     const lib_unit_tests = b.addTest(.{
-        .root_source_file = b.path(lib_source),
+        .root_source_file = lib_source,
+        .test_runner = test_runner_source,
         .target = target,
         .optimize = optimize,
     });
@@ -51,7 +53,8 @@ pub fn build(b: *std.Build) void {
 
     // Extra stuff to test outside the functional code (lib)
     const extended_unit_tests = b.addTest(.{
-        .root_source_file = b.path(test_source),
+        .root_source_file = test_source,
+        .test_runner = test_runner_source,
         .target = target,
         .optimize = optimize,
     });
@@ -62,7 +65,8 @@ pub fn build(b: *std.Build) void {
 
     // Unit tests for exe are included here
     const exe_unit_tests = b.addTest(.{
-        .root_source_file = b.path(exe_source),
+        .root_source_file = exe_source,
+        .test_runner = test_runner_source,
         .target = target,
         .optimize = optimize,
     });
