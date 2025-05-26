@@ -33,8 +33,11 @@ pub fn main() !void {
         \\ LD B, B
     ;
     const program = try lib.assembler.translate(code, allocator);
-    emulator.mmu.mapRom(program);
 
+    //const rom = lib.rom.Rom.fromFile("/home/dacada/Downloads/testroms/mooneye-test-suite/acceptance/boot_regs-dmgABC.gb");
+    const rom = try lib.rom.Rom.fromBinary(allocator, program, "test", 0x0100);
+    defer rom.deinit(allocator);
+    emulator.mapRom(&rom);
     emulator.run() catch {};
 
     const stdout = std.io.getStdOut().writer();

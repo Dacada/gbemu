@@ -70,6 +70,11 @@ pub const Mmu = struct {
         return self._memory[addr];
     }
 
+    /// Write without side effects
+    pub fn setValue(self: *Mmu, addr: u16, val: u8) void {
+        self._memory[addr] = val;
+    }
+
     pub fn illegalMemoryOperationHappened(self: *const Mmu) bool {
         return self._illegalMemoryOperationHappened;
     }

@@ -4,6 +4,7 @@ pub const alu = @import("alu.zig");
 pub const assembler = @import("assembler.zig");
 pub const reference = @import("reference.zig");
 pub const emulator = @import("emulator.zig");
+pub const rom = @import("rom.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());

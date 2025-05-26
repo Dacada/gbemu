@@ -9,7 +9,7 @@ const ArgParserError = error{
 };
 
 pub const ArgParserParamDefinition = struct {
-    name: []const u8,
+    name: []const u8, // TODO: allow to use _ as separator in the name in the field and - in the name in the cli argument
     type: type,
     default: *const anyopaque,
     help: []const u8,
