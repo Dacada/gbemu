@@ -183,18 +183,19 @@ pub fn main() !void {
             slowest.time = elapsed;
         }
 
+        var errorsHappened = false;
+
         if (std.testing.allocator_instance.deinit() == .leak) {
-            try errorOutput.writeColor(ttyConfig, writer, "X");
+            errorsHappened = true;
             total_failures += 1;
             try failures.append(RunnerErrorEntry{
                 .name = t.name,
                 .err = "MemoryLeak",
             });
-            continue;
         }
 
         result catch |err| {
-            try errorOutput.writeColor(ttyConfig, writer, "X");
+            errorsHappened = true;
             total_failures += 1;
             try failures.append(RunnerErrorEntry{
                 .name = t.name,
@@ -203,7 +204,11 @@ pub fn main() !void {
             continue;
         };
 
-        try writer.writeByte('.');
+        if (errorsHappened) {
+            try errorOutput.writeColor(ttyConfig, writer, "X");
+        } else {
+            try writer.writeByte('.');
+        }
     }
     try writer.writeByte('\n');
 
