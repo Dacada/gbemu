@@ -259,6 +259,33 @@ const Argument = struct {
     incDec: ?bool,
     offset: ?i8,
 
+    fn format(self: *const Argument, writer: anytype) !void {
+        if (self.indirect) {
+            try writer.writeByte('(');
+        }
+        try switch (self.arg) {
+            .Immediate => |n| writer.print("{d}", .{n}),
+            .Reserved, .Label => |s| writer.writeAll(s),
+        };
+        if (self.incDec) |incDec| {
+            if (incDec) {
+                try writer.writeByte('+');
+            } else {
+                try writer.writeByte('-');
+            }
+        }
+        if (self.offset) |off| {
+            if (off < 0) {
+                try writer.print("{d}", .{off});
+            } else {
+                try writer.print("+{d}", .{off});
+            }
+        }
+        if (self.indirect) {
+            try writer.writeByte(')');
+        }
+    }
+
     fn parseIndirect(input: []const u8) !struct { bool, []const u8 } {
         if (input[0] == '(') {
             if (input[input.len - 1] != ')') {
@@ -410,7 +437,7 @@ const Argument = struct {
         return res;
     }
 
-    fn free(self: *Argument, allocator: std.mem.Allocator) void {
+    fn free(self: *const Argument, allocator: std.mem.Allocator) void {
         switch (self.arg) {
             .Reserved => |r| allocator.free(r),
             .Label => |l| allocator.free(l),
@@ -708,6 +735,132 @@ test "parseImmediate 7" {
     const actual = Argument.parseImmediate(input);
 
     try std.testing.expectEqual(expected, actual);
+}
+
+test "formatArgument 1" {
+    const arg = Argument{
+        .arg = .{
+            .Immediate = 1234,
+        },
+        .indirect = false,
+        .incDec = null,
+        .offset = null,
+    };
+
+    var buffer: [64]u8 = undefined;
+    var source: std.io.StreamSource = .{ .buffer = std.io.fixedBufferStream(&buffer) };
+    const writer = source.writer();
+
+    try arg.format(writer);
+    try std.testing.expectEqualStrings("1234", source.buffer.getWritten());
+}
+
+test "formatArgument 2" {
+    const arg = Argument{
+        .arg = .{
+            .Immediate = 1234,
+        },
+        .indirect = true,
+        .incDec = null,
+        .offset = null,
+    };
+
+    var buffer: [64]u8 = undefined;
+    var source: std.io.StreamSource = .{ .buffer = std.io.fixedBufferStream(&buffer) };
+    const writer = source.writer();
+
+    try arg.format(writer);
+    try std.testing.expectEqualStrings("(1234)", source.buffer.getWritten());
+}
+
+test "formatArgument 3" {
+    const arg = Argument{
+        .arg = .{
+            .Reserved = "BC",
+        },
+        .indirect = false,
+        .incDec = null,
+        .offset = null,
+    };
+
+    var buffer: [64]u8 = undefined;
+    var source: std.io.StreamSource = .{ .buffer = std.io.fixedBufferStream(&buffer) };
+    const writer = source.writer();
+
+    try arg.format(writer);
+    try std.testing.expectEqualStrings("BC", source.buffer.getWritten());
+}
+
+test "formatArgument 4" {
+    const arg = Argument{
+        .arg = .{
+            .Reserved = "BC",
+        },
+        .indirect = true,
+        .incDec = null,
+        .offset = null,
+    };
+
+    var buffer: [64]u8 = undefined;
+    var source: std.io.StreamSource = .{ .buffer = std.io.fixedBufferStream(&buffer) };
+    const writer = source.writer();
+
+    try arg.format(writer);
+    try std.testing.expectEqualStrings("(BC)", source.buffer.getWritten());
+}
+
+test "formatArgument 5" {
+    const arg = Argument{
+        .arg = .{
+            .Reserved = "BC",
+        },
+        .indirect = true,
+        .incDec = true,
+        .offset = null,
+    };
+
+    var buffer: [64]u8 = undefined;
+    var source: std.io.StreamSource = .{ .buffer = std.io.fixedBufferStream(&buffer) };
+    const writer = source.writer();
+
+    try arg.format(writer);
+    try std.testing.expectEqualStrings("(BC+)", source.buffer.getWritten());
+}
+
+test "formatArgument 6" {
+    const arg = Argument{
+        .arg = .{
+            .Reserved = "BC",
+        },
+        .indirect = true,
+        .incDec = false,
+        .offset = null,
+    };
+
+    var buffer: [64]u8 = undefined;
+    var source: std.io.StreamSource = .{ .buffer = std.io.fixedBufferStream(&buffer) };
+    const writer = source.writer();
+
+    try arg.format(writer);
+    try std.testing.expectEqualStrings("(BC-)", source.buffer.getWritten());
+}
+
+test "formatArgument 7" {
+    const arg = Argument{
+        .arg = .{
+            .Reserved = "BC",
+        },
+        .indirect = false,
+        .incDec = null,
+        .offset = -7,
+    };
+
+    var buffer: [64]u8 = undefined;
+    var source: std.io.StreamSource = .{ .buffer = std.io.fixedBufferStream(&buffer) };
+    const writer = source.writer();
+
+    try arg.format(writer);
+    try std.testing.expectEqualStrings("BC-7", source.buffer.getWritten());
 }
 
 const Register8BitArgumentDefinition = union(enum) {
@@ -1219,6 +1372,254 @@ const ArgumentDefinition = union(DefinedArgumentType) {
     IndirectRegister16BitInc: Register16,
     IndirectRegister16BitDec: Register16,
 
+    fn get_mask(self: ArgumentDefinition) ?u8 {
+        return switch (self) {
+            .Immediate3Bit => 0b11_000_111,
+            .Immediate8Bit => null,
+            .Immediate8BitSigned => null,
+            .Immediate16Bit => null,
+            .ImmediateBitIndex => 0b11_000_111,
+            .Register8Bit => |x| switch (x) {
+                .Offset => |offset| ~(@as(u8, 0b111) << @intCast(offset)),
+                .Register => null,
+            },
+            .Register16Bit => |x| switch (x) {
+                .Offset => |variety| switch (variety) {
+                    .LikeLD, .LikePUSH => |offset| ~(@as(u8, 0b11) << @intCast(offset)),
+                },
+                .Register => null,
+            },
+            .Register16BitWithOffset => null,
+            .Condition => 0b111_00_111,
+            .IndirectImmediate8Bit => null,
+            .IndirectImmediate16Bit => null,
+            .IndirectRegister8Bit => null,
+            .IndirectRegister16Bit => null,
+            .IndirectRegister16BitInc => null,
+            .IndirectRegister16BitDec => null,
+        };
+    }
+
+    fn decode(self: ArgumentDefinition, allocator: std.mem.Allocator, stream: []const u8, opcode: u8) !?struct { ?Argument, []const u8 } {
+        switch (self) {
+            .Immediate3Bit => {
+                return .{
+                    .{
+                        .arg = .{
+                            .Immediate = (opcode & 0b00_111_000) >> 3,
+                        },
+                        .indirect = false,
+                        .incDec = null,
+                        .offset = null,
+                    },
+                    stream,
+                };
+            },
+            .Immediate8Bit => {
+                return .{
+                    .{
+                        .arg = .{
+                            .Immediate = stream[0],
+                        },
+                        .indirect = false,
+                        .incDec = null,
+                        .offset = null,
+                    },
+                    stream[1..],
+                };
+            },
+            .Immediate8BitSigned => {
+                return .{
+                    .{
+                        .arg = .{
+                            .Immediate = @as(i8, @bitCast(stream[0])),
+                        },
+                        .indirect = false,
+                        .incDec = null,
+                        .offset = null,
+                    },
+                    stream[1..],
+                };
+            },
+            .Immediate16Bit => {
+                return .{
+                    .{
+                        .arg = .{ .Immediate = @as(u16, stream[0]) | (@as(u16, stream[1]) << 8) },
+                        .indirect = false,
+                        .incDec = null,
+                        .offset = null,
+                    },
+                    stream[2..],
+                };
+            },
+            .ImmediateBitIndex => {
+                return .{
+                    .{
+                        .arg = .{
+                            .Immediate = (opcode & 0b00_111_000) >> 3,
+                        },
+                        .indirect = false,
+                        .incDec = null,
+                        .offset = null,
+                    },
+                    stream,
+                };
+            },
+            .Register8Bit => |x| {
+                const reg = switch (x) {
+                    .Offset => |offset| blk: {
+                        const mask = @as(u8, 0b111) << @intCast(offset);
+                        const code = (opcode & mask) >> @intCast(offset);
+                        break :blk if (ArgumentDefinition.decodeRegister8(code)) |res| res else return null;
+                    },
+                    .Register => |register| register,
+                };
+                return .{
+                    .{
+                        .arg = .{
+                            .Reserved = try allocator.dupe(u8, @tagName(reg)),
+                        },
+                        .indirect = false,
+                        .incDec = null,
+                        .offset = null,
+                    },
+                    stream,
+                };
+            },
+            .Register16Bit => |x| {
+                const reg = switch (x) {
+                    .Offset => |offset_def| blk: {
+                        const offset = switch (offset_def) {
+                            .LikeLD, .LikePUSH => |o| o,
+                        };
+                        const mask = @as(u8, 0b11) << @intCast(offset);
+                        const code = (opcode & mask) >> @intCast(offset);
+                        break :blk if (switch (offset_def) {
+                            .LikeLD => ArgumentDefinition.decodeRegister16_1(code),
+                            .LikePUSH => ArgumentDefinition.decodeRegister16_2(code),
+                        }) |res| res else return null;
+                    },
+                    .Register => |register| register,
+                };
+                return .{
+                    .{
+                        .arg = .{
+                            .Reserved = try allocator.dupe(u8, @tagName(reg)),
+                        },
+                        .indirect = false,
+                        .incDec = null,
+                        .offset = null,
+                    },
+                    stream,
+                };
+            },
+            .Register16BitWithOffset => |x| {
+                return .{
+                    .{
+                        .arg = .{
+                            .Reserved = try allocator.dupe(u8, @tagName(x)),
+                        },
+                        .indirect = false,
+                        .incDec = null,
+                        .offset = @bitCast(stream[0]),
+                    },
+                    stream[1..],
+                };
+            },
+            .Condition => {
+                const code = (opcode & 0b000_11_000) >> 3;
+                const cond = if (ArgumentDefinition.decodeCondition(code)) |res| res else return null;
+                return .{
+                    .{
+                        .arg = .{
+                            .Reserved = try allocator.dupe(u8, @tagName(cond)),
+                        },
+                        .indirect = false,
+                        .incDec = null,
+                        .offset = null,
+                    },
+                    stream,
+                };
+            },
+            .IndirectImmediate8Bit => {
+                return .{
+                    .{
+                        .arg = .{
+                            .Immediate = stream[0],
+                        },
+                        .indirect = true,
+                        .incDec = null,
+                        .offset = null,
+                    },
+                    stream[1..],
+                };
+            },
+            .IndirectImmediate16Bit => {
+                return .{
+                    .{
+                        .arg = .{ .Immediate = @as(u16, stream[0]) | (@as(u16, stream[1]) << 8) },
+                        .indirect = true,
+                        .incDec = null,
+                        .offset = null,
+                    },
+                    stream[2..],
+                };
+            },
+            .IndirectRegister8Bit => |register| {
+                return .{
+                    .{
+                        .arg = .{
+                            .Reserved = try allocator.dupe(u8, @tagName(register)),
+                        },
+                        .indirect = true,
+                        .incDec = null,
+                        .offset = null,
+                    },
+                    stream,
+                };
+            },
+            .IndirectRegister16Bit => |register| {
+                return .{
+                    .{
+                        .arg = .{
+                            .Reserved = try allocator.dupe(u8, @tagName(register)),
+                        },
+                        .indirect = true,
+                        .incDec = null,
+                        .offset = null,
+                    },
+                    stream,
+                };
+            },
+            .IndirectRegister16BitInc => |register| {
+                return .{
+                    .{
+                        .arg = .{
+                            .Reserved = try allocator.dupe(u8, @tagName(register)),
+                        },
+                        .indirect = true,
+                        .incDec = true,
+                        .offset = null,
+                    },
+                    stream,
+                };
+            },
+            .IndirectRegister16BitDec => |register| {
+                return .{
+                    .{
+                        .arg = .{
+                            .Reserved = try allocator.dupe(u8, @tagName(register)),
+                        },
+                        .indirect = true,
+                        .incDec = false,
+                        .offset = null,
+                    },
+                    stream,
+                };
+            },
+        }
+    }
+
     fn encode(self: ArgumentDefinition, opcode: u8, arg: ArgumentData) !struct { u8, ?u8, ?u8 } {
         switch (self) {
             .Immediate3Bit => {
@@ -1338,6 +1739,19 @@ const ArgumentDefinition = union(DefinedArgumentType) {
         };
     }
 
+    fn decodeRegister8(r: u8) ?Register8 {
+        return switch (r) {
+            0b000 => Register8.B,
+            0b001 => Register8.C,
+            0b010 => Register8.D,
+            0b011 => Register8.E,
+            0b100 => Register8.H,
+            0b101 => Register8.L,
+            0b111 => Register8.A,
+            else => null,
+        };
+    }
+
     fn encodeRegister16_1(r: Register16) !u8 {
         return switch (r) {
             Register16.BC => 0b00,
@@ -1347,6 +1761,16 @@ const ArgumentDefinition = union(DefinedArgumentType) {
             else => {
                 return AssemblerError.InvalidInstructionArguments;
             },
+        };
+    }
+
+    fn decodeRegister16_1(r: u8) ?Register16 {
+        return switch (r) {
+            0b00 => Register16.BC,
+            0b01 => Register16.DE,
+            0b10 => Register16.HL,
+            0b11 => Register16.SP,
+            else => null,
         };
     }
 
@@ -1362,12 +1786,32 @@ const ArgumentDefinition = union(DefinedArgumentType) {
         };
     }
 
+    fn decodeRegister16_2(r: u8) ?Register16 {
+        return switch (r) {
+            0b00 => Register16.BC,
+            0b01 => Register16.DE,
+            0b10 => Register16.HL,
+            0b11 => Register16.AF,
+            else => null,
+        };
+    }
+
     fn encodeCondition(c: Condition) u8 {
         return switch (c) {
             Condition.NZ => 0b00,
             Condition.Z => 0b01,
             Condition.NC => 0b10,
             Condition.C => 0b11,
+        };
+    }
+
+    fn decodeCondition(c: u8) ?Condition {
+        return switch (c) {
+            0b00 => Condition.NZ,
+            0b01 => Condition.Z,
+            0b10 => Condition.NC,
+            0b11 => Condition.C,
+            else => null,
         };
     }
 };
@@ -1730,6 +2174,430 @@ test "ArgumentDefinition.encode IndirectRegister16BitDec failure" {
     const actual = definition.encode(opcode, argument);
 
     try std.testing.expectError(AssemblerError.InvalidInstructionArguments, actual);
+}
+
+test "ArgumentDefinition.decode Immediate3Bit" {
+    const stream = [_]u8{ 0xFF, 0xFF, 0xFF };
+    const opcode = 0b11_101_001;
+
+    const expected = Argument{
+        .arg = .{
+            .Immediate = 0b101,
+        },
+        .indirect = false,
+        .incDec = null,
+        .offset = null,
+    };
+
+    const definition = ArgumentDefinition{
+        .Immediate3Bit = {},
+    };
+
+    const actual, const rest = (try definition.decode(std.testing.allocator, &stream, opcode)).?;
+    defer if (actual) |a| {
+        a.free(std.testing.allocator);
+    };
+
+    try std.testing.expectEqualSlices(u8, stream[0..], rest);
+    try std.testing.expectEqual(expected, actual);
+}
+
+test "ArgumentDefinition.decode Immediate8Bit" {
+    const stream = [_]u8{ 0xAA, 0xFF, 0xFF };
+    const opcode = 0x00;
+
+    const expected = Argument{
+        .arg = .{
+            .Immediate = 0xAA,
+        },
+        .indirect = false,
+        .incDec = null,
+        .offset = null,
+    };
+
+    const definition = ArgumentDefinition{
+        .Immediate8Bit = {},
+    };
+
+    const actual, const rest = (try definition.decode(std.testing.allocator, &stream, opcode)).?;
+    defer if (actual) |a| {
+        a.free(std.testing.allocator);
+    };
+
+    try std.testing.expectEqualSlices(u8, stream[1..], rest);
+    try std.testing.expectEqual(expected, actual);
+}
+
+test "ArgumentDefinition.decode Immediate8BitSigned" {
+    const stream = [_]u8{ 0xFF, 0xFF, 0xFF };
+    const opcode = 0x00;
+
+    const expected = Argument{
+        .arg = .{
+            .Immediate = -1,
+        },
+        .indirect = false,
+        .incDec = null,
+        .offset = null,
+    };
+
+    const definition = ArgumentDefinition{
+        .Immediate8BitSigned = {},
+    };
+
+    const actual, const rest = (try definition.decode(std.testing.allocator, &stream, opcode)).?;
+    defer if (actual) |a| {
+        a.free(std.testing.allocator);
+    };
+
+    try std.testing.expectEqualSlices(u8, stream[1..], rest);
+    try std.testing.expectEqual(expected, actual);
+}
+
+test "ArgumentDefinition.decode Immediate16Bit" {
+    const stream = [_]u8{ 0xCD, 0xAB, 0xFF };
+    const opcode = 0x00;
+
+    const expected = Argument{
+        .arg = .{
+            .Immediate = 0xABCD,
+        },
+        .indirect = false,
+        .incDec = null,
+        .offset = null,
+    };
+
+    const definition = ArgumentDefinition{
+        .Immediate16Bit = {},
+    };
+
+    const actual, const rest = (try definition.decode(std.testing.allocator, &stream, opcode)).?;
+    defer if (actual) |a| {
+        a.free(std.testing.allocator);
+    };
+
+    try std.testing.expectEqualSlices(u8, stream[2..], rest);
+    try std.testing.expectEqual(expected, actual);
+}
+
+test "ArgumentDefinition.decode ImmediateBitIndex" {
+    const stream = [_]u8{ 0xFF, 0xFF, 0xFF };
+    const opcode = 0b11_010_111;
+
+    const expected = Argument{
+        .arg = .{
+            .Immediate = 0b010,
+        },
+        .indirect = false,
+        .incDec = null,
+        .offset = null,
+    };
+
+    const definition = ArgumentDefinition{
+        .ImmediateBitIndex = {},
+    };
+
+    const actual, const rest = (try definition.decode(std.testing.allocator, &stream, opcode)).?;
+    defer if (actual) |a| {
+        a.free(std.testing.allocator);
+    };
+
+    try std.testing.expectEqualSlices(u8, stream[0..], rest);
+    try std.testing.expectEqual(expected, actual);
+}
+
+test "ArgumentDefinition.decode Register8Bit Offset" {
+    const stream = [_]u8{ 0xFF, 0xFF, 0xFF };
+    const opcode = 0b1111_000_1;
+
+    const expected = Argument{
+        .arg = .{
+            .Reserved = "B",
+        },
+        .indirect = false,
+        .incDec = null,
+        .offset = null,
+    };
+
+    const definition = ArgumentDefinition{
+        .Register8Bit = .{
+            .Offset = 1,
+        },
+    };
+
+    const actual, const rest = (try definition.decode(std.testing.allocator, &stream, opcode)).?;
+    defer if (actual) |a| {
+        a.free(std.testing.allocator);
+    };
+
+    try std.testing.expectEqualSlices(u8, stream[0..], rest);
+    try std.testing.expectEqualDeep(expected, actual);
+}
+
+test "ArgumentDefinition.decode Register8Bit Register" {
+    const stream = [_]u8{ 0xFF, 0xFF, 0xFF };
+    const opcode = 0x00;
+
+    const expected = Argument{
+        .arg = .{
+            .Reserved = "B",
+        },
+        .indirect = false,
+        .incDec = null,
+        .offset = null,
+    };
+
+    const definition = ArgumentDefinition{
+        .Register8Bit = .{
+            .Register = Register8.B,
+        },
+    };
+
+    const actual, const rest = (try definition.decode(std.testing.allocator, &stream, opcode)).?;
+    defer if (actual) |a| {
+        a.free(std.testing.allocator);
+    };
+
+    try std.testing.expectEqualSlices(u8, stream[0..], rest);
+    try std.testing.expectEqualDeep(expected, actual);
+}
+
+test "ArgumentDefinition.decode Register16Bit Offset LikeLD" {
+    const stream = [_]u8{ 0xFF, 0xFF, 0xFF };
+    const opcode = 0b1111_11_11;
+
+    const expected = Argument{
+        .arg = .{
+            .Reserved = "SP",
+        },
+        .indirect = false,
+        .incDec = null,
+        .offset = null,
+    };
+
+    const definition = ArgumentDefinition{
+        .Register16Bit = .{
+            .Offset = .{
+                .LikeLD = 2,
+            },
+        },
+    };
+
+    const actual, const rest = (try definition.decode(std.testing.allocator, &stream, opcode)).?;
+    defer if (actual) |a| {
+        a.free(std.testing.allocator);
+    };
+
+    try std.testing.expectEqualSlices(u8, stream[0..], rest);
+    try std.testing.expectEqualDeep(expected, actual);
+}
+
+test "ArgumentDefinition.decode Register16Bit Offset LikePUSH" {
+    const stream = [_]u8{ 0xFF, 0xFF, 0xFF };
+    const opcode = 0b1111_11_11;
+
+    const expected = Argument{
+        .arg = .{
+            .Reserved = "AF",
+        },
+        .indirect = false,
+        .incDec = null,
+        .offset = null,
+    };
+
+    const definition = ArgumentDefinition{
+        .Register16Bit = .{
+            .Offset = .{
+                .LikePUSH = 2,
+            },
+        },
+    };
+
+    const actual, const rest = (try definition.decode(std.testing.allocator, &stream, opcode)).?;
+    defer if (actual) |a| {
+        a.free(std.testing.allocator);
+    };
+
+    try std.testing.expectEqualSlices(u8, stream[0..], rest);
+    try std.testing.expectEqualDeep(expected, actual);
+}
+
+test "ArgumentDefinition.decode Register16Bit Register" {
+    const stream = [_]u8{ 0xFF, 0xFF, 0xFF };
+    const opcode = 0x00;
+
+    const expected = Argument{
+        .arg = .{
+            .Reserved = "BC",
+        },
+        .indirect = false,
+        .incDec = null,
+        .offset = null,
+    };
+
+    const definition = ArgumentDefinition{
+        .Register16Bit = .{
+            .Register = Register16.BC,
+        },
+    };
+
+    const actual, const rest = (try definition.decode(std.testing.allocator, &stream, opcode)).?;
+    defer if (actual) |a| {
+        a.free(std.testing.allocator);
+    };
+
+    try std.testing.expectEqualSlices(u8, stream[0..], rest);
+    try std.testing.expectEqualDeep(expected, actual);
+}
+
+test "ArgumentDefinition.decode Register16BitWithOffset" {
+    const stream = [_]u8{ 3, 0xFF, 0xFF };
+    const opcode = 0x00;
+
+    const expected = Argument{
+        .arg = .{
+            .Reserved = "BC",
+        },
+        .indirect = false,
+        .incDec = null,
+        .offset = 3,
+    };
+
+    const definition = ArgumentDefinition{
+        .Register16BitWithOffset = Register16.BC,
+    };
+
+    const actual, const rest = (try definition.decode(std.testing.allocator, &stream, opcode)).?;
+    defer if (actual) |a| {
+        a.free(std.testing.allocator);
+    };
+
+    try std.testing.expectEqualSlices(u8, stream[1..], rest);
+    try std.testing.expectEqualDeep(expected, actual);
+}
+
+test "ArgumentDefinition.decode Condition" {
+    const stream = [_]u8{ 0xFF, 0xFF, 0xFF };
+    const opcode = 0b000_00_000;
+
+    const expected = Argument{
+        .arg = .{
+            .Reserved = "NZ",
+        },
+        .indirect = false,
+        .incDec = null,
+        .offset = null,
+    };
+
+    const definition = ArgumentDefinition{
+        .Condition = {},
+    };
+
+    const actual, const rest = (try definition.decode(std.testing.allocator, &stream, opcode)).?;
+    defer if (actual) |a| {
+        a.free(std.testing.allocator);
+    };
+
+    try std.testing.expectEqualSlices(u8, stream[0..], rest);
+    try std.testing.expectEqualDeep(expected, actual);
+}
+
+test "ArgumentDefinition.decode IndirectImmediate8Bit" {
+    const stream = [_]u8{ 0xAB, 0xFF, 0xFF };
+    const opcode = 0x00;
+
+    const expected = Argument{
+        .arg = .{
+            .Immediate = 0xAB,
+        },
+        .indirect = true,
+        .incDec = null,
+        .offset = null,
+    };
+
+    const definition = ArgumentDefinition{
+        .IndirectImmediate8Bit = {},
+    };
+
+    const actual, const rest = (try definition.decode(std.testing.allocator, &stream, opcode)).?;
+    defer if (actual) |a| {
+        a.free(std.testing.allocator);
+    };
+
+    try std.testing.expectEqualSlices(u8, stream[1..], rest);
+    try std.testing.expectEqualDeep(expected, actual);
+}
+
+test "ArgumentDefinition.decode IndirectRegister16Bit" {
+    const stream = [_]u8{ 0xFF, 0xFF, 0xFF };
+    const opcode = 0x00;
+
+    const expected = Argument{
+        .arg = .{ .Reserved = "DE" },
+        .indirect = true,
+        .incDec = null,
+        .offset = null,
+    };
+
+    const definition = ArgumentDefinition{
+        .IndirectRegister16Bit = Register16.DE,
+    };
+
+    const actual, const rest = (try definition.decode(std.testing.allocator, &stream, opcode)).?;
+    defer if (actual) |a| {
+        a.free(std.testing.allocator);
+    };
+
+    try std.testing.expectEqualSlices(u8, stream[0..], rest);
+    try std.testing.expectEqualDeep(expected, actual);
+}
+
+test "ArgumentDefinition.decode IndirectRegister16BitInc" {
+    const stream = [_]u8{ 0xFF, 0xFF, 0xFF };
+    const opcode = 0x00;
+
+    const expected = Argument{
+        .arg = .{ .Reserved = "DE" },
+        .indirect = true,
+        .incDec = true,
+        .offset = null,
+    };
+
+    const definition = ArgumentDefinition{
+        .IndirectRegister16BitInc = Register16.DE,
+    };
+
+    const actual, const rest = (try definition.decode(std.testing.allocator, &stream, opcode)).?;
+    defer if (actual) |a| {
+        a.free(std.testing.allocator);
+    };
+
+    try std.testing.expectEqualSlices(u8, stream[0..], rest);
+    try std.testing.expectEqualDeep(expected, actual);
+}
+
+test "ArgumentDefinition.decode IndirectRegister16BitDec" {
+    const stream = [_]u8{ 0xFF, 0xFF, 0xFF };
+    const opcode = 0x00;
+
+    const expected = Argument{
+        .arg = .{ .Reserved = "DE" },
+        .indirect = true,
+        .incDec = false,
+        .offset = null,
+    };
+
+    const definition = ArgumentDefinition{
+        .IndirectRegister16BitDec = Register16.DE,
+    };
+
+    const actual, const rest = (try definition.decode(std.testing.allocator, &stream, opcode)).?;
+    defer if (actual) |a| {
+        a.free(std.testing.allocator);
+    };
+
+    try std.testing.expectEqualSlices(u8, stream[0..], rest);
+    try std.testing.expectEqualDeep(expected, actual);
 }
 
 const OpcodeDefinition = struct {
@@ -2736,6 +3604,18 @@ const Opcode = struct {
     arg1: ?Argument,
     arg2: ?Argument,
 
+    fn format(self: *const Opcode, writer: anytype) !void {
+        try writer.writeAll(@tagName(self.instr));
+        if (self.arg1) |arg| {
+            try writer.writeByte(' ');
+            try arg.format(writer);
+        }
+        if (self.arg2) |arg| {
+            try writer.writeAll(", ");
+            try arg.format(writer);
+        }
+    }
+
     fn fromToken(token: Token, allocator: std.mem.Allocator) !Opcode {
         const token_capital = try toUpper(token.source, allocator);
         defer allocator.free(token_capital);
@@ -2765,7 +3645,7 @@ const Opcode = struct {
         return AssemblerError.InvalidArgumentCount;
     }
 
-    fn free(self: *Opcode, allocator: std.mem.Allocator) void {
+    fn free(self: *const Opcode, allocator: std.mem.Allocator) void {
         if (self.arg1 != null) {
             self.arg1.?.free(allocator);
         }
@@ -2859,6 +3739,76 @@ const Opcode = struct {
 
         logger.err("Line {d}: Invalid instruction/argument combination.", .{self.line});
         return latest_error orelse AssemblerError.InvalidInstructionArguments;
+    }
+
+    fn decode(allocator: std.mem.Allocator, stream: []const u8) !struct { Opcode, []const u8 } {
+        const opcode, const with_prefix = if (stream[0] == 0xCB)
+            .{ stream[1], true }
+        else
+            .{ stream[0], false };
+
+        for (defined_opcodes) |opcode_definition| {
+            var mask: u8 = 0xFF;
+            if (opcode_definition.arg1) |arg| {
+                if (arg.get_mask()) |m| {
+                    mask = m;
+                }
+            }
+            if (opcode_definition.arg2) |arg| {
+                if (arg.get_mask()) |m| {
+                    mask = m;
+                }
+            }
+
+            if ((opcode_definition.prefix != null) != with_prefix) {
+                continue;
+            }
+            if (with_prefix and opcode_definition.prefix.? != stream[0]) {
+                continue;
+            }
+
+            const expected_opcode = opcode_definition.base_opcode & mask;
+            if (opcode & mask != expected_opcode) {
+                continue;
+            }
+
+            var arg1: ?Argument = null;
+            var currentStream = stream[(if (with_prefix) 2 else 1)..];
+            if (opcode_definition.arg1) |arg| {
+                arg1, currentStream = if (try arg.decode(allocator, currentStream, stream[0])) |res|
+                    res
+                else
+                    continue;
+            }
+            var arg2: ?Argument = null;
+            if (opcode_definition.arg2) |arg| {
+                arg2, currentStream = if (try arg.decode(allocator, currentStream, stream[0])) |res|
+                    res
+                else {
+                    if (arg1) |a| {
+                        a.free(allocator);
+                    }
+                    continue;
+                };
+            }
+
+            return .{
+                .{
+                    .line = 0,
+                    .instr = opcode_definition.instr,
+                    .arg1 = arg1,
+                    .arg2 = arg2,
+                },
+                currentStream,
+            };
+        }
+
+        if (with_prefix) {
+            logger.err("invalid instruction for decoding: 0xCB 0x{X}", .{opcode});
+        } else {
+            logger.err("invalid instruction for decoding: 0x{X}", .{opcode});
+        }
+        return AssemblerError.InvalidInstruction;
     }
 };
 
@@ -3350,6 +4300,75 @@ test "encode failure" {
     try std.testing.expectError(AssemblerError.InvalidInstructionArguments, actual);
 }
 
+test "formatOpcode 1" {
+    const opcode = Opcode{
+        .line = 0,
+        .instr = .LD,
+        .arg1 = .{
+            .arg = .{
+                .Immediate = 123,
+            },
+            .indirect = false,
+            .incDec = null,
+            .offset = null,
+        },
+        .arg2 = .{
+            .arg = .{
+                .Immediate = 123,
+            },
+            .indirect = false,
+            .incDec = null,
+            .offset = null,
+        },
+    };
+
+    var buffer: [64]u8 = undefined;
+    var source: std.io.StreamSource = .{ .buffer = std.io.fixedBufferStream(&buffer) };
+    const writer = source.writer();
+
+    try opcode.format(writer);
+    try std.testing.expectEqualStrings("LD 123, 123", source.buffer.getWritten());
+}
+
+test "formatOpcode 2" {
+    const opcode = Opcode{
+        .line = 0,
+        .instr = .LD,
+        .arg1 = .{
+            .arg = .{
+                .Immediate = 123,
+            },
+            .indirect = false,
+            .incDec = null,
+            .offset = null,
+        },
+        .arg2 = null,
+    };
+
+    var buffer: [64]u8 = undefined;
+    var source: std.io.StreamSource = .{ .buffer = std.io.fixedBufferStream(&buffer) };
+    const writer = source.writer();
+
+    try opcode.format(writer);
+    try std.testing.expectEqualStrings("LD 123", source.buffer.getWritten());
+}
+
+test "formatOpcode 3" {
+    const opcode = Opcode{
+        .line = 0,
+        .instr = .LD,
+        .arg1 = null,
+        .arg2 = null,
+    };
+
+    var buffer: [64]u8 = undefined;
+    var source: std.io.StreamSource = .{ .buffer = std.io.fixedBufferStream(&buffer) };
+    const writer = source.writer();
+
+    try opcode.format(writer);
+    try std.testing.expectEqualStrings("LD", source.buffer.getWritten());
+}
+
 pub fn parser(input: []const Token, allocator: std.mem.Allocator) !struct { std.StringHashMap(usize), []Opcode } {
     var opcodes = std.ArrayList(Opcode).init(allocator);
     defer opcodes.deinit();
@@ -3667,6 +4686,12 @@ pub fn translate(code: []const u8, allocator: std.mem.Allocator) ![]u8 {
     return assembler(opcodes, &labelMap, allocator);
 }
 
+pub fn formatNext(stream: []const u8, writer: anytype, allocator: std.mem.Allocator) !void {
+    const opcode, _ = try Opcode.decode(allocator, stream);
+    defer opcode.free(allocator);
+    try opcode.format(writer);
+}
+
 test "translate" {
     const input =
         \\ foo:           ; 1
@@ -3959,4 +4984,307 @@ test "translate" {
     defer std.testing.allocator.free(actual);
 
     try std.testing.expectEqualSlices(u8, &expected, actual);
+}
+
+test "disassemble" {
+    const stream = [_]u8{
+        0b01_000_001, // LD B, C
+        0b00_000_110, 0x00, // LD B, 0
+        0b00_000_110, 0xFF, // LD B, 255
+        0b01_000_110, // LD B, (HL)
+        0b01_110_000, // LD (HL), B
+        0b00110110, 0x00, // LD (HL), 0
+        0b00110110, 0xFF, // LD (HL), 255
+        0b0000_1010, // LD A, (BC)
+        0b0001_1010, // LD A, (DE)
+        0b0000_0010, // LD (BC), A
+        0b0001_0010, // LD (DE), A
+        0b1111_1010, 0x00, 0x00, // LD A, (0)
+        0b1111_1010, 0xFF, 0xFF, // LD A, (65535)
+        0b1111_1010, 0x00, 0x00, // LD A, (foo)
+        0b1110_1010, 0x00, 0x00, // LD (0), A
+        0b1110_1010, 0xFF, 0xFF, // LD (65535), A
+        0b1110_1010, 0x00, 0x00, // LD (foo), A
+        0b1111_0010, // LDH A, (C)
+        0b1110_0010, // LDH (C), A
+        0b1111_0000, 0x00, // LDH A, (0)
+        0b1111_0000, 0xFF, // LDH A, (255)
+        0b1110_0000, 0x00, // LDH (0), A
+        0b1110_0000, 0xFF, // LDH (255), A
+        0b001_11_010, // LD A, (HL-)
+        0b001_10_010, // LD (HL-), A
+        0b001_01_010, // LD A, (HL+)
+        0b001_00_010, // LD (HL+), A
+        0b00_10_0001, 0x00, 0x00, // LD HL, 0
+        0b00_10_0001, 0xFF, 0xFF, // LD HL, 65535
+        0b00_10_0001, 0x00, 0x00, // LD HL, foo
+        0b0000_1000, 0x00, 0x00, // LD (0), SP
+        0b0000_1000, 0xFF, 0xFF, // LD (65535), SP
+        0b0000_1000, 0x00, 0x00, // LD (foo), SP
+        0b11111001, // LD SP, HL
+        0b11_10_0101, // PUSH HL
+        0b11_10_0001, // POP HL
+        0b11111000, 0x7F, // LD HL, SP+127
+        0b11111000, 0x00, // LD HL, SP+0
+        0b11111000, 0x80, // LD HL, SP-128
+        0b10000_000, // ADD B
+        0b10000_110, // ADD (HL)
+        0b11000_110, 0x00, // ADD 0
+        0b11000_110, 0xFF, // ADD 255
+        0b10001_000, // ADC B
+        0b10001_110, // ADC (HL)
+        0b11001_110, 0x00, // ADC 0
+        0b11001_110, 0xFF, // ADC 255
+        0b10010_000, // SUB B
+        0b10010_110, // SUB (HL)
+        0b11010_110, 0x00, // SUB 0
+        0b11010_110, 0xFF, // SUB 255
+        0b10011_000, // SBC B
+        0b10011_110, // SBC (HL)
+        0b11011_110, 0x00, // SBC 0
+        0b11011_110, 0xFF, // SBC 255
+        0b10111_000, // CP B
+        0b10011_110, // CP (HL)
+        0b11111_110, 0x00, // CP 0
+        0b11111_110, 0xFF, // CP 255
+        0b00_000_100, // INC B
+        0b00_110_100, // INC (HL)
+        0b00_000_101, // DEC B
+        0b00_110_101, // DEC (HL)
+        0b10100_000, // AND B
+        0b10100_110, // AND (HL)
+        0b11100_110, 0x00, // AND 0
+        0b11100_110, 0xFF, // AND 255
+        0b10110_000, // OR B
+        0b10110_110, // OR (HL)
+        0b11110_110, 0x00, // OR 0
+        0b11110_110, 0xFF, // OR 255
+        0b10101_000, // XOR B
+        0b10101_110, // XOR (HL)
+        0b11101_110, 0x00, // XOR 0
+        0b11101_110, 0xFF, // XOR 255
+        0b00111111, // CCF
+        0b00110111, // SCF
+        0b00100111, // DAA
+        0b00101111, // CPL
+        0b00_10_0011, // INC HL
+        0b00_10_1011, // DEC HL
+        0b00_00_1001, // ADD HL, BC
+        0b11101000, 0x7F, // ADD SP, 127
+        0b11101000, 0x00, // ADD SP, 0
+        0b11101000, 0x80, // ADD SP, -128
+        0b00000111, // RLCA
+        0b00001111, // RRCA
+        0b00010111, // RLA
+        0b00011111, // RRA
+        0xCB, 0b00000000, // RLC B
+        0xCB, 0b00000110, // RLC (HL)
+        0xCB, 0b00001000, // RRC B
+        0xCB, 0b00001110, // RRC (HL)
+        0xCB, 0b00010000, // RL B
+        0xCB, 0b00010110, // RL (HL)
+        0xCB, 0b00011000, // RR B
+        0xCB, 0b00011110, // RR (HL)
+        0xCB, 0b00100000, // SLA B
+        0xCB, 0b00100110, // SLA (HL)
+        0xCB, 0b00101000, // SRA B
+        0xCB, 0b00101110, // SRA (HL)
+        0xCB, 0b00110000, // SWAP B
+        0xCB, 0b00110110, // SWAP (HL)
+        0xCB, 0b00111000, // SRL B
+        0xCB, 0b00111110, // SRL (HL)
+        0xCB, 0b01000000, // BIT 0, B
+        0xCB, 0b01000110, // BIT 0, (HL)
+        0xCB, 0b10000000, // RES 0, B
+        0xCB, 0b10000110, // RES 0, (HL)
+        0xCB, 0b11000000, // SET 0, B
+        0xCB, 0b11000110, // SET 0, (HL)
+        0b11000011, 0x00, 0x00, // JP 0
+        0b11000011, 0xFF, 0xFF, // JP 65535
+        0b11101001, // JP HL
+        0b11101001, // JP (HL)
+        0b110_00_010, 0x00, 0x00, // JP NZ, 0
+        0b110_01_010, 0xFF, 0xFF, // JP Z, 65535
+        0b110_10_010, 0x00, 0x00, // JP NC, 0
+        0b110_11_010, 0xFF, 0xFF, // JP C, 65535
+        0b00011000, 0x80, // JR -128
+        0b00011000, 0x00, // JR 0
+        0b00011000, 0x7F, // JR 127
+        0b001_00_000, 0x80, // JR NZ, -128
+        0b001_01_000, 0x00, // JR Z, 0
+        0b001_10_000, 0x00, // JR NC, 0
+        0b001_11_000, 0x7F, // JR C, 127
+        0b11001101, 0x00, 0x00, // CALL 0
+        0b11001101, 0xFF, 0xFF, // CALL 65535
+        0b110_00_100, 0x00, 0x00, // CALL NZ, 0
+        0b110_01_100, 0xFF, 0xFF, // CALL Z, 65535
+        0b110_10_100, 0x00, 0x00, // CALL NC, 0
+        0b110_11_100, 0xFF, 0xFF, // CALL C, 65535
+        0b11001001, // RET
+        0b110_00_000, // RET NZ
+        0b110_01_000, // RET Z
+        0b110_10_000, // RET NC
+        0b110_11_000, // RET C
+        0b11011001, // RETI
+        0b11_000_111, // RST 0
+        0b11_111_111, // RST 7
+    };
+
+    const expected =
+        \\LD B, C
+        \\LD B, 0
+        \\LD B, 255
+        \\LD B, (HL)
+        \\LD (HL), B
+        \\LD (HL), 0
+        \\LD (HL), 255
+        \\LD A, (BC)
+        \\LD A, (DE)
+        \\LD (BC), A
+        \\LD (DE), A
+        \\LD A, (0)
+        \\LD A, (65535)
+        \\LD A, (0)
+        \\LD (0), A
+        \\LD (65535), A
+        \\LD (0), A
+        \\LDH A, (C)
+        \\LDH (C), A
+        \\LDH A, (0)
+        \\LDH A, (255)
+        \\LDH (0), A
+        \\LDH (255), A
+        \\LD A, (HL-)
+        \\LD (HL-), A
+        \\LD A, (HL+)
+        \\LD (HL+), A
+        \\LD HL, 0
+        \\LD HL, 65535
+        \\LD HL, 0
+        \\LD (0), SP
+        \\LD (65535), SP
+        \\LD (0), SP
+        \\LD SP, HL
+        \\PUSH HL
+        \\POP HL
+        \\LD HL, SP+127
+        \\LD HL, SP+0
+        \\LD HL, SP-128
+        \\ADD B
+        \\ADD (HL)
+        \\ADD 0
+        \\ADD 255
+        \\ADC B
+        \\ADC (HL)
+        \\ADC 0
+        \\ADC 255
+        \\SUB B
+        \\SUB (HL)
+        \\SUB 0
+        \\SUB 255
+        \\SBC B
+        \\SBC (HL)
+        \\SBC 0
+        \\SBC 255
+        \\CP B
+        \\SBC (HL)
+        \\CP 0
+        \\CP 255
+        \\INC B
+        \\INC (HL)
+        \\DEC B
+        \\DEC (HL)
+        \\AND B
+        \\AND (HL)
+        \\AND 0
+        \\AND 255
+        \\OR B
+        \\OR (HL)
+        \\OR 0
+        \\OR 255
+        \\XOR B
+        \\XOR (HL)
+        \\XOR 0
+        \\XOR 255
+        \\CCF
+        \\SCF
+        \\DAA
+        \\CPL
+        \\INC HL
+        \\DEC HL
+        \\ADD HL, BC
+        \\ADD SP, 127
+        \\ADD SP, 0
+        \\ADD SP, -128
+        \\RLCA
+        \\RRCA
+        \\RLA
+        \\RRA
+        \\RLC E
+        \\RLC E
+        \\RRC E
+        \\RRC E
+        \\RL E
+        \\RL E
+        \\RR E
+        \\RR E
+        \\SLA E
+        \\SLA E
+        \\SRA E
+        \\SRA E
+        \\SWAP E
+        \\SWAP E
+        \\SRL E
+        \\SRL E
+        \\BIT 1, E
+        \\BIT 1, E
+        \\RES 1, E
+        \\RES 1, E
+        \\SET 1, E
+        \\SET 1, E
+        \\JP 0
+        \\JP 65535
+        \\JP HL
+        \\JP HL
+        \\JP NZ, 0
+        \\JP Z, 65535
+        \\JP NC, 0
+        \\JP C, 65535
+        \\JR -128
+        \\JR 0
+        \\JR 127
+        \\JR NZ, -128
+        \\JR Z, 0
+        \\JR NC, 0
+        \\JR C, 127
+        \\CALL 0
+        \\CALL 65535
+        \\CALL NZ, 0
+        \\CALL Z, 65535
+        \\CALL NC, 0
+        \\CALL C, 65535
+        \\RET
+        \\RET NZ
+        \\RET Z
+        \\RET NC
+        \\RET C
+        \\RETI
+        \\RST 0
+        \\RST 7
+        \\
+    ;
+
+    var buffer: [0x1000]u8 = undefined;
+    var source = std.io.StreamSource{ .buffer = std.io.fixedBufferStream(&buffer) };
+    const writer = source.writer();
+
+    var slice: []const u8 = &stream;
+    while (slice.len > 0) {
+        const opcode, slice = try Opcode.decode(std.testing.allocator, slice);
+        defer opcode.free(std.testing.allocator);
+        try opcode.format(writer);
+        try writer.writeByte('\n');
+    }
+
+    try std.testing.expectEqualStrings(expected, source.buffer.getWritten());
 }
