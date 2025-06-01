@@ -108,7 +108,6 @@ const RunnerLogCapturedOutput = struct {
     displayed: bool,
 };
 
-// TODO: color
 pub fn main() !void {
     if (builtin.test_functions.len == 0) {
         return;
@@ -201,7 +200,6 @@ pub fn main() !void {
                 .name = t.name,
                 .err = try std.fmt.allocPrint(allocator, "{}", .{err}),
             });
-            continue;
         };
 
         if (errorsHappened) {
