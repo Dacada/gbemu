@@ -238,7 +238,7 @@ test "validateLabel correct" {
     try validateLabel("_01", 0);
 }
 
-const Instruction = enum { NOP, LD, LDH, PUSH, POP, ADD, ADC, SUB, SBC, CP, INC, DEC, AND, OR, XOR, CCF, SCF, DAA, CPL, RLCA, RRCA, RLA, RRA, RLC, RRC, RL, RR, SLA, SRA, SWAP, SRL, BIT, RES, SET, JP, JR, CALL, RET, RETI, RST };
+const Instruction = enum { LD, LDH, PUSH, POP, ADD, ADC, SUB, SBC, CP, INC, DEC, AND, OR, XOR, CCF, SCF, DAA, CPL, RLCA, RRCA, RLA, RRA, RLC, RRC, RL, RR, SLA, SRA, SWAP, SRL, BIT, RES, SET, JP, JR, CALL, RET, RETI, RST, HALT, STOP, DI, EI, NOP };
 const Register8 = enum { A, B, C, D, E, F, H, L };
 const Register16 = enum { AF, BC, DE, HL, SP };
 const Condition = enum { NZ, Z, NC, C };
@@ -3596,6 +3596,36 @@ const defined_opcodes =
         .arg2 = null,
         .base_opcode = 0b11_000_111,
     },
+    OpcodeDefinition{
+        .instr = Instruction.HALT,
+        .arg1 = null,
+        .arg2 = null,
+        .base_opcode = 0x76,
+    },
+    OpcodeDefinition{
+        .instr = Instruction.STOP,
+        .arg1 = null,
+        .arg2 = null,
+        .base_opcode = 0x10,
+    },
+    OpcodeDefinition{
+        .instr = Instruction.DI,
+        .arg1 = null,
+        .arg2 = null,
+        .base_opcode = 0xF3,
+    },
+    OpcodeDefinition{
+        .instr = Instruction.EI,
+        .arg1 = null,
+        .arg2 = null,
+        .base_opcode = 0xFB,
+    },
+    OpcodeDefinition{
+        .instr = Instruction.NOP,
+        .arg1 = null,
+        .arg2 = null,
+        .base_opcode = 0x00,
+    },
 };
 
 const Opcode = struct {
@@ -4835,6 +4865,11 @@ test "translate" {
         \\ RETI           ; 139
         \\ RST 0          ; 140
         \\ RST 7          ; 141
+        \\ HALT           ; 142
+        \\ STOP           ; 143
+        \\ DI             ; 144
+        \\ EI             ; 145
+        \\ NOP            ; 146
     ;
 
     const expected = [_]u8{
@@ -4978,6 +5013,11 @@ test "translate" {
         0b11011001, // RETI
         0b11_000_111, // RST 0
         0b11_111_111, // RST 7
+        0x76, // HALT
+        0x10, // STOP
+        0xF3, // DI
+        0xFB, // EI
+        0x00, // NOP
     };
 
     const actual = try translate(input, std.testing.allocator);
@@ -5128,6 +5168,11 @@ test "disassemble" {
         0b11011001, // RETI
         0b11_000_111, // RST 0
         0b11_111_111, // RST 7
+        0x76, // HALT
+        0x10, // STOP
+        0xF3, // DI
+        0xFB, // EI
+        0x00, // NOP
     };
 
     const expected =
@@ -5271,6 +5316,11 @@ test "disassemble" {
         \\RETI
         \\RST 0
         \\RST 7
+        \\HALT
+        \\STOP
+        \\DI
+        \\EI
+        \\NOP
         \\
     ;
 
