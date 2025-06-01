@@ -263,10 +263,16 @@ const Argument = struct {
         if (self.indirect) {
             try writer.writeByte('(');
         }
-        try switch (self.arg) {
-            .Immediate => |n| writer.print("{d}", .{n}),
-            .Reserved, .Label => |s| writer.writeAll(s),
-        };
+        switch (self.arg) {
+            .Immediate => |n| {
+                if (n >= 0) {
+                    try writer.print("0x{X}", .{n});
+                } else {
+                    try writer.print("{d}", .{n});
+                }
+            },
+            .Reserved, .Label => |s| try writer.writeAll(s),
+        }
         if (self.incDec) |incDec| {
             if (incDec) {
                 try writer.writeByte('+');
@@ -740,7 +746,7 @@ test "parseImmediate 7" {
 test "formatArgument 1" {
     const arg = Argument{
         .arg = .{
-            .Immediate = 1234,
+            .Immediate = 0x1234,
         },
         .indirect = false,
         .incDec = null,
@@ -752,13 +758,13 @@ test "formatArgument 1" {
     const writer = source.writer();
 
     try arg.format(writer);
-    try std.testing.expectEqualStrings("1234", source.buffer.getWritten());
+    try std.testing.expectEqualStrings("0x1234", source.buffer.getWritten());
 }
 
 test "formatArgument 2" {
     const arg = Argument{
         .arg = .{
-            .Immediate = 1234,
+            .Immediate = 0x1234,
         },
         .indirect = true,
         .incDec = null,
@@ -770,7 +776,7 @@ test "formatArgument 2" {
     const writer = source.writer();
 
     try arg.format(writer);
-    try std.testing.expectEqualStrings("(1234)", source.buffer.getWritten());
+    try std.testing.expectEqualStrings("(0x1234)", source.buffer.getWritten());
 }
 
 test "formatArgument 3" {
@@ -4336,7 +4342,7 @@ test "formatOpcode 1" {
         .instr = .LD,
         .arg1 = .{
             .arg = .{
-                .Immediate = 123,
+                .Immediate = 0x123,
             },
             .indirect = false,
             .incDec = null,
@@ -4344,7 +4350,7 @@ test "formatOpcode 1" {
         },
         .arg2 = .{
             .arg = .{
-                .Immediate = 123,
+                .Immediate = 0x123,
             },
             .indirect = false,
             .incDec = null,
@@ -4357,7 +4363,7 @@ test "formatOpcode 1" {
     const writer = source.writer();
 
     try opcode.format(writer);
-    try std.testing.expectEqualStrings("LD 123, 123", source.buffer.getWritten());
+    try std.testing.expectEqualStrings("LD 0x123, 0x123", source.buffer.getWritten());
 }
 
 test "formatOpcode 2" {
@@ -4366,7 +4372,7 @@ test "formatOpcode 2" {
         .instr = .LD,
         .arg1 = .{
             .arg = .{
-                .Immediate = 123,
+                .Immediate = 0x123,
             },
             .indirect = false,
             .incDec = null,
@@ -4380,7 +4386,7 @@ test "formatOpcode 2" {
     const writer = source.writer();
 
     try opcode.format(writer);
-    try std.testing.expectEqualStrings("LD 123", source.buffer.getWritten());
+    try std.testing.expectEqualStrings("LD 0x123", source.buffer.getWritten());
 }
 
 test "formatOpcode 3" {
@@ -5177,38 +5183,38 @@ test "disassemble" {
 
     const expected =
         \\LD B, C
-        \\LD B, 0
-        \\LD B, 255
+        \\LD B, 0x0
+        \\LD B, 0xFF
         \\LD B, (HL)
         \\LD (HL), B
-        \\LD (HL), 0
-        \\LD (HL), 255
+        \\LD (HL), 0x0
+        \\LD (HL), 0xFF
         \\LD A, (BC)
         \\LD A, (DE)
         \\LD (BC), A
         \\LD (DE), A
-        \\LD A, (0)
-        \\LD A, (65535)
-        \\LD A, (0)
-        \\LD (0), A
-        \\LD (65535), A
-        \\LD (0), A
+        \\LD A, (0x0)
+        \\LD A, (0xFFFF)
+        \\LD A, (0x0)
+        \\LD (0x0), A
+        \\LD (0xFFFF), A
+        \\LD (0x0), A
         \\LDH A, (C)
         \\LDH (C), A
-        \\LDH A, (0)
-        \\LDH A, (255)
-        \\LDH (0), A
-        \\LDH (255), A
+        \\LDH A, (0x0)
+        \\LDH A, (0xFF)
+        \\LDH (0x0), A
+        \\LDH (0xFF), A
         \\LD A, (HL-)
         \\LD (HL-), A
         \\LD A, (HL+)
         \\LD (HL+), A
-        \\LD HL, 0
-        \\LD HL, 65535
-        \\LD HL, 0
-        \\LD (0), SP
-        \\LD (65535), SP
-        \\LD (0), SP
+        \\LD HL, 0x0
+        \\LD HL, 0xFFFF
+        \\LD HL, 0x0
+        \\LD (0x0), SP
+        \\LD (0xFFFF), SP
+        \\LD (0x0), SP
         \\LD SP, HL
         \\PUSH HL
         \\POP HL
@@ -5217,40 +5223,40 @@ test "disassemble" {
         \\LD HL, SP-128
         \\ADD B
         \\ADD (HL)
-        \\ADD 0
-        \\ADD 255
+        \\ADD 0x0
+        \\ADD 0xFF
         \\ADC B
         \\ADC (HL)
-        \\ADC 0
-        \\ADC 255
+        \\ADC 0x0
+        \\ADC 0xFF
         \\SUB B
         \\SUB (HL)
-        \\SUB 0
-        \\SUB 255
+        \\SUB 0x0
+        \\SUB 0xFF
         \\SBC B
         \\SBC (HL)
-        \\SBC 0
-        \\SBC 255
+        \\SBC 0x0
+        \\SBC 0xFF
         \\CP B
         \\SBC (HL)
-        \\CP 0
-        \\CP 255
+        \\CP 0x0
+        \\CP 0xFF
         \\INC B
         \\INC (HL)
         \\DEC B
         \\DEC (HL)
         \\AND B
         \\AND (HL)
-        \\AND 0
-        \\AND 255
+        \\AND 0x0
+        \\AND 0xFF
         \\OR B
         \\OR (HL)
-        \\OR 0
-        \\OR 255
+        \\OR 0x0
+        \\OR 0xFF
         \\XOR B
         \\XOR (HL)
-        \\XOR 0
-        \\XOR 255
+        \\XOR 0x0
+        \\XOR 0xFF
         \\CCF
         \\SCF
         \\DAA
@@ -5258,8 +5264,8 @@ test "disassemble" {
         \\INC HL
         \\DEC HL
         \\ADD HL, BC
-        \\ADD SP, 127
-        \\ADD SP, 0
+        \\ADD SP, 0x7F
+        \\ADD SP, 0x0
         \\ADD SP, -128
         \\RLCA
         \\RRCA
@@ -5281,41 +5287,41 @@ test "disassemble" {
         \\SWAP E
         \\SRL E
         \\SRL E
-        \\BIT 1, E
-        \\BIT 1, E
-        \\RES 1, E
-        \\RES 1, E
-        \\SET 1, E
-        \\SET 1, E
-        \\JP 0
-        \\JP 65535
+        \\BIT 0x1, E
+        \\BIT 0x1, E
+        \\RES 0x1, E
+        \\RES 0x1, E
+        \\SET 0x1, E
+        \\SET 0x1, E
+        \\JP 0x0
+        \\JP 0xFFFF
         \\JP HL
         \\JP HL
-        \\JP NZ, 0
-        \\JP Z, 65535
-        \\JP NC, 0
-        \\JP C, 65535
+        \\JP NZ, 0x0
+        \\JP Z, 0xFFFF
+        \\JP NC, 0x0
+        \\JP C, 0xFFFF
         \\JR -128
-        \\JR 0
-        \\JR 127
+        \\JR 0x0
+        \\JR 0x7F
         \\JR NZ, -128
-        \\JR Z, 0
-        \\JR NC, 0
-        \\JR C, 127
-        \\CALL 0
-        \\CALL 65535
-        \\CALL NZ, 0
-        \\CALL Z, 65535
-        \\CALL NC, 0
-        \\CALL C, 65535
+        \\JR Z, 0x0
+        \\JR NC, 0x0
+        \\JR C, 0x7F
+        \\CALL 0x0
+        \\CALL 0xFFFF
+        \\CALL NZ, 0x0
+        \\CALL Z, 0xFFFF
+        \\CALL NC, 0x0
+        \\CALL C, 0xFFFF
         \\RET
         \\RET NZ
         \\RET Z
         \\RET NC
         \\RET C
         \\RETI
-        \\RST 0
-        \\RST 7
+        \\RST 0x0
+        \\RST 0x7
         \\HALT
         \\STOP
         \\DI
