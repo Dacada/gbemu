@@ -87,7 +87,7 @@ const CpuOp3Union = union {
 };
 
 pub const Cpu = struct {
-    mmu: mmu.Mmu,
+    mmu: *mmu.Mmu,
     reg: RegisterBank,
 
     next_tick: SelfRefCpuMethod,
@@ -111,11 +111,15 @@ pub const Cpu = struct {
         return self._breakpoint_happened;
     }
 
+    pub fn clearBreakpoint(self: *Cpu) void {
+        self._breakpoint_happened = false;
+    }
+
     pub fn instructionBoundary(self: *const Cpu) bool {
         return self.next_tick.func == Cpu.decodeOpcode;
     }
 
-    pub fn init(mmu_: mmu.Mmu, breakpoint_instruction: ?u8) Cpu {
+    pub fn init(mmu_: *mmu.Mmu, breakpoint_instruction: ?u8) Cpu {
         return Cpu{
             .mmu = mmu_,
             .reg = RegisterBank{
@@ -193,7 +197,8 @@ pub const Cpu = struct {
 
     // DECODE //
 
-    fn decodeOpcode(self: *Cpu) SelfRefCpuMethod {
+    pub fn decodeOpcode(self: *Cpu) SelfRefCpuMethod {
+        self._illegalInstructionExecuted = false;
         if (self.breakpoint_instruction != null and self.reg.IR == self.breakpoint_instruction) {
             self._breakpoint_happened = true;
         }

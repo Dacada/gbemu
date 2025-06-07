@@ -1,32 +1,23 @@
 const std = @import("std");
-const mmu = @import("mmu.zig");
-const cpu = @import("cpu.zig");
+const Mmu = @import("mmu.zig").Mmu;
+const Cpu = @import("cpu.zig").Cpu;
 const Rom = @import("rom.zig").Rom;
-
-pub const EmulatorError = error{
-    IllegalMemoryAccess,
-    IllegalInstruction,
-    Breakpoint,
-};
-
-pub const EmulatorParamters = struct {
-    breakpoint_instruction: ?u8,
-};
+const Debugger = @import("debugger.zig").Debugger;
 
 pub const Emulator = struct {
-    mmu: mmu.Mmu,
-    cpu: cpu.Cpu,
+    mmu: *Mmu,
+    cpu: *Cpu,
+    debugger: *Debugger,
 
-    pub fn init(params: EmulatorParamters) Emulator {
-        const m = mmu.Mmu.init();
-        const c = cpu.Cpu.init(m, params.breakpoint_instruction);
-        return Emulator{
-            .mmu = m,
-            .cpu = c,
+    pub fn init(mmu: *Mmu, cpu: *Cpu, debugger: *Debugger) Emulator {
+        return .{
+            .mmu = mmu,
+            .cpu = cpu,
+            .debugger = debugger,
         };
     }
 
-    pub fn initialize_components(self: *Emulator, header_checksum: u8) void {
+    fn initialize_components(self: *Emulator, header_checksum: u8) void {
         // DMG ONLY -- https://gbdev.io/pandocs/Power_Up_Sequence.html
         self.cpu.reg.AF.Hi = 0x01;
         self.cpu.reg.AF.Lo.Z = 1;
@@ -90,17 +81,18 @@ pub const Emulator = struct {
         self.mmu.mapRom(rom.rom);
     }
 
-    pub fn run(self: *Emulator) EmulatorError {
+    pub fn run(self: *Emulator, start_in_debugger: bool) !void {
+        if (start_in_debugger) {
+            const result = try self.debugger.enter();
+            if (result == .should_stop) {
+                return;
+            }
+        }
         while (true) {
             self.cpu.tick();
-            if (self.cpu.instructionBoundary() and self.cpu.breakpointHappened()) {
-                return EmulatorError.Breakpoint;
-            }
-            if (self.cpu.illegalInstructionExecuted()) {
-                return EmulatorError.IllegalInstruction;
-            }
-            if (self.mmu.illegalMemoryOperationHappened()) {
-                return EmulatorError.IllegalMemoryAccess;
+            const result = try self.debugger.enter_debugger_if_needed();
+            if (result == .should_stop) {
+                break;
             }
         }
     }

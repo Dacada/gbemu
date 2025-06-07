@@ -4723,7 +4723,10 @@ pub fn translate(code: []const u8, allocator: std.mem.Allocator) ![]u8 {
 }
 
 pub fn formatNext(stream: []const u8, writer: anytype, allocator: std.mem.Allocator) !void {
-    const opcode, _ = try Opcode.decode(allocator, stream);
+    const opcode, _ = Opcode.decode(allocator, stream) catch {
+        try writer.writeAll("<UNK>");
+        return;
+    };
     defer opcode.free(allocator);
     try opcode.format(writer);
 }

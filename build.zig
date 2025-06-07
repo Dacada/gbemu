@@ -30,6 +30,8 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    exe.linkLibC();
+    exe.linkSystemLibrary("readline");
     exe.root_module.addImport("lib", lib_module); // emulator functionality
     b.installArtifact(exe);
 

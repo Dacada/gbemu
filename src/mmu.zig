@@ -1,23 +1,25 @@
 const std = @import("std");
 const DelayedReference = @import("reference.zig").DelayedReference;
 
-// Every instance of Mmu is a view into this memory region.
-var STATIC_EMULATED_MEMORY: [0xFFFF + 1]u8 = undefined;
-
 const logger = std.log.scoped(.mmu);
 
+var STATIC_MEMORY: [0x10000 - 0x8000]u8 = undefined;
+const FF_ROM = [_]u8{0xFF} ** 0x8000;
+const ZERO_ROM = [_]u8{0x00} ** 0x8000;
+
 pub const Mmu = struct {
-    _memory: []u8,
+    rom: []const u8,
     _illegalMemoryOperationHappened: bool = false,
 
     pub fn init() Mmu {
         return Mmu{
-            ._memory = &STATIC_EMULATED_MEMORY,
+            .rom = &FF_ROM,
         };
     }
 
     pub fn zeroize(self: *Mmu) void {
-        @memset(self._memory, 0);
+        self.rom = &ZERO_ROM;
+        @memset(&STATIC_MEMORY, 0);
     }
 
     pub fn delayedReference(self: *Mmu, addr: u16) DelayedReference {
@@ -41,14 +43,19 @@ pub const Mmu = struct {
     }
 
     pub fn mapRom(self: *Mmu, program: []const u8) void {
-        for (program, 0..) |instr, idx| {
-            self._memory[idx] = instr;
-        }
+        self.rom = program;
     }
 
     pub fn dumpMemory(self: *const Mmu, buffer: []u8) void {
-        for (self._memory, 0..) |byte, idx| {
-            buffer[idx] = byte;
+        for (0..0x8000) |i| {
+            if (i < self.rom.len) {
+                buffer[i] = self.rom[i];
+            } else {
+                buffer[i] = 0x00;
+            }
+        }
+        for (0x8000..0x10000) |i| {
+            buffer[i] = STATIC_MEMORY[i - 0x8000];
         }
     }
 
@@ -58,7 +65,8 @@ pub const Mmu = struct {
             self._illegalMemoryOperationHappened = true;
             return;
         }
-        self._memory[addr] = val;
+
+        STATIC_MEMORY[addr - 0x8000] = val;
     }
 
     pub fn read(self: *Mmu, addr: u16) u8 {
@@ -67,16 +75,29 @@ pub const Mmu = struct {
             self._illegalMemoryOperationHappened = true;
             return 0;
         }
-        return self._memory[addr];
+
+        if (addr < 0x8000) {
+            if (addr < self.rom.len) {
+                return self.rom[addr];
+            } else {
+                return 0x00;
+            }
+        }
+
+        return STATIC_MEMORY[addr - 0x8000];
     }
 
     /// Write without side effects
-    pub fn setValue(self: *Mmu, addr: u16, val: u8) void {
-        self._memory[addr] = val;
+    pub fn setValue(_: *Mmu, addr: u16, val: u8) void {
+        STATIC_MEMORY[addr - 0x8000] = val;
     }
 
     pub fn illegalMemoryOperationHappened(self: *const Mmu) bool {
         return self._illegalMemoryOperationHappened;
+    }
+
+    pub fn clearIllegalOperation(self: *Mmu) void {
+        self._illegalMemoryOperationHappened = false;
     }
 };
 
@@ -137,4 +158,38 @@ test "mmu illegal read" {
     const res = mmu.read(addr);
     try std.testing.expectEqual(0, res);
     try std.testing.expect(mmu.illegalMemoryOperationHappened());
+}
+
+test "write and read it all" {
+    var expected = [_]u8{0x00} ** 0x10000;
+    var rom = [_]u8{0xAA} ** 0x8000;
+    for (0..0x8000) |i| {
+        const val: u8 = @intCast(i & 0xFF);
+        rom[i] = val;
+        expected[i] = val;
+    }
+    var mmu = Mmu.init();
+    mmu.zeroize();
+    mmu.mapRom(&rom);
+
+    for (0x8000..0xE000) |i| {
+        const val: u8 = @intCast(i & 0xFF);
+        mmu.write(@intCast(i), val);
+        expected[i] = val;
+    }
+    for (0xFE00..0xFEA0) |i| {
+        const val: u8 = @intCast(i & 0xFF);
+        mmu.write(@intCast(i), val);
+        expected[i] = val;
+    }
+    for (0xFF00..0x10000) |i| {
+        const val: u8 = @intCast(i & 0xFF);
+        mmu.write(@intCast(i), val);
+        expected[i] = val;
+    }
+
+    var actual: [0x10000]u8 = undefined;
+    mmu.dumpMemory(&actual);
+
+    try std.testing.expectEqualSlices(u8, &expected, &actual);
 }

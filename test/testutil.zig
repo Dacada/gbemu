@@ -204,8 +204,7 @@ fn makeMmu() !Mmu {
     return mmu;
 }
 
-fn makeCpu(breakpoint: ?u8) !Cpu {
-    const mmu = try makeMmu();
+fn makeCpu(breakpoint: ?u8, mmu: *Mmu) !Cpu {
     var cpu = Cpu.init(mmu, breakpoint);
     cpu.zeroize_regs();
     return cpu;
@@ -268,7 +267,8 @@ fn mapInitialState(cpu: *Cpu, initial_state: *TestCpuState, program: []const u8)
 }
 
 pub fn runTestCase(name: []const u8, program: []const u8, initial_state: *TestCpuState, ticks: []const *TestCpuState) !void {
-    var cpu = try makeCpu(null);
+    var mmu = try makeMmu();
+    var cpu = try makeCpu(null, &mmu);
 
     try mapInitialState(&cpu, initial_state, program);
 
@@ -288,7 +288,8 @@ pub fn runTestCase(name: []const u8, program: []const u8, initial_state: *TestCp
 }
 
 pub fn runProgram(program: []const u8) !Cpu {
-    var cpu = try makeCpu(0x40);
+    var mmu = try makeMmu();
+    var cpu = try makeCpu(0x40, &mmu);
 
     cpu.mmu.mapRom(program);
 
