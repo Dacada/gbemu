@@ -236,7 +236,7 @@ fn expectCpuState(cpu: *const Cpu, state: *TestCpuState, program: []const u8) !v
     }
 
     var actualMemory: [0xFFFF + 1]u8 = undefined;
-    cpu.mmu.dumpMemory(&actualMemory);
+    cpu.mmu.dumpMemory(0, &actualMemory);
 
     try std.testing.expectEqualSlices(u8, &expectedMemory, &actualMemory);
 }

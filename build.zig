@@ -90,9 +90,18 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_exe.step);
 
-    // Create a test step and make it run the unit tests
-    const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&run_lib_unit_tests.step);
-    test_step.dependOn(&run_extended_unit_tests.step);
-    test_step.dependOn(&run_exe_unit_tests.step);
+    // Create test steps and make them run unit tests
+    const test_all_step = b.step("test-all", "Run all unit tests");
+    test_all_step.dependOn(&run_lib_unit_tests.step);
+    test_all_step.dependOn(&run_extended_unit_tests.step);
+    test_all_step.dependOn(&run_exe_unit_tests.step);
+
+    const test_lib_step = b.step("test-lib", "Run library unit tests");
+    test_lib_step.dependOn(&run_lib_unit_tests.step);
+
+    const test_exe_step = b.step("test-exe", "Run executable unit tests");
+    test_exe_step.dependOn(&run_exe_unit_tests.step);
+
+    const test_integ_step = b.step("test-integ", "Run integration tests");
+    test_integ_step.dependOn(&run_extended_unit_tests.step);
 }

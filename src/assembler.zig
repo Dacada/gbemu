@@ -1415,7 +1415,7 @@ const ArgumentDefinition = union(DefinedArgumentType) {
         };
     }
 
-    fn decode(self: ArgumentDefinition, allocator: std.mem.Allocator, stream: []const u8, opcode: u8) !?struct { ?Argument, []const u8 } {
+    fn decode(self: ArgumentDefinition, stream: []const u8, opcode: u8) !?struct { ?Argument, []const u8 } {
         switch (self) {
             .Immediate3Bit => {
                 return .{
@@ -1492,7 +1492,7 @@ const ArgumentDefinition = union(DefinedArgumentType) {
                 return .{
                     .{
                         .arg = .{
-                            .Reserved = try allocator.dupe(u8, @tagName(reg)),
+                            .Reserved = @tagName(reg),
                         },
                         .indirect = false,
                         .incDec = null,
@@ -1519,7 +1519,7 @@ const ArgumentDefinition = union(DefinedArgumentType) {
                 return .{
                     .{
                         .arg = .{
-                            .Reserved = try allocator.dupe(u8, @tagName(reg)),
+                            .Reserved = @tagName(reg),
                         },
                         .indirect = false,
                         .incDec = null,
@@ -1532,7 +1532,7 @@ const ArgumentDefinition = union(DefinedArgumentType) {
                 return .{
                     .{
                         .arg = .{
-                            .Reserved = try allocator.dupe(u8, @tagName(x)),
+                            .Reserved = @tagName(x),
                         },
                         .indirect = false,
                         .incDec = null,
@@ -1547,7 +1547,7 @@ const ArgumentDefinition = union(DefinedArgumentType) {
                 return .{
                     .{
                         .arg = .{
-                            .Reserved = try allocator.dupe(u8, @tagName(cond)),
+                            .Reserved = @tagName(cond),
                         },
                         .indirect = false,
                         .incDec = null,
@@ -1584,7 +1584,7 @@ const ArgumentDefinition = union(DefinedArgumentType) {
                 return .{
                     .{
                         .arg = .{
-                            .Reserved = try allocator.dupe(u8, @tagName(register)),
+                            .Reserved = @tagName(register),
                         },
                         .indirect = true,
                         .incDec = null,
@@ -1597,7 +1597,7 @@ const ArgumentDefinition = union(DefinedArgumentType) {
                 return .{
                     .{
                         .arg = .{
-                            .Reserved = try allocator.dupe(u8, @tagName(register)),
+                            .Reserved = @tagName(register),
                         },
                         .indirect = true,
                         .incDec = null,
@@ -1610,7 +1610,7 @@ const ArgumentDefinition = union(DefinedArgumentType) {
                 return .{
                     .{
                         .arg = .{
-                            .Reserved = try allocator.dupe(u8, @tagName(register)),
+                            .Reserved = @tagName(register),
                         },
                         .indirect = true,
                         .incDec = true,
@@ -1623,7 +1623,7 @@ const ArgumentDefinition = union(DefinedArgumentType) {
                 return .{
                     .{
                         .arg = .{
-                            .Reserved = try allocator.dupe(u8, @tagName(register)),
+                            .Reserved = @tagName(register),
                         },
                         .indirect = true,
                         .incDec = false,
@@ -2208,10 +2208,7 @@ test "ArgumentDefinition.decode Immediate3Bit" {
         .Immediate3Bit = {},
     };
 
-    const actual, const rest = (try definition.decode(std.testing.allocator, &stream, opcode)).?;
-    defer if (actual) |a| {
-        a.free(std.testing.allocator);
-    };
+    const actual, const rest = (try definition.decode(&stream, opcode)).?;
 
     try std.testing.expectEqualSlices(u8, stream[0..], rest);
     try std.testing.expectEqual(expected, actual);
@@ -2234,10 +2231,7 @@ test "ArgumentDefinition.decode Immediate8Bit" {
         .Immediate8Bit = {},
     };
 
-    const actual, const rest = (try definition.decode(std.testing.allocator, &stream, opcode)).?;
-    defer if (actual) |a| {
-        a.free(std.testing.allocator);
-    };
+    const actual, const rest = (try definition.decode(&stream, opcode)).?;
 
     try std.testing.expectEqualSlices(u8, stream[1..], rest);
     try std.testing.expectEqual(expected, actual);
@@ -2260,10 +2254,7 @@ test "ArgumentDefinition.decode Immediate8BitSigned" {
         .Immediate8BitSigned = {},
     };
 
-    const actual, const rest = (try definition.decode(std.testing.allocator, &stream, opcode)).?;
-    defer if (actual) |a| {
-        a.free(std.testing.allocator);
-    };
+    const actual, const rest = (try definition.decode(&stream, opcode)).?;
 
     try std.testing.expectEqualSlices(u8, stream[1..], rest);
     try std.testing.expectEqual(expected, actual);
@@ -2286,10 +2277,7 @@ test "ArgumentDefinition.decode Immediate16Bit" {
         .Immediate16Bit = {},
     };
 
-    const actual, const rest = (try definition.decode(std.testing.allocator, &stream, opcode)).?;
-    defer if (actual) |a| {
-        a.free(std.testing.allocator);
-    };
+    const actual, const rest = (try definition.decode(&stream, opcode)).?;
 
     try std.testing.expectEqualSlices(u8, stream[2..], rest);
     try std.testing.expectEqual(expected, actual);
@@ -2312,10 +2300,7 @@ test "ArgumentDefinition.decode ImmediateBitIndex" {
         .ImmediateBitIndex = {},
     };
 
-    const actual, const rest = (try definition.decode(std.testing.allocator, &stream, opcode)).?;
-    defer if (actual) |a| {
-        a.free(std.testing.allocator);
-    };
+    const actual, const rest = (try definition.decode(&stream, opcode)).?;
 
     try std.testing.expectEqualSlices(u8, stream[0..], rest);
     try std.testing.expectEqual(expected, actual);
@@ -2340,10 +2325,7 @@ test "ArgumentDefinition.decode Register8Bit Offset" {
         },
     };
 
-    const actual, const rest = (try definition.decode(std.testing.allocator, &stream, opcode)).?;
-    defer if (actual) |a| {
-        a.free(std.testing.allocator);
-    };
+    const actual, const rest = (try definition.decode(&stream, opcode)).?;
 
     try std.testing.expectEqualSlices(u8, stream[0..], rest);
     try std.testing.expectEqualDeep(expected, actual);
@@ -2368,10 +2350,7 @@ test "ArgumentDefinition.decode Register8Bit Register" {
         },
     };
 
-    const actual, const rest = (try definition.decode(std.testing.allocator, &stream, opcode)).?;
-    defer if (actual) |a| {
-        a.free(std.testing.allocator);
-    };
+    const actual, const rest = (try definition.decode(&stream, opcode)).?;
 
     try std.testing.expectEqualSlices(u8, stream[0..], rest);
     try std.testing.expectEqualDeep(expected, actual);
@@ -2398,10 +2377,7 @@ test "ArgumentDefinition.decode Register16Bit Offset LikeLD" {
         },
     };
 
-    const actual, const rest = (try definition.decode(std.testing.allocator, &stream, opcode)).?;
-    defer if (actual) |a| {
-        a.free(std.testing.allocator);
-    };
+    const actual, const rest = (try definition.decode(&stream, opcode)).?;
 
     try std.testing.expectEqualSlices(u8, stream[0..], rest);
     try std.testing.expectEqualDeep(expected, actual);
@@ -2428,10 +2404,7 @@ test "ArgumentDefinition.decode Register16Bit Offset LikePUSH" {
         },
     };
 
-    const actual, const rest = (try definition.decode(std.testing.allocator, &stream, opcode)).?;
-    defer if (actual) |a| {
-        a.free(std.testing.allocator);
-    };
+    const actual, const rest = (try definition.decode(&stream, opcode)).?;
 
     try std.testing.expectEqualSlices(u8, stream[0..], rest);
     try std.testing.expectEqualDeep(expected, actual);
@@ -2456,10 +2429,7 @@ test "ArgumentDefinition.decode Register16Bit Register" {
         },
     };
 
-    const actual, const rest = (try definition.decode(std.testing.allocator, &stream, opcode)).?;
-    defer if (actual) |a| {
-        a.free(std.testing.allocator);
-    };
+    const actual, const rest = (try definition.decode(&stream, opcode)).?;
 
     try std.testing.expectEqualSlices(u8, stream[0..], rest);
     try std.testing.expectEqualDeep(expected, actual);
@@ -2482,10 +2452,7 @@ test "ArgumentDefinition.decode Register16BitWithOffset" {
         .Register16BitWithOffset = Register16.BC,
     };
 
-    const actual, const rest = (try definition.decode(std.testing.allocator, &stream, opcode)).?;
-    defer if (actual) |a| {
-        a.free(std.testing.allocator);
-    };
+    const actual, const rest = (try definition.decode(&stream, opcode)).?;
 
     try std.testing.expectEqualSlices(u8, stream[1..], rest);
     try std.testing.expectEqualDeep(expected, actual);
@@ -2508,10 +2475,7 @@ test "ArgumentDefinition.decode Condition" {
         .Condition = {},
     };
 
-    const actual, const rest = (try definition.decode(std.testing.allocator, &stream, opcode)).?;
-    defer if (actual) |a| {
-        a.free(std.testing.allocator);
-    };
+    const actual, const rest = (try definition.decode(&stream, opcode)).?;
 
     try std.testing.expectEqualSlices(u8, stream[0..], rest);
     try std.testing.expectEqualDeep(expected, actual);
@@ -2534,10 +2498,7 @@ test "ArgumentDefinition.decode IndirectImmediate8Bit" {
         .IndirectImmediate8Bit = {},
     };
 
-    const actual, const rest = (try definition.decode(std.testing.allocator, &stream, opcode)).?;
-    defer if (actual) |a| {
-        a.free(std.testing.allocator);
-    };
+    const actual, const rest = (try definition.decode(&stream, opcode)).?;
 
     try std.testing.expectEqualSlices(u8, stream[1..], rest);
     try std.testing.expectEqualDeep(expected, actual);
@@ -2558,10 +2519,7 @@ test "ArgumentDefinition.decode IndirectRegister16Bit" {
         .IndirectRegister16Bit = Register16.DE,
     };
 
-    const actual, const rest = (try definition.decode(std.testing.allocator, &stream, opcode)).?;
-    defer if (actual) |a| {
-        a.free(std.testing.allocator);
-    };
+    const actual, const rest = (try definition.decode(&stream, opcode)).?;
 
     try std.testing.expectEqualSlices(u8, stream[0..], rest);
     try std.testing.expectEqualDeep(expected, actual);
@@ -2582,10 +2540,7 @@ test "ArgumentDefinition.decode IndirectRegister16BitInc" {
         .IndirectRegister16BitInc = Register16.DE,
     };
 
-    const actual, const rest = (try definition.decode(std.testing.allocator, &stream, opcode)).?;
-    defer if (actual) |a| {
-        a.free(std.testing.allocator);
-    };
+    const actual, const rest = (try definition.decode(&stream, opcode)).?;
 
     try std.testing.expectEqualSlices(u8, stream[0..], rest);
     try std.testing.expectEqualDeep(expected, actual);
@@ -2606,10 +2561,7 @@ test "ArgumentDefinition.decode IndirectRegister16BitDec" {
         .IndirectRegister16BitDec = Register16.DE,
     };
 
-    const actual, const rest = (try definition.decode(std.testing.allocator, &stream, opcode)).?;
-    defer if (actual) |a| {
-        a.free(std.testing.allocator);
-    };
+    const actual, const rest = (try definition.decode(&stream, opcode)).?;
 
     try std.testing.expectEqualSlices(u8, stream[0..], rest);
     try std.testing.expectEqualDeep(expected, actual);
@@ -3786,7 +3738,7 @@ const Opcode = struct {
         return latest_error orelse AssemblerError.InvalidInstructionArguments;
     }
 
-    fn decode(allocator: std.mem.Allocator, stream: []const u8) !struct { Opcode, []const u8 } {
+    fn decode(stream: []const u8) !struct { Opcode, []const u8 } {
         const opcode, const with_prefix = if (stream[0] == 0xCB)
             .{ stream[1], true }
         else
@@ -3820,19 +3772,16 @@ const Opcode = struct {
             var arg1: ?Argument = null;
             var currentStream = stream[(if (with_prefix) 2 else 1)..];
             if (opcode_definition.arg1) |arg| {
-                arg1, currentStream = if (try arg.decode(allocator, currentStream, stream[0])) |res|
+                arg1, currentStream = if (try arg.decode(currentStream, stream[0])) |res|
                     res
                 else
                     continue;
             }
             var arg2: ?Argument = null;
             if (opcode_definition.arg2) |arg| {
-                arg2, currentStream = if (try arg.decode(allocator, currentStream, stream[0])) |res|
+                arg2, currentStream = if (try arg.decode(currentStream, stream[0])) |res|
                     res
                 else {
-                    if (arg1) |a| {
-                        a.free(allocator);
-                    }
                     continue;
                 };
             }
@@ -3848,11 +3797,6 @@ const Opcode = struct {
             };
         }
 
-        if (with_prefix) {
-            logger.err("invalid instruction for decoding: 0xCB 0x{X}", .{opcode});
-        } else {
-            logger.err("invalid instruction for decoding: 0x{X}", .{opcode});
-        }
         return AssemblerError.InvalidInstruction;
     }
 };
@@ -4731,13 +4675,13 @@ pub fn translate(code: []const u8, allocator: std.mem.Allocator) ![]u8 {
     return assembler(opcodes, &labelMap, allocator);
 }
 
-pub fn formatNext(stream: []const u8, writer: anytype, allocator: std.mem.Allocator) !void {
-    const opcode, _ = Opcode.decode(allocator, stream) catch {
+pub fn formatNext(stream: []const u8, writer: anytype) ![]const u8 {
+    const opcode, const next = Opcode.decode(stream) catch {
         try writer.writeAll("<UNK>");
-        return;
+        return stream[1..];
     };
-    defer opcode.free(allocator);
     try opcode.format(writer);
+    return next;
 }
 
 test "translate" {
@@ -5348,8 +5292,7 @@ test "disassemble" {
 
     var slice: []const u8 = &stream;
     while (slice.len > 0) {
-        const opcode, slice = try Opcode.decode(std.testing.allocator, slice);
-        defer opcode.free(std.testing.allocator);
+        const opcode, slice = try Opcode.decode(slice);
         try opcode.format(writer);
         try writer.writeByte('\n');
     }

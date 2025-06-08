@@ -55,16 +55,9 @@ pub const Mmu = struct {
         self.rom = program;
     }
 
-    pub fn dumpMemory(self: *const Mmu, buffer: []u8) void {
-        for (0..0x8000) |i| {
-            if (i < self.rom.len) {
-                buffer[i] = self.rom[i];
-            } else {
-                buffer[i] = 0x00;
-            }
-        }
-        for (0x8000..0x10000) |i| {
-            buffer[i] = STATIC_MEMORY[i - 0x8000];
+    pub fn dumpMemory(self: *const Mmu, addr: u16, buffer: []u8) void {
+        for (0..buffer.len) |i| {
+            buffer[i] = self.getValue(addr + @as(u16, @intCast(i)));
         }
     }
 
@@ -101,6 +94,19 @@ pub const Mmu = struct {
         STATIC_MEMORY[addr - 0x8000] = val;
     }
 
+    /// Read without side effects
+    pub fn getValue(self: *const Mmu, addr: u16) u8 {
+        if (addr < 0x8000) {
+            if (addr < self.rom.len) {
+                return self.rom[addr];
+            } else {
+                return 0x00;
+            }
+        } else {
+            return STATIC_MEMORY[addr - 0x8000];
+        }
+    }
+
     pub fn illegalMemoryOperationHappened(self: *const Mmu) bool {
         return self._illegalMemoryOperationHappened;
     }
@@ -118,7 +124,7 @@ test "mmu zeroize" {
     mmu.zeroize();
 
     var actual: [0xFFFF + 1]u8 = undefined;
-    mmu.dumpMemory(&actual);
+    mmu.dumpMemory(0, &actual);
 
     try std.testing.expectEqualSlices(u8, &expected, &actual);
 }
@@ -198,7 +204,7 @@ test "write and read it all" {
     }
 
     var actual: [0x10000]u8 = undefined;
-    mmu.dumpMemory(&actual);
+    mmu.dumpMemory(0, &actual);
 
     try std.testing.expectEqualSlices(u8, &expected, &actual);
 }
