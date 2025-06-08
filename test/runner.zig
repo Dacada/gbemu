@@ -23,7 +23,7 @@ fn reportingLogFn(comptime _: std.log.Level, comptime scope: @TypeOf(.enum_liter
         return;
     };
 }
-pub const std_options = .{
+pub const std_options: std.Options = .{
     .logFn = reportingLogFn,
 };
 
@@ -158,7 +158,7 @@ pub fn main() !void {
         current_stderr = std.posix.STDERR_FILENO;
         current_stdout = std.posix.STDOUT_FILENO;
 
-        inline for (@typeInfo(@TypeOf(outputs)).Struct.fields) |field| {
+        inline for (@typeInfo(@TypeOf(outputs)).@"struct".fields) |field| {
             const fd = @field(fake_fds, field.name);
             const buffNullable = try extractCapturedOutput(fd, allocator);
             if (buffNullable) |buff| {
@@ -219,7 +219,7 @@ pub fn main() !void {
             try writer.writeAll(": ");
             try errorOutput.writeColor(ttyConfig, writer, failed_test.err);
 
-            inline for (@typeInfo(@TypeOf(outputs)).Struct.fields) |field| {
+            inline for (@typeInfo(@TypeOf(outputs)).@"struct".fields) |field| {
                 const outputNullable = @field(outputs, field.name).getEntry(failed_test.name);
                 if (outputNullable) |output| {
                     try displayCapturedOutputLine(ttyConfig, writer, field.name, output.value_ptr.content);
@@ -238,7 +238,7 @@ pub fn main() !void {
     }
 
     var additional_output = false;
-    inline for (@typeInfo(@TypeOf(outputs)).Struct.fields) |field| {
+    inline for (@typeInfo(@TypeOf(outputs)).@"struct".fields) |field| {
         var output_iter = @field(outputs, field.name).iterator();
         while (output_iter.next()) |output| {
             if (!output.value_ptr.displayed) {
@@ -260,7 +260,7 @@ pub fn main() !void {
 
     if (additional_output) {
         try errorOutput.writeColor(ttyConfig, writer, "\nCAPTURED OUTPUT");
-        inline for (@typeInfo(@TypeOf(outputs)).Struct.fields) |field| {
+        inline for (@typeInfo(@TypeOf(outputs)).@"struct".fields) |field| {
             var output_iter = @field(outputs, field.name).iterator();
             while (output_iter.next()) |output| {
                 if (output.value_ptr.displayed) {
