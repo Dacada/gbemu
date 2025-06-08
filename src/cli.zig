@@ -35,14 +35,14 @@ pub fn ArgParser(comptime params: ArgParserParams) type {
         fields[i] = .{
             .name = opt.name[0.. :0],
             .type = opt.type,
-            .default_value = opt.default,
+            .default_value_ptr = opt.default,
             .is_comptime = false,
             .alignment = @alignOf(opt.type),
         };
     };
 
     const Args = @Type(.{
-        .Struct = .{
+        .@"struct" = .{
             .layout = .auto,
             .fields = &fields,
             .decls = &.{},
@@ -54,13 +54,13 @@ pub fn ArgParser(comptime params: ArgParserParams) type {
         fn parse_value(comptime T: type, value: []const u8) ArgParserError!T {
             comptime var info = @typeInfo(T);
             comptime var TT = T;
-            if (info == .Optional) {
-                TT = info.Optional.child;
+            if (info == .optional) {
+                TT = info.optional.child;
                 info = @typeInfo(TT);
             }
 
             return switch (info) {
-                .Int => std.fmt.parseInt(TT, value, 0) catch |e| {
+                .int => std.fmt.parseInt(TT, value, 0) catch |e| {
                     switch (e) {
                         std.fmt.ParseIntError.Overflow => {
                             logger.err("Overflow when parsing {s} for type {}", .{ value, TT });

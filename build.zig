@@ -5,7 +5,7 @@ pub fn build(b: *std.Build) void {
     const exe_source = b.path("src/main.zig");
     const lib_source = b.path("src/lib.zig");
     const test_source = b.path("test/test.zig");
-    const test_runner_source = b.path("test/runner.zig");
+    // const test_runner_source = b.path("test/runner.zig");
 
     // Compiler options passed in
     const target = b.standardTargetOptions(.{});
@@ -44,7 +44,10 @@ pub fn build(b: *std.Build) void {
     // Unit tests for lib are included here
     const lib_unit_tests = b.addTest(.{
         .root_source_file = lib_source,
-        .test_runner = test_runner_source,
+        // .test_runner = .{
+        //     .mode = .simple,
+        //     .path = test_runner_source,
+        // },
         .target = target,
         .optimize = optimize,
     });
@@ -56,7 +59,10 @@ pub fn build(b: *std.Build) void {
     // Extra stuff to test outside the functional code (lib)
     const extended_unit_tests = b.addTest(.{
         .root_source_file = test_source,
-        .test_runner = test_runner_source,
+        // .test_runner = .{
+        //     .mode = .simple,
+        //     .path = test_runner_source,
+        // },
         .target = target,
         .optimize = optimize,
     });
@@ -68,7 +74,10 @@ pub fn build(b: *std.Build) void {
     // Unit tests for exe are included here
     const exe_unit_tests = b.addTest(.{
         .root_source_file = exe_source,
-        .test_runner = test_runner_source,
+        // .test_runner = .{
+        //     .mode = .simple,
+        //     .path = test_runner_source,
+        // },
         .target = target,
         .optimize = optimize,
     });

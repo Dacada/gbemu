@@ -1,6 +1,15 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
-const logger = std.log.scoped(.assembler);
+const logger = if (builtin.is_test)
+    struct {
+        pub fn err(comptime _: []const u8, _: anytype) void {}
+        pub fn warn(comptime _: []const u8, _: anytype) void {}
+        pub fn info(comptime _: []const u8, _: anytype) void {}
+        pub fn debug(comptime _: []const u8, _: anytype) void {}
+    }
+else
+    std.log.scoped(.assembler);
 
 pub const AssemblerError = error{
     InvalidInstruction,
@@ -2616,1023 +2625,1023 @@ const OpcodeDefinition = struct {
 
 const defined_opcodes =
     [_]OpcodeDefinition{
-    OpcodeDefinition{
-        .instr = Instruction.NOP,
-        .arg1 = null,
-        .arg2 = null,
-        .base_opcode = 0b00000000,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.LD,
-        .arg1 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Offset = 3,
-            },
+        OpcodeDefinition{
+            .instr = Instruction.NOP,
+            .arg1 = null,
+            .arg2 = null,
+            .base_opcode = 0b00000000,
         },
-        .arg2 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Offset = 0,
-            },
-        },
-        .base_opcode = 0b01_000_000,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.LD,
-        .arg1 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Offset = 3,
-            },
-        },
-        .arg2 = ArgumentDefinition{
-            .Immediate8Bit = {},
-        },
-        .base_opcode = 0b00_000_110,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.LD,
-        .arg1 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Offset = 3,
-            },
-        },
-        .arg2 = ArgumentDefinition{
-            .IndirectRegister16Bit = Register16.HL,
-        },
-        .base_opcode = 0b01_000_110,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.LD,
-        .arg1 = ArgumentDefinition{
-            .IndirectRegister16Bit = Register16.HL,
-        },
-        .arg2 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Offset = 0,
-            },
-        },
-        .base_opcode = 0b01_110_000,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.LD,
-        .arg1 = ArgumentDefinition{
-            .IndirectRegister16Bit = Register16.HL,
-        },
-        .arg2 = ArgumentDefinition{
-            .Immediate8Bit = {},
-        },
-        .base_opcode = 0b00110110,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.LD,
-        .arg1 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Register = Register8.A,
-            },
-        },
-        .arg2 = ArgumentDefinition{
-            .IndirectRegister16Bit = Register16.BC,
-        },
-        .base_opcode = 0b00001010,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.LD,
-        .arg1 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Register = Register8.A,
-            },
-        },
-        .arg2 = ArgumentDefinition{
-            .IndirectRegister16Bit = Register16.DE,
-        },
-        .base_opcode = 0b00011010,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.LD,
-        .arg1 = ArgumentDefinition{
-            .IndirectRegister16Bit = Register16.BC,
-        },
-        .arg2 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Register = Register8.A,
-            },
-        },
-        .base_opcode = 0b00000010,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.LD,
-        .arg1 = ArgumentDefinition{
-            .IndirectRegister16Bit = Register16.DE,
-        },
-        .arg2 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Register = Register8.A,
-            },
-        },
-        .base_opcode = 0b00010010,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.LD,
-        .arg1 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Register = Register8.A,
-            },
-        },
-        .arg2 = ArgumentDefinition{
-            .IndirectImmediate16Bit = {},
-        },
-        .base_opcode = 0b11111010,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.LD,
-        .arg1 = ArgumentDefinition{
-            .IndirectImmediate16Bit = {},
-        },
-        .arg2 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Register = Register8.A,
-            },
-        },
-        .base_opcode = 0b11101010,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.LDH,
-        .arg1 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Register = Register8.A,
-            },
-        },
-        .arg2 = ArgumentDefinition{
-            .IndirectRegister8Bit = Register8.C,
-        },
-        .base_opcode = 0b11110010,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.LDH,
-        .arg1 = ArgumentDefinition{
-            .IndirectRegister8Bit = Register8.C,
-        },
-        .arg2 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Register = Register8.A,
-            },
-        },
-        .base_opcode = 0b11100010,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.LDH,
-        .arg1 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Register = Register8.A,
-            },
-        },
-        .arg2 = ArgumentDefinition{
-            .IndirectImmediate8Bit = {},
-        },
-        .base_opcode = 0b11110000,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.LDH,
-        .arg1 = ArgumentDefinition{
-            .IndirectImmediate8Bit = {},
-        },
-        .arg2 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Register = Register8.A,
-            },
-        },
-        .base_opcode = 0b11100000,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.LD,
-        .arg1 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Register = Register8.A,
-            },
-        },
-        .arg2 = ArgumentDefinition{
-            .IndirectRegister16BitDec = Register16.HL,
-        },
-        .base_opcode = 0b00111010,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.LD,
-        .arg1 = ArgumentDefinition{
-            .IndirectRegister16BitDec = Register16.HL,
-        },
-        .arg2 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Register = Register8.A,
-            },
-        },
-        .base_opcode = 0b00110010,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.LD,
-        .arg1 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Register = Register8.A,
-            },
-        },
-        .arg2 = ArgumentDefinition{
-            .IndirectRegister16BitInc = Register16.HL,
-        },
-        .base_opcode = 0b00101010,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.LD,
-        .arg1 = ArgumentDefinition{
-            .IndirectRegister16BitInc = Register16.HL,
-        },
-        .arg2 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Register = Register8.A,
-            },
-        },
-        .base_opcode = 0b00100010,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.LD,
-        .arg1 = ArgumentDefinition{
-            .Register16Bit = Register16BitArgumentDefinition{
-                .Offset = Register16BitOffsetVariety{
-                    .LikeLD = 4,
+        OpcodeDefinition{
+            .instr = Instruction.LD,
+            .arg1 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Offset = 3,
                 },
             },
-        },
-        .arg2 = ArgumentDefinition{
-            .Immediate16Bit = {},
-        },
-        .base_opcode = 0b00_00_0001,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.LD,
-        .arg1 = ArgumentDefinition{
-            .IndirectImmediate16Bit = {},
-        },
-        .arg2 = ArgumentDefinition{
-            .Register16Bit = Register16BitArgumentDefinition{
-                .Register = Register16.SP,
-            },
-        },
-        .base_opcode = 0b00001000,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.LD,
-        .arg1 = ArgumentDefinition{
-            .Register16Bit = Register16BitArgumentDefinition{
-                .Register = Register16.SP,
-            },
-        },
-        .arg2 = ArgumentDefinition{
-            .Register16Bit = Register16BitArgumentDefinition{
-                .Register = Register16.HL,
-            },
-        },
-        .base_opcode = 0b11111001,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.PUSH,
-        .arg1 = ArgumentDefinition{
-            .Register16Bit = Register16BitArgumentDefinition{
-                .Offset = Register16BitOffsetVariety{
-                    .LikePUSH = 4,
+            .arg2 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Offset = 0,
                 },
             },
+            .base_opcode = 0b01_000_000,
         },
-        .arg2 = null,
-        .base_opcode = 0b11_00_0101,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.POP,
-        .arg1 = ArgumentDefinition{
-            .Register16Bit = Register16BitArgumentDefinition{
-                .Offset = Register16BitOffsetVariety{
-                    .LikePUSH = 4,
+        OpcodeDefinition{
+            .instr = Instruction.LD,
+            .arg1 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Offset = 3,
                 },
             },
-        },
-        .arg2 = null,
-        .base_opcode = 0b11_00_0001,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.LD,
-        .arg1 = ArgumentDefinition{
-            .Register16Bit = .{
-                .Register = Register16.HL,
+            .arg2 = ArgumentDefinition{
+                .Immediate8Bit = {},
             },
+            .base_opcode = 0b00_000_110,
         },
-        .arg2 = ArgumentDefinition{
-            .Register16BitWithOffset = Register16.SP,
-        },
-        .base_opcode = 0b11111000,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.ADD,
-        .arg1 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Offset = 0,
-            },
-        },
-        .arg2 = null,
-        .base_opcode = 0b10000_000,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.ADD,
-        .arg1 = ArgumentDefinition{
-            .IndirectRegister16Bit = Register16.HL,
-        },
-        .arg2 = null,
-        .base_opcode = 0b10000110,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.ADD,
-        .arg1 = ArgumentDefinition{
-            .Immediate8Bit = {},
-        },
-        .arg2 = null,
-        .base_opcode = 0b11000110,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.ADC,
-        .arg1 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Offset = 0,
-            },
-        },
-        .arg2 = null,
-        .base_opcode = 0b10001_000,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.ADC,
-        .arg1 = ArgumentDefinition{
-            .IndirectRegister16Bit = Register16.HL,
-        },
-        .arg2 = null,
-        .base_opcode = 0b10001110,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.ADC,
-        .arg1 = ArgumentDefinition{
-            .Immediate8Bit = {},
-        },
-        .arg2 = null,
-        .base_opcode = 0b11001110,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.SUB,
-        .arg1 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Offset = 0,
-            },
-        },
-        .arg2 = null,
-        .base_opcode = 0b10010_000,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.SUB,
-        .arg1 = ArgumentDefinition{
-            .IndirectRegister16Bit = Register16.HL,
-        },
-        .arg2 = null,
-        .base_opcode = 0b10010110,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.SUB,
-        .arg1 = ArgumentDefinition{
-            .Immediate8Bit = {},
-        },
-        .arg2 = null,
-        .base_opcode = 0b11010110,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.SBC,
-        .arg1 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Offset = 0,
-            },
-        },
-        .arg2 = null,
-        .base_opcode = 0b10011_000,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.SBC,
-        .arg1 = ArgumentDefinition{
-            .IndirectRegister16Bit = Register16.HL,
-        },
-        .arg2 = null,
-        .base_opcode = 0b10011110,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.SBC,
-        .arg1 = ArgumentDefinition{
-            .Immediate8Bit = {},
-        },
-        .arg2 = null,
-        .base_opcode = 0b11011110,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.CP,
-        .arg1 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Offset = 0,
-            },
-        },
-        .arg2 = null,
-        .base_opcode = 0b10111_000,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.CP,
-        .arg1 = ArgumentDefinition{
-            .IndirectRegister16Bit = Register16.HL,
-        },
-        .arg2 = null,
-        .base_opcode = 0b10011110,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.CP,
-        .arg1 = ArgumentDefinition{
-            .Immediate8Bit = {},
-        },
-        .arg2 = null,
-        .base_opcode = 0b11111110,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.INC,
-        .arg1 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Offset = 3,
-            },
-        },
-        .arg2 = null,
-        .base_opcode = 0b00_000_100,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.INC,
-        .arg1 = ArgumentDefinition{
-            .IndirectRegister16Bit = Register16.HL,
-        },
-        .arg2 = null,
-        .base_opcode = 0b00_110100,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.DEC,
-        .arg1 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Offset = 3,
-            },
-        },
-        .arg2 = null,
-        .base_opcode = 0b00_000_101,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.DEC,
-        .arg1 = ArgumentDefinition{
-            .IndirectRegister16Bit = Register16.HL,
-        },
-        .arg2 = null,
-        .base_opcode = 0b00_110101,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.AND,
-        .arg1 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Offset = 0,
-            },
-        },
-        .arg2 = null,
-        .base_opcode = 0b10100_000,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.AND,
-        .arg1 = ArgumentDefinition{
-            .IndirectRegister16Bit = Register16.HL,
-        },
-        .arg2 = null,
-        .base_opcode = 0b10100110,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.AND,
-        .arg1 = ArgumentDefinition{
-            .Immediate8Bit = {},
-        },
-        .arg2 = null,
-        .base_opcode = 0b11100110,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.OR,
-        .arg1 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Offset = 0,
-            },
-        },
-        .arg2 = null,
-        .base_opcode = 0b10110_000,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.OR,
-        .arg1 = ArgumentDefinition{
-            .IndirectRegister16Bit = Register16.HL,
-        },
-        .arg2 = null,
-        .base_opcode = 0b10110110,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.OR,
-        .arg1 = ArgumentDefinition{
-            .Immediate8Bit = {},
-        },
-        .arg2 = null,
-        .base_opcode = 0b11110110,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.XOR,
-        .arg1 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Offset = 0,
-            },
-        },
-        .arg2 = null,
-        .base_opcode = 0b10101_000,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.XOR,
-        .arg1 = ArgumentDefinition{
-            .IndirectRegister16Bit = Register16.HL,
-        },
-        .arg2 = null,
-        .base_opcode = 0b10101110,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.XOR,
-        .arg1 = ArgumentDefinition{
-            .Immediate8Bit = {},
-        },
-        .arg2 = null,
-        .base_opcode = 0b11101110,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.CCF,
-        .arg1 = null,
-        .arg2 = null,
-        .base_opcode = 0b00111111,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.SCF,
-        .arg1 = null,
-        .arg2 = null,
-        .base_opcode = 0b00110111,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.DAA,
-        .arg1 = null,
-        .arg2 = null,
-        .base_opcode = 0b00100111,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.CPL,
-        .arg1 = null,
-        .arg2 = null,
-        .base_opcode = 0b00101111,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.INC,
-        .arg1 = ArgumentDefinition{
-            .Register16Bit = Register16BitArgumentDefinition{
-                .Offset = Register16BitOffsetVariety{
-                    .LikeLD = 4,
+        OpcodeDefinition{
+            .instr = Instruction.LD,
+            .arg1 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Offset = 3,
                 },
             },
+            .arg2 = ArgumentDefinition{
+                .IndirectRegister16Bit = Register16.HL,
+            },
+            .base_opcode = 0b01_000_110,
         },
-        .arg2 = null,
-        .base_opcode = 0b00_00_0011,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.DEC,
-        .arg1 = ArgumentDefinition{
-            .Register16Bit = Register16BitArgumentDefinition{
-                .Offset = Register16BitOffsetVariety{
-                    .LikeLD = 4,
+        OpcodeDefinition{
+            .instr = Instruction.LD,
+            .arg1 = ArgumentDefinition{
+                .IndirectRegister16Bit = Register16.HL,
+            },
+            .arg2 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Offset = 0,
                 },
             },
+            .base_opcode = 0b01_110_000,
         },
-        .arg2 = null,
-        .base_opcode = 0b00_00_1011,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.ADD,
-        .arg1 = ArgumentDefinition{
-            .Register16Bit = Register16BitArgumentDefinition{
-                .Register = Register16.HL,
+        OpcodeDefinition{
+            .instr = Instruction.LD,
+            .arg1 = ArgumentDefinition{
+                .IndirectRegister16Bit = Register16.HL,
             },
+            .arg2 = ArgumentDefinition{
+                .Immediate8Bit = {},
+            },
+            .base_opcode = 0b00110110,
         },
-        .arg2 = ArgumentDefinition{
-            .Register16Bit = Register16BitArgumentDefinition{
-                .Offset = Register16BitOffsetVariety{
-                    .LikeLD = 4,
+        OpcodeDefinition{
+            .instr = Instruction.LD,
+            .arg1 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Register = Register8.A,
                 },
             },
-        },
-        .base_opcode = 0b00_00_1001,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.ADD,
-        .arg1 = ArgumentDefinition{
-            .Register16Bit = .{
-                .Register = Register16.SP,
+            .arg2 = ArgumentDefinition{
+                .IndirectRegister16Bit = Register16.BC,
             },
+            .base_opcode = 0b00001010,
         },
-        .arg2 = .{
-            .Immediate8BitSigned = {},
-        },
-        .base_opcode = 0b11101000,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.RLCA,
-        .arg1 = null,
-        .arg2 = null,
-        .base_opcode = 0b00000111,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.RRCA,
-        .arg1 = null,
-        .arg2 = null,
-        .base_opcode = 0b00001111,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.RLA,
-        .arg1 = null,
-        .arg2 = null,
-        .base_opcode = 0b00010111,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.RRA,
-        .arg1 = null,
-        .arg2 = null,
-        .base_opcode = 0b00011111,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.RLC,
-        .arg1 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Offset = 0,
+        OpcodeDefinition{
+            .instr = Instruction.LD,
+            .arg1 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Register = Register8.A,
+                },
             },
-        },
-        .arg2 = null,
-        .base_opcode = 0b00000_000,
-        .prefix = 0xCB,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.RLC,
-        .arg1 = ArgumentDefinition{
-            .IndirectRegister16Bit = Register16.HL,
-        },
-        .arg2 = null,
-        .base_opcode = 0b00000_110,
-        .prefix = 0xCB,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.RRC,
-        .arg1 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Offset = 0,
+            .arg2 = ArgumentDefinition{
+                .IndirectRegister16Bit = Register16.DE,
             },
+            .base_opcode = 0b00011010,
         },
-        .arg2 = null,
-        .base_opcode = 0b00001_000,
-        .prefix = 0xCB,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.RRC,
-        .arg1 = ArgumentDefinition{
-            .IndirectRegister16Bit = Register16.HL,
-        },
-        .arg2 = null,
-        .base_opcode = 0b00001_110,
-        .prefix = 0xCB,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.RL,
-        .arg1 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Offset = 0,
+        OpcodeDefinition{
+            .instr = Instruction.LD,
+            .arg1 = ArgumentDefinition{
+                .IndirectRegister16Bit = Register16.BC,
             },
-        },
-        .arg2 = null,
-        .base_opcode = 0b00010_000,
-        .prefix = 0xCB,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.RL,
-        .arg1 = ArgumentDefinition{
-            .IndirectRegister16Bit = Register16.HL,
-        },
-        .arg2 = null,
-        .base_opcode = 0b00010_110,
-        .prefix = 0xCB,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.RR,
-        .arg1 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Offset = 0,
+            .arg2 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Register = Register8.A,
+                },
             },
+            .base_opcode = 0b00000010,
         },
-        .arg2 = null,
-        .base_opcode = 0b00011_000,
-        .prefix = 0xCB,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.RR,
-        .arg1 = ArgumentDefinition{
-            .IndirectRegister16Bit = Register16.HL,
-        },
-        .arg2 = null,
-        .base_opcode = 0b00011_110,
-        .prefix = 0xCB,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.SLA,
-        .arg1 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Offset = 0,
+        OpcodeDefinition{
+            .instr = Instruction.LD,
+            .arg1 = ArgumentDefinition{
+                .IndirectRegister16Bit = Register16.DE,
             },
-        },
-        .arg2 = null,
-        .base_opcode = 0b00100_000,
-        .prefix = 0xCB,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.SLA,
-        .arg1 = ArgumentDefinition{
-            .IndirectRegister16Bit = Register16.HL,
-        },
-        .arg2 = null,
-        .base_opcode = 0b00100_110,
-        .prefix = 0xCB,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.SRA,
-        .arg1 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Offset = 0,
+            .arg2 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Register = Register8.A,
+                },
             },
+            .base_opcode = 0b00010010,
         },
-        .arg2 = null,
-        .base_opcode = 0b00101_000,
-        .prefix = 0xCB,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.SRA,
-        .arg1 = ArgumentDefinition{
-            .IndirectRegister16Bit = Register16.HL,
-        },
-        .arg2 = null,
-        .base_opcode = 0b00101_110,
-        .prefix = 0xCB,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.SWAP,
-        .arg1 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Offset = 0,
+        OpcodeDefinition{
+            .instr = Instruction.LD,
+            .arg1 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Register = Register8.A,
+                },
             },
-        },
-        .arg2 = null,
-        .base_opcode = 0b00110_000,
-        .prefix = 0xCB,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.SWAP,
-        .arg1 = ArgumentDefinition{
-            .IndirectRegister16Bit = Register16.HL,
-        },
-        .arg2 = null,
-        .base_opcode = 0b00110_110,
-        .prefix = 0xCB,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.SRL,
-        .arg1 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Offset = 0,
+            .arg2 = ArgumentDefinition{
+                .IndirectImmediate16Bit = {},
             },
+            .base_opcode = 0b11111010,
         },
-        .arg2 = null,
-        .base_opcode = 0b00111_000,
-        .prefix = 0xCB,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.SRL,
-        .arg1 = ArgumentDefinition{
-            .IndirectRegister16Bit = Register16.HL,
-        },
-        .arg2 = null,
-        .base_opcode = 0b00111_110,
-        .prefix = 0xCB,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.BIT,
-        .arg1 = ArgumentDefinition{
-            .ImmediateBitIndex = {},
-        },
-        .arg2 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Offset = 0,
+        OpcodeDefinition{
+            .instr = Instruction.LD,
+            .arg1 = ArgumentDefinition{
+                .IndirectImmediate16Bit = {},
             },
-        },
-        .base_opcode = 0b01_000_000,
-        .prefix = 0xCB,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.BIT,
-        .arg1 = ArgumentDefinition{
-            .ImmediateBitIndex = {},
-        },
-        .arg2 = ArgumentDefinition{
-            .IndirectRegister16Bit = Register16.HL,
-        },
-        .base_opcode = 0b01_000_110,
-        .prefix = 0xCB,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.RES,
-        .arg1 = ArgumentDefinition{
-            .ImmediateBitIndex = {},
-        },
-        .arg2 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Offset = 0,
+            .arg2 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Register = Register8.A,
+                },
             },
+            .base_opcode = 0b11101010,
         },
-        .base_opcode = 0b10_000_000,
-        .prefix = 0xCB,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.RES,
-        .arg1 = ArgumentDefinition{
-            .ImmediateBitIndex = {},
-        },
-        .arg2 = ArgumentDefinition{
-            .IndirectRegister16Bit = Register16.HL,
-        },
-        .base_opcode = 0b10_000_110,
-        .prefix = 0xCB,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.SET,
-        .arg1 = ArgumentDefinition{
-            .ImmediateBitIndex = {},
-        },
-        .arg2 = ArgumentDefinition{
-            .Register8Bit = Register8BitArgumentDefinition{
-                .Offset = 0,
+        OpcodeDefinition{
+            .instr = Instruction.LDH,
+            .arg1 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Register = Register8.A,
+                },
             },
-        },
-        .base_opcode = 0b11_000_000,
-        .prefix = 0xCB,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.SET,
-        .arg1 = ArgumentDefinition{
-            .ImmediateBitIndex = {},
-        },
-        .arg2 = ArgumentDefinition{
-            .IndirectRegister16Bit = Register16.HL,
-        },
-        .base_opcode = 0b11_000_110,
-        .prefix = 0xCB,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.JP,
-        .arg1 = ArgumentDefinition{
-            .Immediate16Bit = {},
-        },
-        .arg2 = null,
-        .base_opcode = 0b11000011,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.JP,
-        .arg1 = ArgumentDefinition{
-            .Register16Bit = Register16BitArgumentDefinition{
-                .Register = Register16.HL,
+            .arg2 = ArgumentDefinition{
+                .IndirectRegister8Bit = Register8.C,
             },
+            .base_opcode = 0b11110010,
         },
-        .arg2 = null,
-        .base_opcode = 0b11101001,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.JP,
-        .arg1 = ArgumentDefinition{
-            .IndirectRegister16Bit = Register16.HL,
+        OpcodeDefinition{
+            .instr = Instruction.LDH,
+            .arg1 = ArgumentDefinition{
+                .IndirectRegister8Bit = Register8.C,
+            },
+            .arg2 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Register = Register8.A,
+                },
+            },
+            .base_opcode = 0b11100010,
         },
-        .arg2 = null,
-        .base_opcode = 0b11101001,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.JP,
-        .arg1 = ArgumentDefinition{
-            .Condition = {},
+        OpcodeDefinition{
+            .instr = Instruction.LDH,
+            .arg1 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Register = Register8.A,
+                },
+            },
+            .arg2 = ArgumentDefinition{
+                .IndirectImmediate8Bit = {},
+            },
+            .base_opcode = 0b11110000,
         },
-        .arg2 = ArgumentDefinition{
-            .Immediate16Bit = {},
+        OpcodeDefinition{
+            .instr = Instruction.LDH,
+            .arg1 = ArgumentDefinition{
+                .IndirectImmediate8Bit = {},
+            },
+            .arg2 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Register = Register8.A,
+                },
+            },
+            .base_opcode = 0b11100000,
         },
-        .base_opcode = 0b110_00_010,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.JR,
-        .arg1 = ArgumentDefinition{
-            .Immediate8BitSigned = {},
+        OpcodeDefinition{
+            .instr = Instruction.LD,
+            .arg1 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Register = Register8.A,
+                },
+            },
+            .arg2 = ArgumentDefinition{
+                .IndirectRegister16BitDec = Register16.HL,
+            },
+            .base_opcode = 0b00111010,
         },
-        .arg2 = null,
-        .base_opcode = 0b00011000,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.JR,
-        .arg1 = ArgumentDefinition{
-            .Condition = {},
+        OpcodeDefinition{
+            .instr = Instruction.LD,
+            .arg1 = ArgumentDefinition{
+                .IndirectRegister16BitDec = Register16.HL,
+            },
+            .arg2 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Register = Register8.A,
+                },
+            },
+            .base_opcode = 0b00110010,
         },
-        .arg2 = ArgumentDefinition{
-            .Immediate8BitSigned = {},
+        OpcodeDefinition{
+            .instr = Instruction.LD,
+            .arg1 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Register = Register8.A,
+                },
+            },
+            .arg2 = ArgumentDefinition{
+                .IndirectRegister16BitInc = Register16.HL,
+            },
+            .base_opcode = 0b00101010,
         },
-        .base_opcode = 0b001_00_000,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.CALL,
-        .arg1 = ArgumentDefinition{
-            .Immediate16Bit = {},
+        OpcodeDefinition{
+            .instr = Instruction.LD,
+            .arg1 = ArgumentDefinition{
+                .IndirectRegister16BitInc = Register16.HL,
+            },
+            .arg2 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Register = Register8.A,
+                },
+            },
+            .base_opcode = 0b00100010,
         },
-        .arg2 = null,
-        .base_opcode = 0b11001101,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.CALL,
-        .arg1 = ArgumentDefinition{
-            .Condition = {},
+        OpcodeDefinition{
+            .instr = Instruction.LD,
+            .arg1 = ArgumentDefinition{
+                .Register16Bit = Register16BitArgumentDefinition{
+                    .Offset = Register16BitOffsetVariety{
+                        .LikeLD = 4,
+                    },
+                },
+            },
+            .arg2 = ArgumentDefinition{
+                .Immediate16Bit = {},
+            },
+            .base_opcode = 0b00_00_0001,
         },
-        .arg2 = ArgumentDefinition{
-            .Immediate16Bit = {},
+        OpcodeDefinition{
+            .instr = Instruction.LD,
+            .arg1 = ArgumentDefinition{
+                .IndirectImmediate16Bit = {},
+            },
+            .arg2 = ArgumentDefinition{
+                .Register16Bit = Register16BitArgumentDefinition{
+                    .Register = Register16.SP,
+                },
+            },
+            .base_opcode = 0b00001000,
         },
-        .base_opcode = 0b110_00_100,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.RET,
-        .arg1 = null,
-        .arg2 = null,
-        .base_opcode = 0b11001001,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.RET,
-        .arg1 = ArgumentDefinition{
-            .Condition = {},
+        OpcodeDefinition{
+            .instr = Instruction.LD,
+            .arg1 = ArgumentDefinition{
+                .Register16Bit = Register16BitArgumentDefinition{
+                    .Register = Register16.SP,
+                },
+            },
+            .arg2 = ArgumentDefinition{
+                .Register16Bit = Register16BitArgumentDefinition{
+                    .Register = Register16.HL,
+                },
+            },
+            .base_opcode = 0b11111001,
         },
-        .arg2 = null,
-        .base_opcode = 0b110_00_000,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.RETI,
-        .arg1 = null,
-        .arg2 = null,
-        .base_opcode = 0b11011001,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.RST,
-        .arg1 = ArgumentDefinition{
-            .Immediate3Bit = {},
+        OpcodeDefinition{
+            .instr = Instruction.PUSH,
+            .arg1 = ArgumentDefinition{
+                .Register16Bit = Register16BitArgumentDefinition{
+                    .Offset = Register16BitOffsetVariety{
+                        .LikePUSH = 4,
+                    },
+                },
+            },
+            .arg2 = null,
+            .base_opcode = 0b11_00_0101,
         },
-        .arg2 = null,
-        .base_opcode = 0b11_000_111,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.HALT,
-        .arg1 = null,
-        .arg2 = null,
-        .base_opcode = 0x76,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.STOP,
-        .arg1 = null,
-        .arg2 = null,
-        .base_opcode = 0x10,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.DI,
-        .arg1 = null,
-        .arg2 = null,
-        .base_opcode = 0xF3,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.EI,
-        .arg1 = null,
-        .arg2 = null,
-        .base_opcode = 0xFB,
-    },
-    OpcodeDefinition{
-        .instr = Instruction.NOP,
-        .arg1 = null,
-        .arg2 = null,
-        .base_opcode = 0x00,
-    },
-};
+        OpcodeDefinition{
+            .instr = Instruction.POP,
+            .arg1 = ArgumentDefinition{
+                .Register16Bit = Register16BitArgumentDefinition{
+                    .Offset = Register16BitOffsetVariety{
+                        .LikePUSH = 4,
+                    },
+                },
+            },
+            .arg2 = null,
+            .base_opcode = 0b11_00_0001,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.LD,
+            .arg1 = ArgumentDefinition{
+                .Register16Bit = .{
+                    .Register = Register16.HL,
+                },
+            },
+            .arg2 = ArgumentDefinition{
+                .Register16BitWithOffset = Register16.SP,
+            },
+            .base_opcode = 0b11111000,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.ADD,
+            .arg1 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Offset = 0,
+                },
+            },
+            .arg2 = null,
+            .base_opcode = 0b10000_000,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.ADD,
+            .arg1 = ArgumentDefinition{
+                .IndirectRegister16Bit = Register16.HL,
+            },
+            .arg2 = null,
+            .base_opcode = 0b10000110,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.ADD,
+            .arg1 = ArgumentDefinition{
+                .Immediate8Bit = {},
+            },
+            .arg2 = null,
+            .base_opcode = 0b11000110,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.ADC,
+            .arg1 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Offset = 0,
+                },
+            },
+            .arg2 = null,
+            .base_opcode = 0b10001_000,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.ADC,
+            .arg1 = ArgumentDefinition{
+                .IndirectRegister16Bit = Register16.HL,
+            },
+            .arg2 = null,
+            .base_opcode = 0b10001110,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.ADC,
+            .arg1 = ArgumentDefinition{
+                .Immediate8Bit = {},
+            },
+            .arg2 = null,
+            .base_opcode = 0b11001110,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.SUB,
+            .arg1 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Offset = 0,
+                },
+            },
+            .arg2 = null,
+            .base_opcode = 0b10010_000,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.SUB,
+            .arg1 = ArgumentDefinition{
+                .IndirectRegister16Bit = Register16.HL,
+            },
+            .arg2 = null,
+            .base_opcode = 0b10010110,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.SUB,
+            .arg1 = ArgumentDefinition{
+                .Immediate8Bit = {},
+            },
+            .arg2 = null,
+            .base_opcode = 0b11010110,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.SBC,
+            .arg1 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Offset = 0,
+                },
+            },
+            .arg2 = null,
+            .base_opcode = 0b10011_000,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.SBC,
+            .arg1 = ArgumentDefinition{
+                .IndirectRegister16Bit = Register16.HL,
+            },
+            .arg2 = null,
+            .base_opcode = 0b10011110,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.SBC,
+            .arg1 = ArgumentDefinition{
+                .Immediate8Bit = {},
+            },
+            .arg2 = null,
+            .base_opcode = 0b11011110,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.CP,
+            .arg1 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Offset = 0,
+                },
+            },
+            .arg2 = null,
+            .base_opcode = 0b10111_000,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.CP,
+            .arg1 = ArgumentDefinition{
+                .IndirectRegister16Bit = Register16.HL,
+            },
+            .arg2 = null,
+            .base_opcode = 0b10011110,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.CP,
+            .arg1 = ArgumentDefinition{
+                .Immediate8Bit = {},
+            },
+            .arg2 = null,
+            .base_opcode = 0b11111110,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.INC,
+            .arg1 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Offset = 3,
+                },
+            },
+            .arg2 = null,
+            .base_opcode = 0b00_000_100,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.INC,
+            .arg1 = ArgumentDefinition{
+                .IndirectRegister16Bit = Register16.HL,
+            },
+            .arg2 = null,
+            .base_opcode = 0b00_110100,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.DEC,
+            .arg1 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Offset = 3,
+                },
+            },
+            .arg2 = null,
+            .base_opcode = 0b00_000_101,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.DEC,
+            .arg1 = ArgumentDefinition{
+                .IndirectRegister16Bit = Register16.HL,
+            },
+            .arg2 = null,
+            .base_opcode = 0b00_110101,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.AND,
+            .arg1 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Offset = 0,
+                },
+            },
+            .arg2 = null,
+            .base_opcode = 0b10100_000,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.AND,
+            .arg1 = ArgumentDefinition{
+                .IndirectRegister16Bit = Register16.HL,
+            },
+            .arg2 = null,
+            .base_opcode = 0b10100110,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.AND,
+            .arg1 = ArgumentDefinition{
+                .Immediate8Bit = {},
+            },
+            .arg2 = null,
+            .base_opcode = 0b11100110,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.OR,
+            .arg1 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Offset = 0,
+                },
+            },
+            .arg2 = null,
+            .base_opcode = 0b10110_000,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.OR,
+            .arg1 = ArgumentDefinition{
+                .IndirectRegister16Bit = Register16.HL,
+            },
+            .arg2 = null,
+            .base_opcode = 0b10110110,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.OR,
+            .arg1 = ArgumentDefinition{
+                .Immediate8Bit = {},
+            },
+            .arg2 = null,
+            .base_opcode = 0b11110110,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.XOR,
+            .arg1 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Offset = 0,
+                },
+            },
+            .arg2 = null,
+            .base_opcode = 0b10101_000,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.XOR,
+            .arg1 = ArgumentDefinition{
+                .IndirectRegister16Bit = Register16.HL,
+            },
+            .arg2 = null,
+            .base_opcode = 0b10101110,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.XOR,
+            .arg1 = ArgumentDefinition{
+                .Immediate8Bit = {},
+            },
+            .arg2 = null,
+            .base_opcode = 0b11101110,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.CCF,
+            .arg1 = null,
+            .arg2 = null,
+            .base_opcode = 0b00111111,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.SCF,
+            .arg1 = null,
+            .arg2 = null,
+            .base_opcode = 0b00110111,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.DAA,
+            .arg1 = null,
+            .arg2 = null,
+            .base_opcode = 0b00100111,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.CPL,
+            .arg1 = null,
+            .arg2 = null,
+            .base_opcode = 0b00101111,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.INC,
+            .arg1 = ArgumentDefinition{
+                .Register16Bit = Register16BitArgumentDefinition{
+                    .Offset = Register16BitOffsetVariety{
+                        .LikeLD = 4,
+                    },
+                },
+            },
+            .arg2 = null,
+            .base_opcode = 0b00_00_0011,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.DEC,
+            .arg1 = ArgumentDefinition{
+                .Register16Bit = Register16BitArgumentDefinition{
+                    .Offset = Register16BitOffsetVariety{
+                        .LikeLD = 4,
+                    },
+                },
+            },
+            .arg2 = null,
+            .base_opcode = 0b00_00_1011,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.ADD,
+            .arg1 = ArgumentDefinition{
+                .Register16Bit = Register16BitArgumentDefinition{
+                    .Register = Register16.HL,
+                },
+            },
+            .arg2 = ArgumentDefinition{
+                .Register16Bit = Register16BitArgumentDefinition{
+                    .Offset = Register16BitOffsetVariety{
+                        .LikeLD = 4,
+                    },
+                },
+            },
+            .base_opcode = 0b00_00_1001,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.ADD,
+            .arg1 = ArgumentDefinition{
+                .Register16Bit = .{
+                    .Register = Register16.SP,
+                },
+            },
+            .arg2 = .{
+                .Immediate8BitSigned = {},
+            },
+            .base_opcode = 0b11101000,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.RLCA,
+            .arg1 = null,
+            .arg2 = null,
+            .base_opcode = 0b00000111,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.RRCA,
+            .arg1 = null,
+            .arg2 = null,
+            .base_opcode = 0b00001111,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.RLA,
+            .arg1 = null,
+            .arg2 = null,
+            .base_opcode = 0b00010111,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.RRA,
+            .arg1 = null,
+            .arg2 = null,
+            .base_opcode = 0b00011111,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.RLC,
+            .arg1 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Offset = 0,
+                },
+            },
+            .arg2 = null,
+            .base_opcode = 0b00000_000,
+            .prefix = 0xCB,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.RLC,
+            .arg1 = ArgumentDefinition{
+                .IndirectRegister16Bit = Register16.HL,
+            },
+            .arg2 = null,
+            .base_opcode = 0b00000_110,
+            .prefix = 0xCB,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.RRC,
+            .arg1 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Offset = 0,
+                },
+            },
+            .arg2 = null,
+            .base_opcode = 0b00001_000,
+            .prefix = 0xCB,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.RRC,
+            .arg1 = ArgumentDefinition{
+                .IndirectRegister16Bit = Register16.HL,
+            },
+            .arg2 = null,
+            .base_opcode = 0b00001_110,
+            .prefix = 0xCB,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.RL,
+            .arg1 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Offset = 0,
+                },
+            },
+            .arg2 = null,
+            .base_opcode = 0b00010_000,
+            .prefix = 0xCB,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.RL,
+            .arg1 = ArgumentDefinition{
+                .IndirectRegister16Bit = Register16.HL,
+            },
+            .arg2 = null,
+            .base_opcode = 0b00010_110,
+            .prefix = 0xCB,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.RR,
+            .arg1 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Offset = 0,
+                },
+            },
+            .arg2 = null,
+            .base_opcode = 0b00011_000,
+            .prefix = 0xCB,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.RR,
+            .arg1 = ArgumentDefinition{
+                .IndirectRegister16Bit = Register16.HL,
+            },
+            .arg2 = null,
+            .base_opcode = 0b00011_110,
+            .prefix = 0xCB,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.SLA,
+            .arg1 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Offset = 0,
+                },
+            },
+            .arg2 = null,
+            .base_opcode = 0b00100_000,
+            .prefix = 0xCB,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.SLA,
+            .arg1 = ArgumentDefinition{
+                .IndirectRegister16Bit = Register16.HL,
+            },
+            .arg2 = null,
+            .base_opcode = 0b00100_110,
+            .prefix = 0xCB,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.SRA,
+            .arg1 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Offset = 0,
+                },
+            },
+            .arg2 = null,
+            .base_opcode = 0b00101_000,
+            .prefix = 0xCB,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.SRA,
+            .arg1 = ArgumentDefinition{
+                .IndirectRegister16Bit = Register16.HL,
+            },
+            .arg2 = null,
+            .base_opcode = 0b00101_110,
+            .prefix = 0xCB,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.SWAP,
+            .arg1 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Offset = 0,
+                },
+            },
+            .arg2 = null,
+            .base_opcode = 0b00110_000,
+            .prefix = 0xCB,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.SWAP,
+            .arg1 = ArgumentDefinition{
+                .IndirectRegister16Bit = Register16.HL,
+            },
+            .arg2 = null,
+            .base_opcode = 0b00110_110,
+            .prefix = 0xCB,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.SRL,
+            .arg1 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Offset = 0,
+                },
+            },
+            .arg2 = null,
+            .base_opcode = 0b00111_000,
+            .prefix = 0xCB,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.SRL,
+            .arg1 = ArgumentDefinition{
+                .IndirectRegister16Bit = Register16.HL,
+            },
+            .arg2 = null,
+            .base_opcode = 0b00111_110,
+            .prefix = 0xCB,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.BIT,
+            .arg1 = ArgumentDefinition{
+                .ImmediateBitIndex = {},
+            },
+            .arg2 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Offset = 0,
+                },
+            },
+            .base_opcode = 0b01_000_000,
+            .prefix = 0xCB,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.BIT,
+            .arg1 = ArgumentDefinition{
+                .ImmediateBitIndex = {},
+            },
+            .arg2 = ArgumentDefinition{
+                .IndirectRegister16Bit = Register16.HL,
+            },
+            .base_opcode = 0b01_000_110,
+            .prefix = 0xCB,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.RES,
+            .arg1 = ArgumentDefinition{
+                .ImmediateBitIndex = {},
+            },
+            .arg2 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Offset = 0,
+                },
+            },
+            .base_opcode = 0b10_000_000,
+            .prefix = 0xCB,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.RES,
+            .arg1 = ArgumentDefinition{
+                .ImmediateBitIndex = {},
+            },
+            .arg2 = ArgumentDefinition{
+                .IndirectRegister16Bit = Register16.HL,
+            },
+            .base_opcode = 0b10_000_110,
+            .prefix = 0xCB,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.SET,
+            .arg1 = ArgumentDefinition{
+                .ImmediateBitIndex = {},
+            },
+            .arg2 = ArgumentDefinition{
+                .Register8Bit = Register8BitArgumentDefinition{
+                    .Offset = 0,
+                },
+            },
+            .base_opcode = 0b11_000_000,
+            .prefix = 0xCB,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.SET,
+            .arg1 = ArgumentDefinition{
+                .ImmediateBitIndex = {},
+            },
+            .arg2 = ArgumentDefinition{
+                .IndirectRegister16Bit = Register16.HL,
+            },
+            .base_opcode = 0b11_000_110,
+            .prefix = 0xCB,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.JP,
+            .arg1 = ArgumentDefinition{
+                .Immediate16Bit = {},
+            },
+            .arg2 = null,
+            .base_opcode = 0b11000011,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.JP,
+            .arg1 = ArgumentDefinition{
+                .Register16Bit = Register16BitArgumentDefinition{
+                    .Register = Register16.HL,
+                },
+            },
+            .arg2 = null,
+            .base_opcode = 0b11101001,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.JP,
+            .arg1 = ArgumentDefinition{
+                .IndirectRegister16Bit = Register16.HL,
+            },
+            .arg2 = null,
+            .base_opcode = 0b11101001,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.JP,
+            .arg1 = ArgumentDefinition{
+                .Condition = {},
+            },
+            .arg2 = ArgumentDefinition{
+                .Immediate16Bit = {},
+            },
+            .base_opcode = 0b110_00_010,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.JR,
+            .arg1 = ArgumentDefinition{
+                .Immediate8BitSigned = {},
+            },
+            .arg2 = null,
+            .base_opcode = 0b00011000,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.JR,
+            .arg1 = ArgumentDefinition{
+                .Condition = {},
+            },
+            .arg2 = ArgumentDefinition{
+                .Immediate8BitSigned = {},
+            },
+            .base_opcode = 0b001_00_000,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.CALL,
+            .arg1 = ArgumentDefinition{
+                .Immediate16Bit = {},
+            },
+            .arg2 = null,
+            .base_opcode = 0b11001101,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.CALL,
+            .arg1 = ArgumentDefinition{
+                .Condition = {},
+            },
+            .arg2 = ArgumentDefinition{
+                .Immediate16Bit = {},
+            },
+            .base_opcode = 0b110_00_100,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.RET,
+            .arg1 = null,
+            .arg2 = null,
+            .base_opcode = 0b11001001,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.RET,
+            .arg1 = ArgumentDefinition{
+                .Condition = {},
+            },
+            .arg2 = null,
+            .base_opcode = 0b110_00_000,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.RETI,
+            .arg1 = null,
+            .arg2 = null,
+            .base_opcode = 0b11011001,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.RST,
+            .arg1 = ArgumentDefinition{
+                .Immediate3Bit = {},
+            },
+            .arg2 = null,
+            .base_opcode = 0b11_000_111,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.HALT,
+            .arg1 = null,
+            .arg2 = null,
+            .base_opcode = 0x76,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.STOP,
+            .arg1 = null,
+            .arg2 = null,
+            .base_opcode = 0x10,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.DI,
+            .arg1 = null,
+            .arg2 = null,
+            .base_opcode = 0xF3,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.EI,
+            .arg1 = null,
+            .arg2 = null,
+            .base_opcode = 0xFB,
+        },
+        OpcodeDefinition{
+            .instr = Instruction.NOP,
+            .arg1 = null,
+            .arg2 = null,
+            .base_opcode = 0x00,
+        },
+    };
 
 const Opcode = struct {
     line: usize,

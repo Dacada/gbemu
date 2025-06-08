@@ -1,6 +1,15 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
-const logger = std.log.scoped(.rom);
+const logger = if (builtin.is_test)
+    struct {
+        pub fn err(comptime _: []const u8, _: anytype) void {}
+        pub fn warn(comptime _: []const u8, _: anytype) void {}
+        pub fn info(comptime _: []const u8, _: anytype) void {}
+        pub fn debug(comptime _: []const u8, _: anytype) void {}
+    }
+else
+    std.log.scoped(.rom);
 
 const RomHeaderParseError = error{
     NoHeader,

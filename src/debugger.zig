@@ -122,7 +122,7 @@ pub const Debugger = struct {
     }
 
     fn handle_command(self: *Debugger, command: []const u8, it: *std.mem.TokenIterator(u8, .scalar), writer: anytype) !?DebuggerResult {
-        inline for (@typeInfo(Commands).Struct.decls) |decl| {
+        inline for (@typeInfo(Commands).@"struct".decls) |decl| {
             if (decl.name[0] == '_') continue;
             if (std.mem.eql(u8, decl.name, command)) {
                 const func = @field(Commands, decl.name);
