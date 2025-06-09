@@ -2,7 +2,7 @@ const std = @import("std");
 
 const logger = std.log.scoped(.rom);
 
-pub const RomHeaderParseError = error{
+pub const CartridgeHeaderParseError = error{
     NoHeader,
     NoRom,
     UnsupportedCartridgeType,
@@ -18,7 +18,7 @@ const logo = [_]u8{
 var STATIC_ROM: [0x8000]u8 = undefined;
 
 // https://gbdev.io/pandocs/The_Cartridge_Header.html
-pub const Rom = struct {
+pub const Cartridge = struct {
     // DMG ONLY -- We interpret the title simply, however in "newer cartridges" this has a more complicated meaning
     title: []const u8,
     checksum: u8,
@@ -26,48 +26,48 @@ pub const Rom = struct {
 
     // TODO: licensee code (old and new), CGB/SGB flag, destination code, version number, global checksum
 
-    pub fn fromBinary(program: []const u8, title: []const u8, program_offset: u16) !Rom {
+    pub fn fromBinary(program: []const u8, title: []const u8, program_offset: u16) !Cartridge {
         std.mem.copyForwards(u8, STATIC_ROM[program_offset..], program);
 
-        return Rom{
+        return Cartridge{
             .title = title,
             .checksum = 0xFF,
             .rom = &STATIC_ROM,
         };
     }
 
-    pub fn fromFile(file: std.fs.File) !Rom {
+    pub fn fromFile(file: std.fs.File) !Cartridge {
         const offset = 0x0100;
         const header = STATIC_ROM[offset..(offset + 0x50)];
         try file.seekTo(offset);
         const readSize = try file.readAll(header);
         if (readSize < header.len) {
             logger.err("could not find a header in the rom: could only read 0x{X} bytes at offset 0x{X}", .{ readSize, offset });
-            return RomHeaderParseError.NoHeader;
+            return CartridgeHeaderParseError.NoHeader;
         }
 
         if (!std.mem.eql(u8, &logo, header[0x0004..0x0034])) {
             logger.warn("could not find expected logo in cartridege header", .{});
         }
 
-        const title = try Rom.getTitleFromHeader(header);
+        const title = try Cartridge.getTitleFromHeader(header);
 
         const rom_type = header[0x47];
         if (rom_type != 0x00) { // TODO: support other types
             logger.err("unsupported cartridge type: 0x{X}", .{rom_type});
-            return RomHeaderParseError.UnsupportedCartridgeType;
+            return CartridgeHeaderParseError.UnsupportedCartridgeType;
         }
 
         const rom_size_code = header[0x48];
         if (rom_size_code != 0x00) { // TODO: support other sizes
             logger.err("unsupported rom size code: 0x{X}", .{rom_size_code});
-            return RomHeaderParseError.UnsupportedCartridgeType;
+            return CartridgeHeaderParseError.UnsupportedCartridgeType;
         }
 
         const ram_size_code = header[0x49];
         if (ram_size_code != 0x00) { // TODO: support other sizes
             logger.err("unsupported ram size code: 0x{X}", .{ram_size_code});
-            return RomHeaderParseError.UnsupportedCartridgeType;
+            return CartridgeHeaderParseError.UnsupportedCartridgeType;
         }
 
         var checksum: u8 = 0;
@@ -82,13 +82,14 @@ pub const Rom = struct {
         const readSizeRom = try file.readAll(&STATIC_ROM);
         if (readSizeRom != STATIC_ROM.len) {
             logger.err("unexpected cartridge file size, could only read 0x{X} bytes for rom but wanted to read 0x{X}", .{ readSizeRom, STATIC_ROM.len });
-            return RomHeaderParseError.NoRom;
+            return CartridgeHeaderParseError.NoRom;
         }
 
-        return Rom{
+        return Cartridge{
             .title = title,
             .checksum = checksum,
             .rom = &STATIC_ROM,
+            .ram = &STATIC_RAM,
         };
     }
 
@@ -108,7 +109,7 @@ test "fromBinary" {
     const program = "test program contents";
     const title = "test title";
     const offset: u16 = 0x1234;
-    const rom = try Rom.fromBinary(program, title, offset);
+    const rom = try Cartridge.fromBinary(program, title, offset);
 
     try std.testing.expectEqualSlices(u8, title, rom.title);
     try std.testing.expectEqual(0xFF, rom.checksum);
@@ -142,7 +143,7 @@ test "fromFile" {
     const file, var tmpDir = try writeBuffAndReturnFileForReading(&buff);
     defer tmpDir.cleanup();
     defer file.close();
-    const rom = try Rom.fromFile(file);
+    const rom = try Cartridge.fromFile(file);
 
     try std.testing.expectEqual(checksum, rom.checksum);
     try std.testing.expectEqualSlices(u8, title, rom.title);
@@ -154,8 +155,8 @@ test "fromFile small" {
     const file, var tmpDir = try writeBuffAndReturnFileForReading(&buff);
     defer tmpDir.cleanup();
     defer file.close();
-    const err = Rom.fromFile(file);
-    try std.testing.expectError(RomHeaderParseError.NoHeader, err);
+    const err = Cartridge.fromFile(file);
+    try std.testing.expectError(CartridgeHeaderParseError.NoHeader, err);
 }
 
 test "fromFile badRomType" {
@@ -168,8 +169,8 @@ test "fromFile badRomType" {
     const file, var tmpDir = try writeBuffAndReturnFileForReading(&buff);
     defer tmpDir.cleanup();
     defer file.close();
-    const err = Rom.fromFile(file);
-    try std.testing.expectError(RomHeaderParseError.UnsupportedCartridgeType, err);
+    const err = Cartridge.fromFile(file);
+    try std.testing.expectError(CartridgeHeaderParseError.UnsupportedCartridgeType, err);
 }
 
 test "fromFile badRomSize" {
@@ -182,8 +183,8 @@ test "fromFile badRomSize" {
     const file, var tmpDir = try writeBuffAndReturnFileForReading(&buff);
     defer tmpDir.cleanup();
     defer file.close();
-    const err = Rom.fromFile(file);
-    try std.testing.expectError(RomHeaderParseError.UnsupportedCartridgeType, err);
+    const err = Cartridge.fromFile(file);
+    try std.testing.expectError(CartridgeHeaderParseError.UnsupportedCartridgeType, err);
 }
 
 test "fromFile badRamSize" {
@@ -196,8 +197,8 @@ test "fromFile badRamSize" {
     const file, var tmpDir = try writeBuffAndReturnFileForReading(&buff);
     defer tmpDir.cleanup();
     defer file.close();
-    const err = Rom.fromFile(file);
-    try std.testing.expectError(RomHeaderParseError.UnsupportedCartridgeType, err);
+    const err = Cartridge.fromFile(file);
+    try std.testing.expectError(CartridgeHeaderParseError.UnsupportedCartridgeType, err);
 }
 
 test "fromFile smallish" {
@@ -209,6 +210,6 @@ test "fromFile smallish" {
     const file, var tmpDir = try writeBuffAndReturnFileForReading(&buff);
     defer tmpDir.cleanup();
     defer file.close();
-    const err = Rom.fromFile(file);
-    try std.testing.expectError(RomHeaderParseError.NoRom, err);
+    const err = Cartridge.fromFile(file);
+    try std.testing.expectError(CartridgeHeaderParseError.NoRom, err);
 }

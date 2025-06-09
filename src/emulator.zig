@@ -1,7 +1,7 @@
 const std = @import("std");
 const Mmu = @import("mmu.zig").Mmu;
 const Cpu = @import("cpu.zig").Cpu;
-const Rom = @import("rom.zig").Rom;
+const Rom = @import("rom.zig").Cartridge;
 const Debugger = @import("debugger.zig").Debugger;
 
 pub const Emulator = struct {

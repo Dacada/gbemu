@@ -32,11 +32,11 @@ const TestResult = enum {
 };
 
 fn run_test(file: std.fs.File, writer: anytype, cfg: std.io.tty.Config) !TestResult {
-    const rom = lib.rom.Rom.fromFile(file) catch |e| {
+    const rom = lib.rom.Cartridge.fromFile(file) catch |e| {
         switch (e) {
-            lib.rom.RomHeaderParseError.NoHeader,
-            lib.rom.RomHeaderParseError.NoRom,
-            lib.rom.RomHeaderParseError.UnsupportedCartridgeType,
+            lib.rom.CartridgeHeaderParseError.NoHeader,
+            lib.rom.CartridgeHeaderParseError.NoRom,
+            lib.rom.CartridgeHeaderParseError.UnsupportedCartridgeType,
             => {
                 try fail_test("Invalid cartridge", writer, cfg);
                 return .failure;
