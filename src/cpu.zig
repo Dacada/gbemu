@@ -1,7 +1,7 @@
 const std = @import("std");
 const mmu = @import("mmu.zig");
 const alu = @import("alu.zig");
-const DelayedReference = @import("reference.zig").DelayedReference;
+const MemoryReference = @import("reference.zig").MemoryReference;
 
 const logger = std.log.scoped(.cpu);
 
@@ -71,19 +71,19 @@ const CpuOp1Union = union {
     next_alu_op: *const fn (*alu.AluRegister, u8) u8,
     next_alu_op_bit: *const fn (u8, u3) u8,
     next_alu_op_bit_test: *const fn (*alu.AluRegister, u8, u3) void,
-    to_8bit: DelayedReference,
+    to_8bit: MemoryReference,
     ptr_reg_stack: StackRegister,
     ptr_reg_16bit: *alu.RegisterWithHalves,
 };
 
 const CpuOp2Union = union {
     bitIdx: u3,
-    from_8bit: DelayedReference,
+    from_8bit: MemoryReference,
     jump_sets_ime: bool,
 };
 
 const CpuOp3Union = union {
-    extendedAluOpTarget: DelayedReference,
+    extendedAluOpTarget: MemoryReference,
 };
 
 pub const Cpu = struct {
@@ -400,7 +400,7 @@ pub const Cpu = struct {
         self.next_op_1 = CpuOp1Union{ .ptr_reg_stack = reg_ptr };
     }
 
-    fn decodeHighRamReferenceFromImmediate(self: *Cpu) DelayedReference {
+    fn decodeHighRamReferenceFromImmediate(self: *Cpu) MemoryReference {
         const addr = 0xFF00 | @as(u16, self.reg.WZ.Lo);
         return self.mmu.delayedReference(addr);
     }
@@ -457,7 +457,7 @@ pub const Cpu = struct {
 
         if (from == 0b110) { // from indirect HL
             self.reg.WZ.Lo = from_ptr.read();
-            self.next_op_2 = CpuOp2Union{ .from_8bit = DelayedReference.fromPointer(&self.reg.WZ.Lo) };
+            self.next_op_2 = CpuOp2Union{ .from_8bit = MemoryReference.fromPointer(&self.reg.WZ.Lo) };
             return SelfRefCpuMethod.init(Cpu.load8BitAndFetch);
         }
 
@@ -467,7 +467,7 @@ pub const Cpu = struct {
     fn executeLoadImmediateToRegister8Bit(self: *Cpu) SelfRefCpuMethod {
         const to: u3 = @intCast((self.reg.IR & 0b00_111_000) >> 3);
         self.next_op_1 = CpuOp1Union{ .to_8bit = self.ptrReg8Bit(to) };
-        self.next_op_2 = CpuOp2Union{ .from_8bit = DelayedReference.fromPointer(&self.reg.WZ.Lo) };
+        self.next_op_2 = CpuOp2Union{ .from_8bit = MemoryReference.fromPointer(&self.reg.WZ.Lo) };
         return self.load8BitAndFetch();
     }
 
@@ -498,12 +498,12 @@ pub const Cpu = struct {
             addr = reg_ptr.all();
         }
 
-        const accumulatorReference = DelayedReference.fromPointer(&self.reg.AF.Hi);
+        const accumulatorReference = MemoryReference.fromPointer(&self.reg.AF.Hi);
 
         if (toAccumulator) {
             self.reg.WZ.Lo = self.mmu.read(addr);
             self.next_op_1 = CpuOp1Union{ .to_8bit = accumulatorReference };
-            self.next_op_2 = CpuOp2Union{ .from_8bit = DelayedReference.fromPointer(&self.reg.WZ.Lo) };
+            self.next_op_2 = CpuOp2Union{ .from_8bit = MemoryReference.fromPointer(&self.reg.WZ.Lo) };
             return SelfRefCpuMethod.init(Cpu.load8BitAndFetch);
         } else {
             self.next_op_1 = CpuOp1Union{ .to_8bit = self.mmu.delayedReference(addr) };
@@ -516,12 +516,12 @@ pub const Cpu = struct {
         const toAccumulator = (self.reg.IR & 0b00_010_000) != 0;
         const addr = 0xFF00 | @as(u16, self.reg.BC.Lo);
 
-        const accumulatorReference = DelayedReference.fromPointer(&self.reg.AF.Hi);
+        const accumulatorReference = MemoryReference.fromPointer(&self.reg.AF.Hi);
 
         if (toAccumulator) {
             self.reg.WZ.Lo = self.mmu.read(addr);
             self.next_op_1 = CpuOp1Union{ .to_8bit = accumulatorReference };
-            self.next_op_2 = CpuOp2Union{ .from_8bit = DelayedReference.fromPointer(&self.reg.WZ.Lo) };
+            self.next_op_2 = CpuOp2Union{ .from_8bit = MemoryReference.fromPointer(&self.reg.WZ.Lo) };
             return SelfRefCpuMethod.init(Cpu.load8BitAndFetch);
         } else {
             self.next_op_1 = CpuOp1Union{ .to_8bit = self.mmu.delayedReference(addr) };
@@ -579,7 +579,7 @@ pub const Cpu = struct {
 
         if (reg == 0b110) { // indirect HL
             self.reg.WZ.Lo = reg_ptr.read();
-            self.next_op_2 = CpuOp2Union{ .from_8bit = DelayedReference.fromPointer(&self.reg.WZ.Lo) };
+            self.next_op_2 = CpuOp2Union{ .from_8bit = MemoryReference.fromPointer(&self.reg.WZ.Lo) };
             return SelfRefCpuMethod.init(Cpu.doIncDecRegister);
         }
 
@@ -835,20 +835,20 @@ pub const Cpu = struct {
 
     fn loadMemoryToTempRegisterThenAccumulator(self: *Cpu) SelfRefCpuMethod {
         self.reg.WZ.Lo = self.mmu.read(self.reg.WZ.all());
-        self.next_op_1 = CpuOp1Union{ .to_8bit = DelayedReference.fromPointer(&self.reg.AF.Hi) };
-        self.next_op_2 = CpuOp2Union{ .from_8bit = DelayedReference.fromPointer(&self.reg.WZ.Lo) };
+        self.next_op_1 = CpuOp1Union{ .to_8bit = MemoryReference.fromPointer(&self.reg.AF.Hi) };
+        self.next_op_2 = CpuOp2Union{ .from_8bit = MemoryReference.fromPointer(&self.reg.WZ.Lo) };
         return SelfRefCpuMethod.init(Cpu.load8BitAndFetch);
     }
 
     fn loadAddrOnTempRegisterFromAccumulator(self: *Cpu) SelfRefCpuMethod {
         self.next_op_1 = CpuOp1Union{ .to_8bit = self.mmu.delayedReference(self.reg.WZ.all()) };
-        self.next_op_2 = CpuOp2Union{ .from_8bit = DelayedReference.fromPointer(&self.reg.AF.Hi) };
+        self.next_op_2 = CpuOp2Union{ .from_8bit = MemoryReference.fromPointer(&self.reg.AF.Hi) };
         return self.load8BitAndFetch();
     }
 
     fn loadTempRegisterToAccumulator(self: *Cpu) SelfRefCpuMethod {
-        self.next_op_1 = CpuOp1Union{ .to_8bit = DelayedReference.fromPointer(&self.reg.AF.Hi) };
-        self.next_op_2 = CpuOp2Union{ .from_8bit = DelayedReference.fromPointer(&self.reg.WZ.Lo) };
+        self.next_op_1 = CpuOp1Union{ .to_8bit = MemoryReference.fromPointer(&self.reg.AF.Hi) };
+        self.next_op_2 = CpuOp2Union{ .from_8bit = MemoryReference.fromPointer(&self.reg.WZ.Lo) };
         return self.load8BitAndFetch();
     }
 
@@ -871,7 +871,7 @@ pub const Cpu = struct {
         self.mmu.write(self.reg.WZ.all(), self.reg.SP.Lo);
         self.reg.WZ.inc();
         self.next_op_1 = CpuOp1Union{ .to_8bit = self.mmu.delayedReference(self.reg.WZ.all()) };
-        self.next_op_2 = CpuOp2Union{ .from_8bit = DelayedReference.fromPointer(&self.reg.SP.Hi) };
+        self.next_op_2 = CpuOp2Union{ .from_8bit = MemoryReference.fromPointer(&self.reg.SP.Hi) };
         return SelfRefCpuMethod.init(Cpu.load8BitAndFetch);
     }
 
@@ -1043,16 +1043,16 @@ pub const Cpu = struct {
 
     // REFERENCES //
 
-    fn ptrReg8Bit(self: *Cpu, idx: u3) DelayedReference {
+    fn ptrReg8Bit(self: *Cpu, idx: u3) MemoryReference {
         return switch (idx) {
-            0b000 => DelayedReference.fromPointer(&self.reg.BC.Hi),
-            0b001 => DelayedReference.fromPointer(&self.reg.BC.Lo),
-            0b010 => DelayedReference.fromPointer(&self.reg.DE.Hi),
-            0b011 => DelayedReference.fromPointer(&self.reg.DE.Lo),
-            0b100 => DelayedReference.fromPointer(&self.reg.HL.Hi),
-            0b101 => DelayedReference.fromPointer(&self.reg.HL.Lo),
+            0b000 => MemoryReference.fromPointer(&self.reg.BC.Hi),
+            0b001 => MemoryReference.fromPointer(&self.reg.BC.Lo),
+            0b010 => MemoryReference.fromPointer(&self.reg.DE.Hi),
+            0b011 => MemoryReference.fromPointer(&self.reg.DE.Lo),
+            0b100 => MemoryReference.fromPointer(&self.reg.HL.Hi),
+            0b101 => MemoryReference.fromPointer(&self.reg.HL.Lo),
             0b110 => self.mmu.delayedReference(self.reg.HL.all()),
-            0b111 => DelayedReference.fromPointer(&self.reg.AF.Hi),
+            0b111 => MemoryReference.fromPointer(&self.reg.AF.Hi),
         };
     }
 

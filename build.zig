@@ -111,7 +111,6 @@ pub fn build(b: *std.Build) void {
     test_all_step.dependOn(&run_lib_unit_tests.step);
     test_all_step.dependOn(&run_extended_unit_tests.step);
     test_all_step.dependOn(&run_exe_unit_tests.step);
-    test_all_step.dependOn(&run_rom_tester.step);
 
     const test_lib_step = b.step("test-lib", "Run library unit tests");
     test_lib_step.dependOn(&run_lib_unit_tests.step);

@@ -1,5 +1,5 @@
 const std = @import("std");
-const DelayedReference = @import("reference.zig").DelayedReference;
+const MemoryReference = @import("reference.zig").MemoryReference;
 
 const logger = std.log.scoped(.mmu);
 
@@ -22,8 +22,8 @@ pub const Mmu = struct {
         @memset(&STATIC_MEMORY, 0);
     }
 
-    pub fn delayedReference(self: *Mmu, addr: u16) DelayedReference {
-        return DelayedReference.fromMmu(self, addr);
+    pub fn delayedReference(self: *Mmu, addr: u16) MemoryReference {
+        return MemoryReference.fromMmu(self, addr);
     }
 
     fn isAccessLegal(addr: u16, iswrite: bool) bool {
@@ -42,8 +42,8 @@ pub const Mmu = struct {
         }
     }
 
-    pub fn mapRom(self: *Mmu, program: []const u8) void {
-        self.rom = program;
+    pub fn mapRom(self: *Mmu, rom: []const u8) void {
+        self.rom = rom;
     }
 
     pub fn dumpMemory(self: *const Mmu, addr: u16, buffer: []u8) void {
