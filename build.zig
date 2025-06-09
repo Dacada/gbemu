@@ -5,6 +5,7 @@ pub fn build(b: *std.Build) void {
     const exe_source = b.path("src/main.zig");
     const lib_source = b.path("src/lib.zig");
     const test_source = b.path("test/test.zig");
+    const rom_tester_source = b.path("test/rom_tester.zig");
     const test_runner_source = b.path("test/runner.zig");
 
     // Compiler options passed in
@@ -40,6 +41,21 @@ pub fn build(b: *std.Build) void {
     if (b.args) |args| {
         run_exe.addArgs(args);
     }
+
+    // Rom tester is an executable that orchestrates testing various ROMs
+    const rom_tester = b.addExecutable(.{
+        .name = "rom-tester",
+        .root_source_file = rom_tester_source,
+        .target = target,
+        .optimize = optimize,
+    });
+    rom_tester.linkLibC();
+    rom_tester.linkSystemLibrary("readline");
+    rom_tester.root_module.addImport("lib", lib_module);
+    b.installArtifact(rom_tester);
+
+    // A run artifact to run it as part of testing
+    const run_rom_tester = b.addRunArtifact(rom_tester);
 
     // Unit tests for lib are included here
     const lib_unit_tests = b.addTest(.{
@@ -95,6 +111,7 @@ pub fn build(b: *std.Build) void {
     test_all_step.dependOn(&run_lib_unit_tests.step);
     test_all_step.dependOn(&run_extended_unit_tests.step);
     test_all_step.dependOn(&run_exe_unit_tests.step);
+    test_all_step.dependOn(&run_rom_tester.step);
 
     const test_lib_step = b.step("test-lib", "Run library unit tests");
     test_lib_step.dependOn(&run_lib_unit_tests.step);
@@ -104,4 +121,7 @@ pub fn build(b: *std.Build) void {
 
     const test_integ_step = b.step("test-integ", "Run integration tests");
     test_integ_step.dependOn(&run_extended_unit_tests.step);
+
+    const test_roms_step = b.step("test-roms", "Run tests for roms");
+    test_roms_step.dependOn(&run_rom_tester.step);
 }

@@ -2,7 +2,7 @@ const std = @import("std");
 
 const logger = std.log.scoped(.rom);
 
-const RomHeaderParseError = error{
+pub const RomHeaderParseError = error{
     NoHeader,
     NoRom,
     UnsupportedCartridgeType,

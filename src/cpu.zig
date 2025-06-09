@@ -781,7 +781,7 @@ pub const Cpu = struct {
                     else => unreachable,
                 } };
                 if (ref == .mmuRef) {
-                    self.next_op_2.bitIdx = op2;
+                    self.next_op_2 = CpuOp2Union{ .bitIdx = op2 };
                     return SelfRefCpuMethod.init(Cpu.extendedAluOpOnMemoryBits);
                 }
                 ref.write(self.next_op_1.next_alu_op_bit(ref.read(), op2));

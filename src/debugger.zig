@@ -321,11 +321,10 @@ pub const Debugger = struct {
     }
 
     fn should_enter(self: *const Debugger) !bool {
-        const writer = self.output.writer();
-
         if (self.stepping_cycles) {
             return true;
         }
+
         if (!self.cpu.instructionBoundary()) {
             return false;
         }
@@ -333,15 +332,12 @@ pub const Debugger = struct {
             return true;
         }
         if (self.cpu.breakpointHappened()) {
-            try writer.writeAll("Hit software breakpoint!\n");
             return true;
         }
         if (self.cpu.illegalInstructionExecuted()) {
-            try writer.writeAll("Illegal instruction executed!\n");
             return true;
         }
         if (self.cpu.mmu.illegalMemoryOperationHappened()) {
-            try writer.writeAll("Illegal memory operation!\n");
             return true;
         }
 
