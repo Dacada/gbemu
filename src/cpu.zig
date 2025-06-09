@@ -814,7 +814,7 @@ pub const Cpu = struct {
 
     fn fetchPC(self: *Cpu) u8 {
         const val = self.mmu.read(self.reg.PC);
-        self.reg.PC += 1;
+        self.reg.PC +%= 1;
         return val;
     }
 
