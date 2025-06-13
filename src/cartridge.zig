@@ -17,12 +17,16 @@ const logo = [_]u8{
 // This memory will always contain the totality of the currently loaded ROM
 var STATIC_ROM: [0x8000]u8 = undefined;
 
+// This memory holds the cartridge's RAM
+var STATIC_RAM: [0x2000]u8 = undefined;
+
 // https://gbdev.io/pandocs/The_Cartridge_Header.html
 pub const Cartridge = struct {
     // DMG ONLY -- We interpret the title simply, however in "newer cartridges" this has a more complicated meaning
     title: []const u8,
     checksum: u8,
     rom: []const u8,
+    ram: []const u8,
 
     // TODO: licensee code (old and new), CGB/SGB flag, destination code, version number, global checksum
 
@@ -33,6 +37,7 @@ pub const Cartridge = struct {
             .title = title,
             .checksum = 0xFF,
             .rom = &STATIC_ROM,
+            .ram = &STATIC_RAM,
         };
     }
 
@@ -102,6 +107,23 @@ pub const Cartridge = struct {
             len += 1;
         }
         return buff[0x34..(0x34 + len)];
+    }
+
+    pub fn write_rom(_: Cartridge, _: u16, _: u8, _: *bool) void {}
+    pub fn read_rom(_: Cartridge, _: u16, _: *bool) u8 {
+        return 0;
+    }
+    pub fn setValue_rom(_: Cartridge, _: u16, _: u8) void {}
+    pub fn getValue_rom(_: Cartridge, _: u16) u8 {
+        return 0;
+    }
+    pub fn write_ram(_: Cartridge, _: u16, _: u8, _: *bool) void {}
+    pub fn read_ram(_: Cartridge, _: u16, _: *bool, _: *bool) u8 {
+        return 0;
+    }
+    pub fn setValue_ram(_: Cartridge, _: u16, _: u8) void {}
+    pub fn getValue_ram(_: Cartridge, _: u16) u8 {
+        return 0;
     }
 };
 

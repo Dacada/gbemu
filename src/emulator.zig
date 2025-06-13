@@ -1,7 +1,7 @@
 const std = @import("std");
 const Mmu = @import("mmu.zig").Mmu;
 const Cpu = @import("cpu.zig").Cpu;
-const Rom = @import("rom.zig").Cartridge;
+const Cartridge = @import("cartridge.zig").Cartridge;
 const Debugger = @import("debugger.zig").Debugger;
 
 pub const Emulator = struct {
@@ -22,9 +22,9 @@ pub const Emulator = struct {
         initialize_mmu(self.mmu);
     }
 
-    pub fn mapRom(self: *Emulator, rom: *const Rom) void {
-        self.initialize_components(rom.checksum);
-        self.mmu.mapRom(rom.rom);
+    pub fn setup(self: *Emulator, cartridge: *Cartridge) void {
+        self.initialize_components(cartridge.checksum);
+        self.mmu.setCartridge(cartridge);
     }
 
     pub fn run(self: *Emulator, start_in_debugger: bool) !void {

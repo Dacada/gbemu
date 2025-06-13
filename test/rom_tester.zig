@@ -32,11 +32,11 @@ const TestResult = enum {
 };
 
 fn run_test(file: std.fs.File, writer: anytype, cfg: std.io.tty.Config) !TestResult {
-    const rom = lib.rom.Cartridge.fromFile(file) catch |e| {
+    var cartridge = lib.cartridge.Cartridge.fromFile(file) catch |e| {
         switch (e) {
-            lib.rom.CartridgeHeaderParseError.NoHeader,
-            lib.rom.CartridgeHeaderParseError.NoRom,
-            lib.rom.CartridgeHeaderParseError.UnsupportedCartridgeType,
+            lib.cartridge.CartridgeHeaderParseError.NoHeader,
+            lib.cartridge.CartridgeHeaderParseError.NoRom,
+            lib.cartridge.CartridgeHeaderParseError.UnsupportedCartridgeType,
             => {
                 try fail_test("Invalid cartridge", writer, cfg);
                 return .failure;
@@ -47,11 +47,13 @@ fn run_test(file: std.fs.File, writer: anytype, cfg: std.io.tty.Config) !TestRes
         }
     };
 
-    var mmu = lib.mmu.Mmu.init();
+    var ppu = lib.ppu.Ppu{};
+    var mmio = lib.mmio.Mmio{};
+    var mmu = lib.mmu.Mmu.init(&ppu, &mmio);
     var cpu = lib.cpu.Cpu.init(&mmu, 0x40);
-    lib.emulator.initialize_cpu(&cpu, rom.checksum);
+    lib.emulator.initialize_cpu(&cpu, cartridge.checksum);
     lib.emulator.initialize_mmu(&mmu);
-    mmu.mapRom(rom.rom);
+    mmu.setCartridge(&cartridge);
 
     var count: u32 = 0;
     while (true) {

@@ -2,12 +2,12 @@ const std = @import("std");
 const lib = @import("lib");
 const cli = @import("cli.zig");
 
-fn makeRom() !lib.rom.Rom {
+fn makeRom() !lib.cartridge.Cartridge {
     var dir = try std.fs.openDirAbsolute("/home/dacada/Downloads/testroms/mooneye-test-suite/acceptance", .{});
     defer dir.close();
     const file = try dir.openFile("call_timing.gb", .{});
     defer file.close();
-    return lib.rom.Rom.fromFile(file);
+    return lib.cartridge.Cartridge.fromFile(file);
 }
 
 pub fn main() !void {
@@ -26,13 +26,15 @@ pub fn main() !void {
     var argiter = std.process.args();
     const args = parser.parse(&argiter);
 
-    var mmu = lib.mmu.Mmu.init();
+    var ppu = lib.ppu.Ppu{};
+    var mmio = lib.mmio.Mmio{};
+    var mmu = lib.mmu.Mmu.init(&ppu, &mmio);
     var cpu = lib.cpu.Cpu.init(&mmu, args.breakpoint_instruction);
     var dbg = lib.debugger.Debugger.init(&cpu, std.io.getStdOut());
     var emu = lib.emulator.Emulator.init(&mmu, &cpu, &dbg);
 
-    const rom = try makeRom();
-    emu.mapRom(&rom);
+    var cartridge = try makeRom();
+    emu.setup(&cartridge);
 
     try emu.run(true);
 }
