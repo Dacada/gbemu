@@ -2,6 +2,8 @@ const std = @import("std");
 const lib = @import("lib");
 const cli = @import("cli.zig");
 
+var array = [_]u8{0x00} ** 0x100;
+
 fn makeRom() !lib.cartridge.Cartridge {
     var dir = try std.fs.openDirAbsolute("/home/dacada/Downloads/testroms/mooneye-test-suite/acceptance", .{});
     defer dir.close();
@@ -31,14 +33,23 @@ pub fn main() !void {
 
     const cartridge = try makeRom();
     const ppu = lib.ppu.Ppu.init();
-    const mmio = lib.mmio.Mmio.init();
+    var mmio = lib.mmio.Mmio{
+        .joypad = lib.memory.SimpleMemory(false, &array, null).memory(),
+        .serial = lib.memory.SimpleMemory(false, &array, null).memory(),
+        .timer = lib.memory.SimpleMemory(false, &array, null).memory(),
+        .interrupts = lib.memory.SimpleMemory(false, &array, null).memory(),
+        .audio = lib.memory.SimpleMemory(false, &array, null).memory(),
+        .wave = lib.memory.SimpleMemory(false, &array, null).memory(),
+        .lcd = lib.memory.SimpleMemory(false, &array, null).memory(),
+        .boot_rom = lib.memory.SimpleMemory(false, &array, null).memory(),
+    };
     var mmu = lib.mmu.Mmu{
         .cartRom = cartridge.rom,
         .cartRam = cartridge.ram,
         .vram = ppu.vram,
         .oam = ppu.oam,
         .forbidden = ppu.forbidden,
-        .mmio = mmio.mmio,
+        .mmio = mmio.memory(),
     };
     lib.emulator.initialize_memory(mmu.memory());
     var mem = mmu.memory();
