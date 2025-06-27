@@ -51,9 +51,10 @@ pub fn initialize_cpu(cpu: *Cpu, header_checksum: u8) void {
     cpu.reg.SP.setAll(0xFFFE);
 }
 
-pub fn initialize_memory(memory: Memory) void {
+pub fn initialize_memory(mem: Memory) void {
     // DMG ONLY -- https://gbdev.io/pandocs/Power_Up_Sequence.html
-    memory.poke(0xFF00, 0xCF);
+    var memory = mem;
+    memory.write(0xFF00, 0xCF);
     memory.poke(0xFF01, 0x00);
     memory.poke(0xFF02, 0x7E);
     memory.poke(0xFF04, 0xAB);

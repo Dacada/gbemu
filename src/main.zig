@@ -32,9 +32,10 @@ pub fn main() !void {
     const writer = stdout.writer();
 
     const cartridge = try makeRom();
-    const ppu = lib.ppu.Ppu.init();
+
+    var joypad: lib.joypad.Joypad = undefined;
     var mmio = lib.mmio.Mmio{
-        .joypad = lib.memory.SimpleMemory(false, &array, null).memory(),
+        .joypad = joypad.memory(),
         .serial = lib.memory.SimpleMemory(false, &array, null).memory(),
         .timer = lib.memory.SimpleMemory(false, &array, null).memory(),
         .interrupts = lib.memory.SimpleMemory(false, &array, null).memory(),
@@ -43,6 +44,8 @@ pub fn main() !void {
         .lcd = lib.memory.SimpleMemory(false, &array, null).memory(),
         .boot_rom = lib.memory.SimpleMemory(false, &array, null).memory(),
     };
+
+    const ppu = lib.ppu.Ppu.init();
     var mmu = lib.mmu.Mmu{
         .cartRom = cartridge.rom,
         .cartRam = cartridge.ram,
