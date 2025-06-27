@@ -2,7 +2,7 @@ const memory = @import("memory.zig");
 const Memory = memory.Memory;
 const MemoryFlag = memory.MemoryFlag;
 
-pub const Joypad = struct {
+pub const Joypad = packed struct {
     select_buttons: u1,
     select_dpad: u1,
     buttons: u4,

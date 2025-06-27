@@ -9,6 +9,7 @@ pub const debugger = @import("debugger.zig");
 pub const ppu = @import("ppu.zig");
 pub const mmio = @import("mmio.zig");
 pub const joypad = @import("joypad.zig");
+pub const serial = @import("serial.zig");
 pub const memory = @import("memory.zig");
 
 test {

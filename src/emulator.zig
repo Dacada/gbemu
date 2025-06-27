@@ -55,7 +55,7 @@ pub fn initialize_memory(mem: Memory) void {
     // DMG ONLY -- https://gbdev.io/pandocs/Power_Up_Sequence.html
     var memory = mem;
     memory.write(0xFF00, 0xCF);
-    memory.poke(0xFF01, 0x00);
+    memory.write(0xFF01, 0x00);
     memory.poke(0xFF02, 0x7E);
     memory.poke(0xFF04, 0xAB);
     memory.poke(0xFF05, 0x00);

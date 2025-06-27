@@ -34,9 +34,10 @@ pub fn main() !void {
     const cartridge = try makeRom();
 
     var joypad: lib.joypad.Joypad = undefined;
+    var serial: lib.serial.Serial = undefined;
     var mmio = lib.mmio.Mmio{
         .joypad = joypad.memory(),
-        .serial = lib.memory.SimpleMemory(false, &array, null).memory(),
+        .serial = serial.memory(),
         .timer = lib.memory.SimpleMemory(false, &array, null).memory(),
         .interrupts = lib.memory.SimpleMemory(false, &array, null).memory(),
         .audio = lib.memory.SimpleMemory(false, &array, null).memory(),
