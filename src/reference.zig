@@ -1,58 +1,39 @@
 const std = @import("std");
-const Mmu = @import("mmu.zig").Mmu;
-
-pub const MemoryReferenceMmu = struct {
-    addr: u16,
-    mmu: *Mmu,
-};
+const Memory = @import("memory.zig").Memory;
 
 pub const MemoryReference = union(enum) {
-    mmuRef: MemoryReferenceMmu,
+    memRef: struct {
+        addr: u16,
+        mem: *Memory,
+    },
     ptrRef: *u8,
 
-    pub fn fromMmu(mmu: *Mmu, addr: u16) MemoryReference {
-        return MemoryReference{
-            .mmuRef = MemoryReferenceMmu{
+    pub fn fromMemory(mem: *Memory, addr: u16) MemoryReference {
+        return .{
+            .memRef = .{
                 .addr = addr,
-                .mmu = mmu,
+                .mem = mem,
             },
         };
     }
 
     pub fn fromPointer(ptr: *u8) MemoryReference {
-        return MemoryReference{
+        return .{
             .ptrRef = ptr,
         };
     }
 
     pub fn read(self: MemoryReference) u8 {
         return switch (self) {
-            .mmuRef => |mmuRef| mmuRef.mmu.read(mmuRef.addr),
+            .memRef => |memRef| memRef.mem.read(memRef.addr),
             .ptrRef => |ptrRef| ptrRef.*,
         };
     }
 
     pub fn write(self: MemoryReference, val: u8) void {
         switch (self) {
-            .mmuRef => |mmuRef| mmuRef.mmu.write(mmuRef.addr, val),
+            .memRef => |memRef| memRef.mem.write(memRef.addr, val),
             .ptrRef => |ptrRef| ptrRef.* = val,
         }
     }
 };
-
-test "mmu reference" {
-    var mmu = Mmu.init();
-    mmu.zeroize();
-
-    const ref = MemoryReference.fromMmu(&mmu, 0xA000);
-    ref.write(123);
-    try std.testing.expectEqual(123, ref.read());
-}
-
-test "ptr reference" {
-    var val: u8 = 0;
-
-    const ref = MemoryReference.fromPointer(&val);
-    ref.write(123);
-    try std.testing.expectEqual(123, val);
-}

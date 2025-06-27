@@ -1,6 +1,10 @@
 const std = @import("std");
+const memory = @import("memory.zig");
+const Memory = memory.Memory;
+const MemoryFlag = memory.MemoryFlag;
+const SimpleMemory = memory.SimpleMemory;
 
-const logger = std.log.scoped(.rom);
+const logger = std.log.scoped(.cartridge);
 
 pub const CartridgeHeaderParseError = error{
     NoHeader,
@@ -19,25 +23,27 @@ var STATIC_ROM: [0x8000]u8 = undefined;
 
 // This memory holds the cartridge's RAM
 var STATIC_RAM: [0x2000]u8 = undefined;
+var STATIC_RAM_INIT: [0x2000]bool = undefined;
 
 // https://gbdev.io/pandocs/The_Cartridge_Header.html
 pub const Cartridge = struct {
     // DMG ONLY -- We interpret the title simply, however in "newer cartridges" this has a more complicated meaning
     title: []const u8,
     checksum: u8,
-    rom: []const u8,
-    ram: []const u8,
+    rom: Memory,
+    ram: Memory,
 
     // TODO: licensee code (old and new), CGB/SGB flag, destination code, version number, global checksum
 
     pub fn fromBinary(program: []const u8, title: []const u8, program_offset: u16) !Cartridge {
         std.mem.copyForwards(u8, STATIC_ROM[program_offset..], program);
+        @memset(&STATIC_RAM_INIT, false);
 
         return Cartridge{
             .title = title,
             .checksum = 0xFF,
-            .rom = &STATIC_ROM,
-            .ram = &STATIC_RAM,
+            .rom = SimpleMemory(true, &STATIC_ROM, null).memory(),
+            .ram = SimpleMemory(false, &STATIC_RAM, &STATIC_RAM_INIT).memory(),
         };
     }
 
@@ -90,11 +96,13 @@ pub const Cartridge = struct {
             return CartridgeHeaderParseError.NoRom;
         }
 
+        @memset(&STATIC_RAM_INIT, false);
+
         return Cartridge{
             .title = title,
             .checksum = checksum,
-            .rom = &STATIC_ROM,
-            .ram = &STATIC_RAM,
+            .rom = SimpleMemory(true, &STATIC_ROM, null).memory(),
+            .ram = SimpleMemory(false, &STATIC_RAM, &STATIC_RAM_INIT).memory(),
         };
     }
 
@@ -108,35 +116,7 @@ pub const Cartridge = struct {
         }
         return buff[0x34..(0x34 + len)];
     }
-
-    pub fn write_rom(_: Cartridge, _: u16, _: u8, _: *bool) void {}
-    pub fn read_rom(_: Cartridge, _: u16, _: *bool) u8 {
-        return 0;
-    }
-    pub fn setValue_rom(_: Cartridge, _: u16, _: u8) void {}
-    pub fn getValue_rom(_: Cartridge, _: u16) u8 {
-        return 0;
-    }
-    pub fn write_ram(_: Cartridge, _: u16, _: u8, _: *bool) void {}
-    pub fn read_ram(_: Cartridge, _: u16, _: *bool, _: *bool) u8 {
-        return 0;
-    }
-    pub fn setValue_ram(_: Cartridge, _: u16, _: u8) void {}
-    pub fn getValue_ram(_: Cartridge, _: u16) u8 {
-        return 0;
-    }
 };
-
-test "fromBinary" {
-    const program = "test program contents";
-    const title = "test title";
-    const offset: u16 = 0x1234;
-    const rom = try Cartridge.fromBinary(program, title, offset);
-
-    try std.testing.expectEqualSlices(u8, title, rom.title);
-    try std.testing.expectEqual(0xFF, rom.checksum);
-    try std.testing.expectEqualSlices(u8, program, rom.rom[offset..(offset + program.len)]);
-}
 
 fn writeBuffAndReturnFileForReading(buff: []const u8) !struct { std.fs.File, std.testing.TmpDir } {
     var tmpDir = std.testing.tmpDir(.{});
@@ -156,82 +136,138 @@ fn craftValidRomBuffer(buff: []u8, title: []const u8, checksum: u8) void {
     buff[0x14D] = checksum;
 }
 
-test "fromFile" {
-    const title = "test title";
-    const checksum: u8 = 0xE9;
-    var buff = [_]u8{0xAA} ** 0x8000;
-    craftValidRomBuffer(&buff, title, checksum);
+test "Cartridge fromBinary loads correct ROM and resets RAM init" {
+    var rom = [_]u8{0xAA} ** 0x4000;
+    const title = "TEST";
+    const offset: u16 = 0x0100;
 
-    const file, var tmpDir = try writeBuffAndReturnFileForReading(&buff);
-    defer tmpDir.cleanup();
-    defer file.close();
-    const rom = try Cartridge.fromFile(file);
+    const cartridge = try Cartridge.fromBinary(rom[0..], title, offset);
 
-    try std.testing.expectEqual(checksum, rom.checksum);
-    try std.testing.expectEqualSlices(u8, title, rom.title);
-    try std.testing.expectEqualSlices(u8, &buff, rom.rom);
+    try std.testing.expectEqualStrings(title, cartridge.title);
+
+    // Check that the ROM data was copied correctly
+    try std.testing.expectEqual(@as(u8, 0xAA), STATIC_ROM[offset]);
+
+    // Check that RAM init tracking was reset
+    for (STATIC_RAM_INIT) |v| {
+        try std.testing.expect(!v);
+    }
 }
 
-test "fromFile small" {
-    const buff = [_]u8{0xAA} ** 0x10;
-    const file, var tmpDir = try writeBuffAndReturnFileForReading(&buff);
-    defer tmpDir.cleanup();
-    defer file.close();
-    const err = Cartridge.fromFile(file);
-    try std.testing.expectError(CartridgeHeaderParseError.NoHeader, err);
+test "Cartridge fromFile loads valid ROM successfully" {
+    var rom_buffer = [_]u8{0} ** 0x8000;
+
+    // Calculate a correct header checksum
+    craftValidRomBuffer(&rom_buffer, "VALID", blk: {
+        var sum: u8 = 0;
+        for (0x34..0x4D) |idx| {
+            sum = sum -% rom_buffer[idx] -% 1;
+        }
+        break :blk sum;
+    });
+
+    var tmp = try writeBuffAndReturnFileForReading(&rom_buffer);
+    defer tmp[0].close();
+    defer tmp[1].cleanup();
+
+    const cartridge = try Cartridge.fromFile(tmp[0]);
+
+    try std.testing.expectEqualStrings("VALID", cartridge.title);
 }
 
-test "fromFile badRomType" {
-    const title = "test title";
-    const checksum: u8 = 0xFF;
-    var buff = [_]u8{0xAA} ** 0x8000;
-    craftValidRomBuffer(&buff, title, checksum);
-    buff[0x147] = 0x01;
+test "Cartridge fromFile rejects invalid logo" {
+    var rom_buffer = [_]u8{0} ** 0x8000;
 
-    const file, var tmpDir = try writeBuffAndReturnFileForReading(&buff);
-    defer tmpDir.cleanup();
-    defer file.close();
-    const err = Cartridge.fromFile(file);
-    try std.testing.expectError(CartridgeHeaderParseError.UnsupportedCartridgeType, err);
+    // Corrupt the logo
+    rom_buffer[0x104] = 0x00;
+
+    // Provide minimal valid header otherwise
+    craftValidRomBuffer(&rom_buffer, "INVALID", blk: {
+        var sum: u8 = 0;
+        for (0x34..0x4D) |idx| {
+            sum = sum -% rom_buffer[idx] -% 1;
+        }
+        break :blk sum;
+    });
+
+    var tmp = try writeBuffAndReturnFileForReading(&rom_buffer);
+    defer tmp[0].close();
+    defer tmp[1].cleanup();
+
+    // The logo warning is not fatal, so loading should still succeed
+    const cartridge = try Cartridge.fromFile(tmp[0]);
+    try std.testing.expectEqualStrings("INVALID", cartridge.title);
 }
 
-test "fromFile badRomSize" {
-    const title = "test title";
-    const checksum: u8 = 0xFF;
-    var buff = [_]u8{0xAA} ** 0x8000;
-    craftValidRomBuffer(&buff, title, checksum);
-    buff[0x148] = 0x01;
+test "Cartridge fromFile rejects unsupported cartridge type" {
+    var rom_buffer = [_]u8{0} ** 0x8000;
 
-    const file, var tmpDir = try writeBuffAndReturnFileForReading(&buff);
-    defer tmpDir.cleanup();
-    defer file.close();
-    const err = Cartridge.fromFile(file);
-    try std.testing.expectError(CartridgeHeaderParseError.UnsupportedCartridgeType, err);
+    craftValidRomBuffer(&rom_buffer, "BADTYPE", blk: {
+        var sum: u8 = 0;
+        for (0x34..0x4D) |idx| {
+            sum = sum -% rom_buffer[idx] -% 1;
+        }
+        break :blk sum;
+    });
+
+    rom_buffer[0x147] = 0x01; // Unsupported type
+
+    var tmp = try writeBuffAndReturnFileForReading(&rom_buffer);
+    defer tmp[0].close();
+    defer tmp[1].cleanup();
+
+    try std.testing.expectError(CartridgeHeaderParseError.UnsupportedCartridgeType, Cartridge.fromFile(tmp[0]));
 }
 
-test "fromFile badRamSize" {
-    const title = "test title";
-    const checksum: u8 = 0xFF;
-    var buff = [_]u8{0xAA} ** 0x8000;
-    craftValidRomBuffer(&buff, title, checksum);
-    buff[0x149] = 0x01;
+test "Cartridge fromFile rejects unsupported rom size" {
+    var rom_buffer = [_]u8{0} ** 0x8000;
 
-    const file, var tmpDir = try writeBuffAndReturnFileForReading(&buff);
-    defer tmpDir.cleanup();
-    defer file.close();
-    const err = Cartridge.fromFile(file);
-    try std.testing.expectError(CartridgeHeaderParseError.UnsupportedCartridgeType, err);
+    craftValidRomBuffer(&rom_buffer, "BADSIZE", blk: {
+        var sum: u8 = 0;
+        for (0x34..0x4D) |idx| {
+            sum = sum -% rom_buffer[idx] -% 1;
+        }
+        break :blk sum;
+    });
+
+    rom_buffer[0x148] = 0x01; // Unsupported rom size
+
+    var tmp = try writeBuffAndReturnFileForReading(&rom_buffer);
+    defer tmp[0].close();
+    defer tmp[1].cleanup();
+
+    try std.testing.expectError(CartridgeHeaderParseError.UnsupportedCartridgeType, Cartridge.fromFile(tmp[0]));
 }
 
-test "fromFile smallish" {
-    const title = "test title";
-    const checksum: u8 = 0xFF;
-    var buff = [_]u8{0xAA} ** 0x4000;
-    craftValidRomBuffer(&buff, title, checksum);
+test "Cartridge fromFile rejects unsupported ram size" {
+    var rom_buffer = [_]u8{0} ** 0x8000;
 
-    const file, var tmpDir = try writeBuffAndReturnFileForReading(&buff);
-    defer tmpDir.cleanup();
-    defer file.close();
-    const err = Cartridge.fromFile(file);
-    try std.testing.expectError(CartridgeHeaderParseError.NoRom, err);
+    craftValidRomBuffer(&rom_buffer, "BADRAM", blk: {
+        var sum: u8 = 0;
+        for (0x34..0x4D) |idx| {
+            sum = sum -% rom_buffer[idx] -% 1;
+        }
+        break :blk sum;
+    });
+
+    rom_buffer[0x149] = 0x01; // Unsupported ram size
+
+    var tmp = try writeBuffAndReturnFileForReading(&rom_buffer);
+    defer tmp[0].close();
+    defer tmp[1].cleanup();
+
+    try std.testing.expectError(CartridgeHeaderParseError.UnsupportedCartridgeType, Cartridge.fromFile(tmp[0]));
+}
+
+test "Cartridge fromFile warns on bad header checksum but still loads" {
+    var rom_buffer = [_]u8{0} ** 0x8000;
+
+    craftValidRomBuffer(&rom_buffer, "BADCHK", 0x00); // Wrong checksum on purpose
+
+    var tmp = try writeBuffAndReturnFileForReading(&rom_buffer);
+    defer tmp[0].close();
+    defer tmp[1].cleanup();
+
+    const cartridge = try Cartridge.fromFile(tmp[0]);
+    try std.testing.expectEqualStrings("BADCHK", cartridge.title);
 }

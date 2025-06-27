@@ -1,7 +1,7 @@
 const std = @import("std");
-const mmu = @import("mmu.zig");
 const alu = @import("alu.zig");
 const MemoryReference = @import("reference.zig").MemoryReference;
+const Memory = @import("memory.zig").Memory;
 
 const logger = std.log.scoped(.cpu);
 
@@ -39,6 +39,50 @@ const StackRegister = union(enum) {
         };
     }
 };
+
+test "StackRegister: all and setAll for AluRegister" {
+    var alu_reg = alu.AluRegister{
+        .Hi = 0,
+        .Lo = alu.RegisterFlags{ .Z = 0, .N = 0, .H = 0, .C = 0, .rest = 0 },
+    };
+
+    StackRegister.setAll(StackRegister{ .AluRegister = &alu_reg }, 0xABCD);
+    const result = StackRegister.all(StackRegister{ .AluRegister = &alu_reg });
+    try std.testing.expectEqual(@as(u16, 0xABCD), result);
+}
+
+test "StackRegister: all and setAll for RegisterWithHalves" {
+    var reg_wh = alu.RegisterWithHalves{
+        .Hi = 0,
+        .Lo = 0,
+    };
+
+    StackRegister.setAll(StackRegister{ .RegisterWithHalves = &reg_wh }, 0x1234);
+    const result = StackRegister.all(StackRegister{ .RegisterWithHalves = &reg_wh });
+    try std.testing.expectEqual(@as(u16, 0x1234), result);
+}
+
+test "StackRegister: hi and lo for AluRegister" {
+    var alu_reg = alu.AluRegister{
+        .Hi = 0xA1,
+        .Lo = alu.RegisterFlags{ .Z = 0, .N = 0, .H = 0, .C = 0, .rest = 0xB2 >> 4 },
+    };
+    // Assume .Lo.all() gives full byte from bitfields — if not, adjust accordingly.
+    StackRegister.setAll(StackRegister{ .AluRegister = &alu_reg }, 0xA1B2);
+    const stack_reg = StackRegister{ .AluRegister = &alu_reg };
+    try std.testing.expectEqual(@as(u8, 0xA1), StackRegister.hi(stack_reg));
+    try std.testing.expectEqual(@as(u8, 0xB2), StackRegister.lo(stack_reg));
+}
+
+test "StackRegister: hi and lo for RegisterWithHalves" {
+    var reg_wh = alu.RegisterWithHalves{
+        .Hi = 0xC3,
+        .Lo = 0xD4,
+    };
+    const stack_reg = StackRegister{ .RegisterWithHalves = &reg_wh };
+    try std.testing.expectEqual(@as(u8, 0xC3), StackRegister.hi(stack_reg));
+    try std.testing.expectEqual(@as(u8, 0xD4), StackRegister.lo(stack_reg));
+}
 
 const RegisterBank = struct {
     AF: alu.AluRegister,
@@ -87,7 +131,7 @@ const CpuOp3Union = union {
 };
 
 pub const Cpu = struct {
-    mmu: *mmu.Mmu,
+    mem: *Memory,
     reg: RegisterBank,
 
     next_tick: SelfRefCpuMethod,
@@ -119,9 +163,9 @@ pub const Cpu = struct {
         return self.next_tick.func == Cpu.decodeOpcode;
     }
 
-    pub fn init(mmu_: *mmu.Mmu, breakpoint_instruction: ?u8) Cpu {
+    pub fn init(mem: *Memory, breakpoint_instruction: ?u8) Cpu {
         return Cpu{
-            .mmu = mmu_,
+            .mem = mem,
             .reg = RegisterBank{
                 .AF = alu.AluRegister{
                     .Hi = 0,
@@ -402,7 +446,7 @@ pub const Cpu = struct {
 
     fn decodeHighRamReferenceFromImmediate(self: *Cpu) MemoryReference {
         const addr = 0xFF00 | @as(u16, self.reg.WZ.Lo);
-        return self.mmu.delayedReference(addr);
+        return MemoryReference.fromMemory(self.mem, addr);
     }
 
     // EXECUTE //
@@ -501,12 +545,12 @@ pub const Cpu = struct {
         const accumulatorReference = MemoryReference.fromPointer(&self.reg.AF.Hi);
 
         if (toAccumulator) {
-            self.reg.WZ.Lo = self.mmu.read(addr);
+            self.reg.WZ.Lo = self.mem.read(addr);
             self.next_op_1 = CpuOp1Union{ .to_8bit = accumulatorReference };
             self.next_op_2 = CpuOp2Union{ .from_8bit = MemoryReference.fromPointer(&self.reg.WZ.Lo) };
             return SelfRefCpuMethod.init(Cpu.load8BitAndFetch);
         } else {
-            self.next_op_1 = CpuOp1Union{ .to_8bit = self.mmu.delayedReference(addr) };
+            self.next_op_1 = CpuOp1Union{ .to_8bit = MemoryReference.fromMemory(self.mem, addr) };
             self.next_op_2 = CpuOp2Union{ .from_8bit = accumulatorReference };
             return self.load8BitAndFetch();
         }
@@ -519,12 +563,12 @@ pub const Cpu = struct {
         const accumulatorReference = MemoryReference.fromPointer(&self.reg.AF.Hi);
 
         if (toAccumulator) {
-            self.reg.WZ.Lo = self.mmu.read(addr);
+            self.reg.WZ.Lo = self.mem.read(addr);
             self.next_op_1 = CpuOp1Union{ .to_8bit = accumulatorReference };
             self.next_op_2 = CpuOp2Union{ .from_8bit = MemoryReference.fromPointer(&self.reg.WZ.Lo) };
             return SelfRefCpuMethod.init(Cpu.load8BitAndFetch);
         } else {
-            self.next_op_1 = CpuOp1Union{ .to_8bit = self.mmu.delayedReference(addr) };
+            self.next_op_1 = CpuOp1Union{ .to_8bit = MemoryReference.fromMemory(self.mem, addr) };
             self.next_op_2 = CpuOp2Union{ .from_8bit = accumulatorReference };
             return self.load8BitAndFetch();
         }
@@ -563,7 +607,7 @@ pub const Cpu = struct {
 
     fn executePop(self: *Cpu) SelfRefCpuMethod {
         self.decodePushPopRegister();
-        self.reg.WZ.Lo = self.mmu.read(self.reg.SP.all());
+        self.reg.WZ.Lo = self.mem.read(self.reg.SP.all());
         return self.incrementSPAndContinue(Cpu.popHighByte);
     }
 
@@ -743,7 +787,7 @@ pub const Cpu = struct {
         const ref = self.ptrReg8Bit(regIdx);
         self.next_op_3 = CpuOp3Union{ .extendedAluOpTarget = ref };
 
-        if (ref == .mmuRef) {
+        if (ref == .memRef) {
             self.reg.WZ.Lo = ref.read();
         }
 
@@ -759,7 +803,7 @@ pub const Cpu = struct {
                     0b110 => alu.AluRegister.swap,
                     0b111 => alu.AluRegister.srl,
                 } };
-                if (ref == .mmuRef) {
+                if (ref == .memRef) {
                     return SelfRefCpuMethod.init(Cpu.extendedAluOpOnMemory);
                 }
                 ref.write(self.next_op_1.next_alu_op(&self.reg.AF, ref.read()));
@@ -767,7 +811,7 @@ pub const Cpu = struct {
             },
             0b01 => { // bit test
                 self.next_op_1 = CpuOp1Union{ .next_alu_op_bit_test = alu.AluRegister.bit };
-                if (ref == .mmuRef) {
+                if (ref == .memRef) {
                     self.next_op_2 = CpuOp2Union{ .bitIdx = op2 };
                     return SelfRefCpuMethod.init(Cpu.extendedAluOpOnMemoryBitsTest);
                 }
@@ -780,7 +824,7 @@ pub const Cpu = struct {
                     0b11 => alu.AluRegister.set,
                     else => unreachable,
                 } };
-                if (ref == .mmuRef) {
+                if (ref == .memRef) {
                     self.next_op_2 = CpuOp2Union{ .bitIdx = op2 };
                     return SelfRefCpuMethod.init(Cpu.extendedAluOpOnMemoryBits);
                 }
@@ -813,7 +857,7 @@ pub const Cpu = struct {
     }
 
     fn fetchPC(self: *Cpu) u8 {
-        const val = self.mmu.read(self.reg.PC);
+        const val = self.mem.read(self.reg.PC);
         self.reg.PC +%= 1;
         return val;
     }
@@ -826,7 +870,7 @@ pub const Cpu = struct {
     fn load8BitAndFetch(self: *Cpu) SelfRefCpuMethod {
         self.next_op_1.to_8bit.write(self.next_op_2.from_8bit.read());
 
-        if (self.next_op_1.to_8bit == .mmuRef or self.next_op_2.from_8bit == .mmuRef) {
+        if (self.next_op_1.to_8bit == .memRef or self.next_op_2.from_8bit == .memRef) {
             return SelfRefCpuMethod.init(Cpu.fetchOpcode);
         } else {
             return self.fetchOpcode();
@@ -834,14 +878,14 @@ pub const Cpu = struct {
     }
 
     fn loadMemoryToTempRegisterThenAccumulator(self: *Cpu) SelfRefCpuMethod {
-        self.reg.WZ.Lo = self.mmu.read(self.reg.WZ.all());
+        self.reg.WZ.Lo = self.mem.read(self.reg.WZ.all());
         self.next_op_1 = CpuOp1Union{ .to_8bit = MemoryReference.fromPointer(&self.reg.AF.Hi) };
         self.next_op_2 = CpuOp2Union{ .from_8bit = MemoryReference.fromPointer(&self.reg.WZ.Lo) };
         return SelfRefCpuMethod.init(Cpu.load8BitAndFetch);
     }
 
     fn loadAddrOnTempRegisterFromAccumulator(self: *Cpu) SelfRefCpuMethod {
-        self.next_op_1 = CpuOp1Union{ .to_8bit = self.mmu.delayedReference(self.reg.WZ.all()) };
+        self.next_op_1 = CpuOp1Union{ .to_8bit = MemoryReference.fromMemory(self.mem, self.reg.WZ.all()) };
         self.next_op_2 = CpuOp2Union{ .from_8bit = MemoryReference.fromPointer(&self.reg.AF.Hi) };
         return self.load8BitAndFetch();
     }
@@ -868,25 +912,25 @@ pub const Cpu = struct {
     }
 
     fn loadStackPointerToTempRegisterIndirect(self: *Cpu) SelfRefCpuMethod {
-        self.mmu.write(self.reg.WZ.all(), self.reg.SP.Lo);
+        self.mem.write(self.reg.WZ.all(), self.reg.SP.Lo);
         self.reg.WZ.inc();
-        self.next_op_1 = CpuOp1Union{ .to_8bit = self.mmu.delayedReference(self.reg.WZ.all()) };
+        self.next_op_1 = CpuOp1Union{ .to_8bit = MemoryReference.fromMemory(self.mem, self.reg.WZ.all()) };
         self.next_op_2 = CpuOp2Union{ .from_8bit = MemoryReference.fromPointer(&self.reg.SP.Hi) };
         return SelfRefCpuMethod.init(Cpu.load8BitAndFetch);
     }
 
     fn pushHighByte(self: *Cpu) SelfRefCpuMethod {
-        self.mmu.write(self.reg.SP.all(), self.next_op_1.ptr_reg_stack.hi());
+        self.mem.write(self.reg.SP.all(), self.next_op_1.ptr_reg_stack.hi());
         return self.decrementSPAndContinue(Cpu.pushLowByte);
     }
 
     fn pushLowByte(self: *Cpu) SelfRefCpuMethod {
-        self.mmu.write(self.reg.SP.all(), self.next_op_1.ptr_reg_stack.lo());
+        self.mem.write(self.reg.SP.all(), self.next_op_1.ptr_reg_stack.lo());
         return SelfRefCpuMethod.init(Cpu.fetchOpcode);
     }
 
     fn popHighByte(self: *Cpu) SelfRefCpuMethod {
-        self.reg.WZ.Hi = self.mmu.read(self.reg.SP.all());
+        self.reg.WZ.Hi = self.mem.read(self.reg.SP.all());
         return self.incrementSPAndContinue(Cpu.popCopyToRegister);
     }
 
@@ -905,7 +949,7 @@ pub const Cpu = struct {
         const reg_ptr = self.ptrReg8Bit(reg);
         self.reg.WZ.Lo = reg_ptr.read();
 
-        if (reg_ptr == .mmuRef) {
+        if (reg_ptr == .memRef) {
             return SelfRefCpuMethod.init(next);
         } else {
             return next(self);
@@ -955,7 +999,7 @@ pub const Cpu = struct {
         }
         self.next_op_1.to_8bit.write(val);
 
-        if (self.next_op_1.to_8bit == .mmuRef) {
+        if (self.next_op_1.to_8bit == .memRef) {
             return SelfRefCpuMethod.init(Cpu.fetchOpcode);
         } else {
             return self.fetchOpcode();
@@ -989,23 +1033,23 @@ pub const Cpu = struct {
     }
 
     fn returnFirstByte(self: *Cpu) SelfRefCpuMethod {
-        self.reg.WZ.Lo = self.mmu.read(self.reg.SP.all());
+        self.reg.WZ.Lo = self.mem.read(self.reg.SP.all());
         return self.incrementSPAndContinue(Cpu.returnSecondByte);
     }
 
     fn returnSecondByte(self: *Cpu) SelfRefCpuMethod {
-        self.reg.WZ.Hi = self.mmu.read(self.reg.SP.all());
+        self.reg.WZ.Hi = self.mem.read(self.reg.SP.all());
         self.next_op_1 = CpuOp1Union{ .ptr_reg_16bit = &self.reg.WZ };
         return self.incrementSPAndContinue(Cpu.jumpToRegisterLater);
     }
 
     fn restartStoreFirstByte(self: *Cpu) SelfRefCpuMethod {
-        self.mmu.write(self.reg.SP.all(), @intCast((self.reg.PC & 0xFF00) >> 8));
+        self.mem.write(self.reg.SP.all(), @intCast((self.reg.PC & 0xFF00) >> 8));
         return self.decrementSPAndContinue(Cpu.restartStoreSecondByteAndJump);
     }
 
     fn restartStoreSecondByteAndJump(self: *Cpu) SelfRefCpuMethod {
-        self.mmu.write(self.reg.SP.all(), @intCast(self.reg.PC & 0x00FF));
+        self.mem.write(self.reg.SP.all(), @intCast(self.reg.PC & 0x00FF));
         self.reg.PC = (self.reg.IR & 0b00_111_000) >> 3;
         return SelfRefCpuMethod.init(Cpu.fetchOpcode);
     }
@@ -1015,12 +1059,12 @@ pub const Cpu = struct {
     }
 
     fn pushProgramCounterHighByteAndJump(self: *Cpu) SelfRefCpuMethod {
-        self.mmu.write(self.reg.SP.all(), @intCast((self.reg.PC & 0xFF00) >> 8));
+        self.mem.write(self.reg.SP.all(), @intCast((self.reg.PC & 0xFF00) >> 8));
         return self.decrementSPAndContinue(Cpu.pushProgramCounterLowByteAndJump);
     }
 
     fn pushProgramCounterLowByteAndJump(self: *Cpu) SelfRefCpuMethod {
-        self.mmu.write(self.reg.SP.all(), @intCast(self.reg.PC & 0x00FF));
+        self.mem.write(self.reg.SP.all(), @intCast(self.reg.PC & 0x00FF));
         return self.loadTempRegisterToProgramCounterAndFetchLater();
     }
 
@@ -1051,7 +1095,7 @@ pub const Cpu = struct {
             0b011 => MemoryReference.fromPointer(&self.reg.DE.Lo),
             0b100 => MemoryReference.fromPointer(&self.reg.HL.Hi),
             0b101 => MemoryReference.fromPointer(&self.reg.HL.Lo),
-            0b110 => self.mmu.delayedReference(self.reg.HL.all()),
+            0b110 => MemoryReference.fromMemory(self.mem, self.reg.HL.all()),
             0b111 => MemoryReference.fromPointer(&self.reg.AF.Hi),
         };
     }
@@ -1074,3 +1118,65 @@ pub const Cpu = struct {
         };
     }
 };
+
+test "Cpu: ptrReg8Bit maps correctly" {
+    var mem: Memory = undefined;
+    var cpu = Cpu.init(&mem, null);
+
+    cpu.reg.BC.Hi = 0x10;
+    cpu.reg.BC.Lo = 0x11;
+    cpu.reg.DE.Hi = 0x12;
+    cpu.reg.DE.Lo = 0x13;
+    cpu.reg.HL.Hi = 0x14;
+    cpu.reg.HL.Lo = 0x15;
+    cpu.reg.AF.Hi = 0x16;
+
+    try std.testing.expectEqual(@as(u8, 0x10), cpu.ptrReg8Bit(0b000).read());
+    try std.testing.expectEqual(@as(u8, 0x11), cpu.ptrReg8Bit(0b001).read());
+    try std.testing.expectEqual(@as(u8, 0x12), cpu.ptrReg8Bit(0b010).read());
+    try std.testing.expectEqual(@as(u8, 0x13), cpu.ptrReg8Bit(0b011).read());
+    try std.testing.expectEqual(@as(u8, 0x14), cpu.ptrReg8Bit(0b100).read());
+    try std.testing.expectEqual(@as(u8, 0x15), cpu.ptrReg8Bit(0b101).read());
+    try std.testing.expectEqual(@as(u8, 0x16), cpu.ptrReg8Bit(0b111).read());
+
+    // For 0b110 (indirect HL), confirm it returns the expected memory reference address
+    cpu.reg.HL.Hi = 0x12;
+    cpu.reg.HL.Lo = 0x34;
+    const ref = cpu.ptrReg8Bit(0b110);
+    try std.testing.expectEqual(@as(u16, 0x1234), ref.memRef.addr);
+}
+
+test "Cpu: ptrReg16Bit maps correctly" {
+    var mem: Memory = undefined;
+    var cpu = Cpu.init(&mem, null);
+
+    cpu.reg.BC.setAll(0x1111);
+    cpu.reg.DE.setAll(0x2222);
+    cpu.reg.HL.setAll(0x3333);
+    cpu.reg.SP.setAll(0x4444);
+
+    try std.testing.expectEqual(@as(u16, 0x1111), cpu.ptrReg16Bit(0b00).all());
+    try std.testing.expectEqual(@as(u16, 0x2222), cpu.ptrReg16Bit(0b01).all());
+    try std.testing.expectEqual(@as(u16, 0x3333), cpu.ptrReg16Bit(0b10).all());
+    try std.testing.expectEqual(@as(u16, 0x4444), cpu.ptrReg16Bit(0b11).all());
+}
+
+test "Cpu: ptrRegStack maps correctly" {
+    var mem: Memory = undefined;
+    var cpu = Cpu.init(&mem, null);
+
+    cpu.reg.BC.setAll(0xAAAA);
+    cpu.reg.DE.setAll(0xBBBB);
+    cpu.reg.HL.setAll(0xCCCC);
+    cpu.reg.AF.setAll(0xDDDD);
+
+    const bc = cpu.ptrRegStack(0b00);
+    const de = cpu.ptrRegStack(0b01);
+    const hl = cpu.ptrRegStack(0b10);
+    const af = cpu.ptrRegStack(0b11);
+
+    try std.testing.expectEqual(@as(u16, 0xAAAA), bc.all());
+    try std.testing.expectEqual(@as(u16, 0xBBBB), de.all());
+    try std.testing.expectEqual(@as(u16, 0xCCCC), hl.all());
+    try std.testing.expectEqual(@as(u16, 0xDDDD), af.all());
+}

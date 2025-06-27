@@ -81,19 +81,19 @@ test "LD only integ test" {
     try std.testing.expectEqual(0xC0, cpu.reg.HL.Hi);
     try std.testing.expectEqual(0x05, cpu.reg.HL.Lo);
 
-    try std.testing.expectEqual(0xAA, cpu.mmu.read(0xC000));
-    try std.testing.expectEqual(0xBB, cpu.mmu.read(0xC001));
-    try std.testing.expectEqual(0xCC, cpu.mmu.read(0xC002));
-    try std.testing.expectEqual(0xDD, cpu.mmu.read(0xC003));
-    try std.testing.expectEqual(0xEE, cpu.mmu.read(0xC004));
-    try std.testing.expectEqual(0xCC, cpu.mmu.read(0xC005));
-    try std.testing.expectEqual(0x33, cpu.mmu.read(0xC006));
-    try std.testing.expectEqual(0x22, cpu.mmu.read(0xC007));
-    try std.testing.expectEqual(0xCC, cpu.mmu.read(0xC008));
-    try std.testing.expectEqual(0xBB, cpu.mmu.read(0xC009));
-    try std.testing.expectEqual(0x99, cpu.mmu.read(0xC00F));
-    try std.testing.expectEqual(0xAA, cpu.mmu.read(0xFF80));
-    try std.testing.expectEqual(0xBB, cpu.mmu.read(0xFF81));
+    try std.testing.expectEqual(0xAA, cpu.mem.read(0xC000));
+    try std.testing.expectEqual(0xBB, cpu.mem.read(0xC001));
+    try std.testing.expectEqual(0xCC, cpu.mem.read(0xC002));
+    try std.testing.expectEqual(0xDD, cpu.mem.read(0xC003));
+    try std.testing.expectEqual(0xEE, cpu.mem.read(0xC004));
+    try std.testing.expectEqual(0xCC, cpu.mem.read(0xC005));
+    try std.testing.expectEqual(0x33, cpu.mem.read(0xC006));
+    try std.testing.expectEqual(0x22, cpu.mem.read(0xC007));
+    try std.testing.expectEqual(0xCC, cpu.mem.read(0xC008));
+    try std.testing.expectEqual(0xBB, cpu.mem.read(0xC009));
+    try std.testing.expectEqual(0x99, cpu.mem.read(0xC00F));
+    try std.testing.expectEqual(0xAA, cpu.mem.read(0xFF80));
+    try std.testing.expectEqual(0xBB, cpu.mem.read(0xFF81));
 }
 
 test "LD only integ test (16-bit)" {
@@ -146,13 +146,13 @@ test "LD only integ test (16-bit)" {
     try std.testing.expectEqual(0xFFF8, cpu.reg.HL.all());
     try std.testing.expectEqual(0xFFF8, cpu.reg.SP.all());
 
-    try std.testing.expectEqual(0xF0, cpu.mmu.read(0xC010));
-    try std.testing.expectEqual(0xFF, cpu.mmu.read(0xC011));
-    try std.testing.expectEqual(0xF8, cpu.mmu.read(0xC012));
-    try std.testing.expectEqual(0xFF, cpu.mmu.read(0xC013));
-    try std.testing.expectEqual(0xF8, cpu.mmu.read(0xC014));
-    try std.testing.expectEqual(0xFF, cpu.mmu.read(0xC015));
-    try std.testing.expectEqual(0x99, cpu.mmu.read(0xC01F));
+    try std.testing.expectEqual(0xF0, cpu.mem.read(0xC010));
+    try std.testing.expectEqual(0xFF, cpu.mem.read(0xC011));
+    try std.testing.expectEqual(0xF8, cpu.mem.read(0xC012));
+    try std.testing.expectEqual(0xFF, cpu.mem.read(0xC013));
+    try std.testing.expectEqual(0xF8, cpu.mem.read(0xC014));
+    try std.testing.expectEqual(0xFF, cpu.mem.read(0xC015));
+    try std.testing.expectEqual(0x99, cpu.mem.read(0xC01F));
 }
 
 test "Arithmetic (8-bit)" {
@@ -226,31 +226,31 @@ test "Arithmetic (8-bit)" {
     try std.testing.expectEqual(0xC003, cpu.reg.HL.all());
     try std.testing.expectEqual(0xFFEB, cpu.reg.SP.all());
 
-    try std.testing.expectEqual(0x0A, cpu.mmu.read(0xC000));
-    try std.testing.expectEqual(0x34, cpu.mmu.read(0xC001));
-    try std.testing.expectEqual(0x08, cpu.mmu.read(0xC002));
-    try std.testing.expectEqual(0xFF, cpu.mmu.read(0xC003));
+    try std.testing.expectEqual(0x0A, cpu.mem.read(0xC000));
+    try std.testing.expectEqual(0x34, cpu.mem.read(0xC001));
+    try std.testing.expectEqual(0x08, cpu.mem.read(0xC002));
+    try std.testing.expectEqual(0xFF, cpu.mem.read(0xC003));
 
-    try std.testing.expectEqual(0x20, cpu.mmu.read(0xFFFE));
-    try std.testing.expectEqual(0b00010000, cpu.mmu.read(0xFFFD));
-    try std.testing.expectEqual(0x00, cpu.mmu.read(0xFFFC));
-    try std.testing.expectEqual(0b11000000, cpu.mmu.read(0xFFFB));
-    try std.testing.expectEqual(0x46, cpu.mmu.read(0xFFFA));
-    try std.testing.expectEqual(0b00000000, cpu.mmu.read(0xFFF9));
-    try std.testing.expectEqual(0x3E, cpu.mmu.read(0xFFF8));
-    try std.testing.expectEqual(0b01100000, cpu.mmu.read(0xFFF7));
-    try std.testing.expectEqual(0x3F, cpu.mmu.read(0xFFF6));
-    try std.testing.expectEqual(0b00000000, cpu.mmu.read(0xFFF5));
-    try std.testing.expectEqual(0x3E, cpu.mmu.read(0xFFF4));
-    try std.testing.expectEqual(0b01000000, cpu.mmu.read(0xFFF3));
-    try std.testing.expectEqual(0x3E, cpu.mmu.read(0xFFF2));
-    try std.testing.expectEqual(0b00100000, cpu.mmu.read(0xFFF1));
-    try std.testing.expectEqual(0x3E, cpu.mmu.read(0xFFF0));
-    try std.testing.expectEqual(0b00000000, cpu.mmu.read(0xFFEF));
-    try std.testing.expectEqual(0x0A, cpu.mmu.read(0xFFEE));
-    try std.testing.expectEqual(0b00000000, cpu.mmu.read(0xFFED));
-    try std.testing.expectEqual(0x0A, cpu.mmu.read(0xFFEC));
-    try std.testing.expectEqual(0b01000000, cpu.mmu.read(0xFFEB));
+    try std.testing.expectEqual(0x20, cpu.mem.read(0xFFFE));
+    try std.testing.expectEqual(0b00010000, cpu.mem.read(0xFFFD));
+    try std.testing.expectEqual(0x00, cpu.mem.read(0xFFFC));
+    try std.testing.expectEqual(0b11000000, cpu.mem.read(0xFFFB));
+    try std.testing.expectEqual(0x46, cpu.mem.read(0xFFFA));
+    try std.testing.expectEqual(0b00000000, cpu.mem.read(0xFFF9));
+    try std.testing.expectEqual(0x3E, cpu.mem.read(0xFFF8));
+    try std.testing.expectEqual(0b01100000, cpu.mem.read(0xFFF7));
+    try std.testing.expectEqual(0x3F, cpu.mem.read(0xFFF6));
+    try std.testing.expectEqual(0b00000000, cpu.mem.read(0xFFF5));
+    try std.testing.expectEqual(0x3E, cpu.mem.read(0xFFF4));
+    try std.testing.expectEqual(0b01000000, cpu.mem.read(0xFFF3));
+    try std.testing.expectEqual(0x3E, cpu.mem.read(0xFFF2));
+    try std.testing.expectEqual(0b00100000, cpu.mem.read(0xFFF1));
+    try std.testing.expectEqual(0x3E, cpu.mem.read(0xFFF0));
+    try std.testing.expectEqual(0b00000000, cpu.mem.read(0xFFEF));
+    try std.testing.expectEqual(0x0A, cpu.mem.read(0xFFEE));
+    try std.testing.expectEqual(0b00000000, cpu.mem.read(0xFFED));
+    try std.testing.expectEqual(0x0A, cpu.mem.read(0xFFEC));
+    try std.testing.expectEqual(0b01000000, cpu.mem.read(0xFFEB));
 }
 
 test "Arithmetic (16-bit)" {
@@ -425,10 +425,10 @@ test "Fibonacci" {
 
     try std.testing.expectEqual(program.len, cpu.reg.PC);
 
-    try std.testing.expectEqual(1, cpu.mmu.read(0xC000));
-    try std.testing.expectEqual(0, cpu.mmu.read(0xC001));
-    try std.testing.expectEqual(1, cpu.mmu.read(0xC002));
-    try std.testing.expectEqual(0, cpu.mmu.read(0xC003));
+    try std.testing.expectEqual(1, cpu.mem.read(0xC000));
+    try std.testing.expectEqual(0, cpu.mem.read(0xC001));
+    try std.testing.expectEqual(1, cpu.mem.read(0xC002));
+    try std.testing.expectEqual(0, cpu.mem.read(0xC003));
 
     var prev_n: usize = 1;
     var n: usize = 1;
@@ -437,8 +437,8 @@ test "Fibonacci" {
         n += prev_n;
         prev_n = tmp;
 
-        const x = cpu.mmu.read(@intCast(0xC000 + i * 2));
-        const y: u16 = @intCast(cpu.mmu.read(@intCast(0xC000 + i * 2 + 1)));
+        const x = cpu.mem.read(@intCast(0xC000 + i * 2));
+        const y: u16 = @intCast(cpu.mem.read(@intCast(0xC000 + i * 2 + 1)));
         const yx = (y << 8) | x;
         try std.testing.expectEqual(n, yx);
     }
@@ -509,7 +509,7 @@ test "Prime Sieve" {
     }
 
     for (0..256) |i| {
-        try std.testing.expectEqual(primes[i], cpu.mmu.read(0xC000 + @as(u16, @intCast(i))));
+        try std.testing.expectEqual(primes[i], cpu.mem.read(0xC000 + @as(u16, @intCast(i))));
     }
 }
 

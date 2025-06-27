@@ -1,6 +1,8 @@
 const std = @import("std");
-const Cpu = @import("lib").cpu.Cpu;
-const Mmu = @import("lib").mmu.Mmu;
+const lib = @import("lib");
+const Cpu = lib.cpu.Cpu;
+const Memory = lib.memory.Memory;
+const SimpleMemory = lib.memory.SimpleMemory;
 
 const logger = std.log.scoped(.testutil);
 
@@ -198,19 +200,13 @@ fn setFlagWrite(flagOpaque: *anyopaque, _: u8) void {
     flag.* = true;
 }
 
-fn makeMmu() !Mmu {
-    var mmu = Mmu.init();
-    mmu.zeroize();
-    return mmu;
-}
-
-fn makeCpu(breakpoint: ?u8, mmu: *Mmu) !Cpu {
-    var cpu = Cpu.init(mmu, breakpoint);
+fn makeCpu(breakpoint: ?u8, mem: *Memory) !Cpu {
+    var cpu = Cpu.init(mem, breakpoint);
     cpu.zeroize_regs();
     return cpu;
 }
 
-fn expectCpuState(cpu: *const Cpu, state: *TestCpuState, program: []const u8) !void {
+fn expectCpuState(cpu: *const Cpu, mem: *Memory, state: *TestCpuState, program: []const u8) !void {
     try std.testing.expectEqual(state.flagZ, cpu.reg.AF.Lo.Z);
     try std.testing.expectEqual(state.flagN, cpu.reg.AF.Lo.N);
     try std.testing.expectEqual(state.flagH, cpu.reg.AF.Lo.H);
@@ -236,12 +232,12 @@ fn expectCpuState(cpu: *const Cpu, state: *TestCpuState, program: []const u8) !v
     }
 
     var actualMemory: [0xFFFF + 1]u8 = undefined;
-    cpu.mmu.dumpMemory(0, &actualMemory);
+    mem.dumpMemory(0, &actualMemory);
 
     try std.testing.expectEqualSlices(u8, &expectedMemory, &actualMemory);
 }
 
-fn mapInitialState(cpu: *Cpu, initial_state: *TestCpuState, program: []const u8) !void {
+fn mapInitialState(cpu: *Cpu, mem: *Memory, initial_state: *TestCpuState, program: []const u8) !void {
     cpu.reg.AF.Lo.Z = initial_state.flagZ;
     cpu.reg.AF.Lo.N = initial_state.flagN;
     cpu.reg.AF.Lo.H = initial_state.flagH;
@@ -259,18 +255,23 @@ fn mapInitialState(cpu: *Cpu, initial_state: *TestCpuState, program: []const u8)
     cpu.reg.IME = initial_state.regIME;
 
     for (initial_state.addresses.items) |state| {
-        cpu.mmu.write(state.address, state.value);
+        mem.write(state.address, state.value);
     }
-    cpu.mmu.mapRom(program);
+    for (program, 0..) |b, i| {
+        mem.write(@intCast(i), b);
+    }
 
     initial_state.deinit();
 }
 
-pub fn runTestCase(name: []const u8, program: []const u8, initial_state: *TestCpuState, ticks: []const *TestCpuState) !void {
-    var mmu = try makeMmu();
-    var cpu = try makeCpu(null, &mmu);
+var backingArray = [_]u8{0} ** 0x10000;
 
-    try mapInitialState(&cpu, initial_state, program);
+pub fn runTestCase(name: []const u8, program: []const u8, initial_state: *TestCpuState, ticks: []const *TestCpuState) !void {
+    @memset(&backingArray, 0);
+    var mem = SimpleMemory(false, &backingArray, null).memory();
+    var cpu = try makeCpu(null, &mem);
+
+    try mapInitialState(&cpu, &mem, initial_state, program);
 
     defer for (ticks) |state| {
         state.deinit();
@@ -278,9 +279,9 @@ pub fn runTestCase(name: []const u8, program: []const u8, initial_state: *TestCp
 
     for (ticks, 1..) |state, idx| {
         cpu.tick();
-        try std.testing.expect(!cpu.mmu.illegalMemoryOperationHappened());
+        try std.testing.expect(!mem.flags.illegal);
         try std.testing.expect(!cpu.illegalInstructionExecuted());
-        expectCpuState(&cpu, state, program) catch |err| {
+        expectCpuState(&cpu, &mem, state, program) catch |err| {
             logger.debug("{s}: Failed on tick {d}", .{ name, idx });
             return err;
         };
@@ -288,10 +289,13 @@ pub fn runTestCase(name: []const u8, program: []const u8, initial_state: *TestCp
 }
 
 pub fn runProgram(program: []const u8) !Cpu {
-    var mmu = try makeMmu();
-    var cpu = try makeCpu(0x40, &mmu);
+    @memset(&backingArray, 0);
+    var mem = SimpleMemory(false, &backingArray, null).memory();
+    var cpu = try makeCpu(0x40, &mem);
 
-    cpu.mmu.mapRom(program);
+    for (program, 0..) |b, i| {
+        mem.write(@intCast(i), b);
+    }
 
     while (true) {
         cpu.tick();
@@ -300,7 +304,7 @@ pub fn runProgram(program: []const u8) !Cpu {
             break;
         }
         try std.testing.expect(!cpu.illegalInstructionExecuted());
-        try std.testing.expect(!cpu.mmu.illegalMemoryOperationHappened());
+        try std.testing.expect(!mem.flags.illegal);
     }
 
     return cpu;

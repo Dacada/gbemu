@@ -1,10 +1,14 @@
+const memory = @import("memory.zig");
+const Memory = memory.Memory;
+const SimpleMemory = memory.SimpleMemory;
+
+var STATIC_MMIO = [_]u8{0} ** 0x81;
+
 pub const Mmio = struct {
-    pub fn write(_: Mmio, _: u16, _: u8, _: *bool) void {}
-    pub fn read(_: Mmio, _: u16, _: *bool, _: *bool) u8 {
-        return 0;
-    }
-    pub fn setValue(_: Mmio, _: u16, _: u8) void {}
-    pub fn getValue(_: Mmio, _: u16) u8 {
-        return 0;
+    mmio: Memory,
+    pub fn init() Mmio {
+        return Mmio{
+            .mmio = SimpleMemory(false, &STATIC_MMIO, null).memory(),
+        };
     }
 };

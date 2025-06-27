@@ -32,7 +32,7 @@ const TestResult = enum {
 };
 
 fn run_test(file: std.fs.File, writer: anytype, cfg: std.io.tty.Config) !TestResult {
-    var cartridge = lib.cartridge.Cartridge.fromFile(file) catch |e| {
+    const cartridge = lib.cartridge.Cartridge.fromFile(file) catch |e| {
         switch (e) {
             lib.cartridge.CartridgeHeaderParseError.NoHeader,
             lib.cartridge.CartridgeHeaderParseError.NoRom,
@@ -47,13 +47,20 @@ fn run_test(file: std.fs.File, writer: anytype, cfg: std.io.tty.Config) !TestRes
         }
     };
 
-    var ppu = lib.ppu.Ppu{};
-    var mmio = lib.mmio.Mmio{};
-    var mmu = lib.mmu.Mmu.init(&ppu, &mmio);
-    var cpu = lib.cpu.Cpu.init(&mmu, 0x40);
+    const ppu = lib.ppu.Ppu.init();
+    const mmio = lib.mmio.Mmio.init();
+    var mmu = lib.mmu.Mmu{
+        .cartRom = cartridge.rom,
+        .cartRam = cartridge.ram,
+        .vram = ppu.vram,
+        .oam = ppu.oam,
+        .forbidden = ppu.forbidden,
+        .mmio = mmio.mmio,
+    };
+    lib.emulator.initialize_memory(mmu.memory());
+    var mem = mmu.memory();
+    var cpu = lib.cpu.Cpu.init(&mem, 0x40);
     lib.emulator.initialize_cpu(&cpu, cartridge.checksum);
-    lib.emulator.initialize_mmu(&mmu);
-    mmu.setCartridge(&cartridge);
 
     var count: u32 = 0;
     while (true) {

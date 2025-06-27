@@ -15,7 +15,7 @@ pub fn main() !void {
         .error_exit_code = 1,
         .optional = &.{
             cli.ArgParserParamDefinition.init(
-                "breakpoint_instruction",
+                "breakpoint-instruction",
                 "This opcode will be treated like a software breakpoint.",
                 ?u8,
                 null,
@@ -26,15 +26,26 @@ pub fn main() !void {
     var argiter = std.process.args();
     const args = parser.parse(&argiter);
 
-    var ppu = lib.ppu.Ppu{};
-    var mmio = lib.mmio.Mmio{};
-    var mmu = lib.mmu.Mmu.init(&ppu, &mmio);
-    var cpu = lib.cpu.Cpu.init(&mmu, args.breakpoint_instruction);
-    var dbg = lib.debugger.Debugger.init(&cpu, std.io.getStdOut());
-    var emu = lib.emulator.Emulator.init(&mmu, &cpu, &dbg);
+    const stdout = std.io.getStdOut();
+    const writer = stdout.writer();
 
-    var cartridge = try makeRom();
-    emu.setup(&cartridge);
+    const cartridge = try makeRom();
+    const ppu = lib.ppu.Ppu.init();
+    const mmio = lib.mmio.Mmio.init();
+    var mmu = lib.mmu.Mmu{
+        .cartRom = cartridge.rom,
+        .cartRam = cartridge.ram,
+        .vram = ppu.vram,
+        .oam = ppu.oam,
+        .forbidden = ppu.forbidden,
+        .mmio = mmio.mmio,
+    };
+    lib.emulator.initialize_memory(mmu.memory());
+    var mem = mmu.memory();
+    var cpu = lib.cpu.Cpu.init(&mem, args.@"breakpoint-instruction");
+    lib.emulator.initialize_cpu(&cpu, cartridge.checksum);
+    var dbg = lib.debugger.Debugger(lib.cpu.Cpu, @TypeOf(writer)).init(&cpu, writer);
+    var emu = lib.emulator.Emulator(@TypeOf(dbg)).init(&cpu, &dbg);
 
     try emu.run(true);
 }

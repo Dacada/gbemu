@@ -28,8 +28,22 @@ pub const std_options: std.Options = .{
 };
 
 // Capture stderr/stdout output
+var fake_stderr: ?std.posix.fd_t = null;
+var fake_stdout: ?std.posix.fd_t = null;
 var current_stderr: std.posix.fd_t = std.posix.STDERR_FILENO;
 var current_stdout: std.posix.fd_t = std.posix.STDOUT_FILENO;
+fn mask_std() void {
+    if (fake_stderr) |fd| {
+        current_stderr = fd;
+    }
+    if (fake_stdout) |fd| {
+        current_stdout = fd;
+    }
+}
+fn restore_std() void {
+    current_stderr = std.posix.STDERR_FILENO;
+    current_stdout = std.posix.STDOUT_FILENO;
+}
 pub const os = struct {
     pub const io = struct {
         pub fn getStdErrHandle() std.posix.fd_t {
@@ -40,6 +54,62 @@ pub const os = struct {
         }
     };
 };
+
+// Panic handling
+var panicking = false;
+fn test_runner_panic(msg: []const u8, first_trace_addr: ?usize) noreturn {
+    if (panicking) {
+        std.posix.abort();
+    }
+    panicking = true;
+
+    restore_std();
+
+    const stdout = std.io.getStdOut();
+    const writer = stdout.writer();
+    const ttyConfig = std.io.tty.detectConfig(stdout);
+    errorOutput.writeColor(ttyConfig, writer, "PANIC!\n") catch {};
+
+    if (current_test) |t| {
+        writer.writeAll("  → in: ") catch {};
+        importantOutput.beginColor(ttyConfig, writer) catch {};
+        writer.print("{s}\n", .{t.name}) catch {};
+        endColor(ttyConfig, writer) catch {};
+        writer.writeAll("    ↪ msg: ") catch {};
+    } else {
+        writer.writeAll("  → msg: ") catch {};
+    }
+
+    importantOutput.beginColor(ttyConfig, writer) catch {};
+    writer.print("{s}\n", .{msg}) catch {};
+    endColor(ttyConfig, writer) catch {};
+
+    writer.writeAll("\n  → captured output: ") catch {};
+    if (fake_stdout) |fd| {
+        const captured_stdout = extractCapturedOutput(fd, logCaptureContext.allocator.?) catch null;
+        if (captured_stdout) |cap| {
+            displayCapturedOutputLine(ttyConfig, writer, "stdout", cap) catch {};
+        }
+    }
+    if (fake_stderr) |fd| {
+        const captured_stderr = extractCapturedOutput(fd, logCaptureContext.allocator.?) catch null;
+        if (captured_stderr) |cap| {
+            displayCapturedOutputLine(ttyConfig, writer, "stderr", cap) catch {};
+        }
+    }
+    for (logCaptureContext.captured.?.items) |line| {
+        displayCapturedOutputLine(ttyConfig, writer, "log call", line) catch {};
+    }
+
+    writer.writeAll("\nStack trace (stderr):\n") catch {};
+    if (@errorReturnTrace()) |t| {
+        std.debug.dumpStackTrace(t.*);
+    }
+    std.debug.dumpCurrentStackTrace(first_trace_addr orelse @returnAddress());
+
+    std.posix.abort();
+}
+pub const panic = std.debug.FullPanic(test_runner_panic);
 
 fn extractCapturedOutput(fd: std.posix.fd_t, allocator: std.mem.Allocator) !?[]const u8 {
     try std.posix.lseek_END(fd, 0);
@@ -108,10 +178,19 @@ const RunnerLogCapturedOutput = struct {
     displayed: bool,
 };
 
-pub fn main() !void {
+pub fn main() void {
+    inner_main() catch @panic("test runner error");
+}
+
+var current_test: ?*const std.builtin.TestFn = null;
+
+pub fn inner_main() !void {
     if (builtin.test_functions.len == 0) {
         return;
     }
+
+    fake_stdout = try std.posix.memfd_create("fake_stdout", 0);
+    fake_stderr = try std.posix.memfd_create("fake_stderr", 0);
 
     const stdout = std.io.getStdOut();
     const writer = stdout.writer();
@@ -122,8 +201,8 @@ pub fn main() !void {
     const allocator = arena.allocator();
 
     const fake_fds = .{
-        .stdout = try std.posix.memfd_create("fake_stdout", 0),
-        .stderr = try std.posix.memfd_create("fake_stderr", 0),
+        .stdout = fake_stdout,
+        .stderr = fake_stderr,
     };
 
     var outputs = .{
@@ -150,17 +229,17 @@ pub fn main() !void {
         std.testing.allocator_instance = .{};
 
         total_tests += 1;
-        current_stdout = fake_fds.stdout;
-        current_stderr = fake_fds.stderr;
+        mask_std();
         const start = std.time.milliTimestamp();
+        current_test = &t;
         const result = t.func();
+        current_test = null;
         const elapsed = std.time.milliTimestamp() - start;
-        current_stderr = std.posix.STDERR_FILENO;
-        current_stdout = std.posix.STDOUT_FILENO;
+        restore_std();
 
         inline for (@typeInfo(@TypeOf(outputs)).@"struct".fields) |field| {
             const fd = @field(fake_fds, field.name);
-            const buffNullable = try extractCapturedOutput(fd, allocator);
+            const buffNullable = try extractCapturedOutput(fd.?, allocator);
             if (buffNullable) |buff| {
                 try @field(outputs, field.name).put(t.name, .{
                     .content = buff,

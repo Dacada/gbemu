@@ -8,6 +8,7 @@ pub const cartridge = @import("cartridge.zig");
 pub const debugger = @import("debugger.zig");
 pub const ppu = @import("ppu.zig");
 pub const mmio = @import("mmio.zig");
+pub const memory = @import("memory.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());
