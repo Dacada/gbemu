@@ -46,4 +46,5 @@ pub const Ppu = struct {
             },
         };
     }
+    pub fn tick(_: *const Ppu) void {}
 };

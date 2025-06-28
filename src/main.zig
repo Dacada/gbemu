@@ -33,6 +33,8 @@ pub fn main() !void {
 
     const cartridge = try makeRom();
 
+    var sched = lib.scheduler.Scheduler{};
+
     var joypad: lib.joypad.Joypad = undefined;
     var serial: lib.serial.Serial = undefined;
     var mmio = lib.mmio.Mmio{
@@ -46,7 +48,7 @@ pub fn main() !void {
         .boot_rom = lib.memory.SimpleMemory(false, &array, null).memory(),
     };
 
-    const ppu = lib.ppu.Ppu.init();
+    var ppu = lib.ppu.Ppu.init();
     var mmu = lib.mmu.Mmu{
         .cartRom = cartridge.rom,
         .cartRam = cartridge.ram,
@@ -60,7 +62,12 @@ pub fn main() !void {
     var cpu = lib.cpu.Cpu.init(&mem, args.@"breakpoint-instruction");
     lib.emulator.initialize_cpu(&cpu, cartridge.checksum);
     var dbg = lib.debugger.Debugger(lib.cpu.Cpu, @TypeOf(writer)).init(&cpu, writer);
-    var emu = lib.emulator.Emulator(@TypeOf(dbg)).init(&cpu, &dbg);
+    var emu = lib.emulator.Emulator(@TypeOf(dbg)){
+        .cpu = &cpu,
+        .ppu = &ppu,
+        .sched = &sched,
+        .debugger = &dbg,
+    };
 
     try emu.run(true);
 }

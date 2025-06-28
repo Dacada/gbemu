@@ -11,6 +11,8 @@ pub const mmio = @import("mmio.zig");
 pub const joypad = @import("joypad.zig");
 pub const serial = @import("serial.zig");
 pub const memory = @import("memory.zig");
+pub const scheduler = @import("scheduler.zig");
+pub const fixed_size_heap = @import("fixed_size_heap.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());

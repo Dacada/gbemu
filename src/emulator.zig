@@ -1,19 +1,33 @@
 const std = @import("std");
 const Cpu = @import("cpu.zig").Cpu;
+const Ppu = @import("ppu.zig").Ppu;
 const Memory = @import("memory.zig").Memory;
+const Scheduler = @import("scheduler.zig").Scheduler;
 
 pub fn Emulator(Debugger: type) type {
     return struct {
         const This = @This();
 
         cpu: *Cpu,
+        ppu: *Ppu,
+        sched: *Scheduler,
         debugger: *Debugger,
 
-        pub fn init(cpu: *Cpu, debugger: *Debugger) This {
-            return .{
-                .cpu = cpu,
-                .debugger = debugger,
-            };
+        divider: u2 = 0,
+
+        pub fn tick(self: *This) !bool {
+            self.ppu.tick();
+            if (self.divider == 0) {
+                self.cpu.tick();
+                const result = try self.debugger.enter_debugger_if_needed();
+                if (result == .should_stop) {
+                    return true;
+                }
+            }
+            self.sched.tick();
+
+            self.divider +%= 1;
+            return false;
         }
 
         pub fn run(self: *This, start_in_debugger: bool) !void {
@@ -24,10 +38,8 @@ pub fn Emulator(Debugger: type) type {
                 }
             }
             while (true) {
-                self.cpu.tick();
-                const result = try self.debugger.enter_debugger_if_needed();
-                if (result == .should_stop) {
-                    break;
+                if (try self.tick()) {
+                    return;
                 }
             }
         }
