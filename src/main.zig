@@ -36,7 +36,9 @@ pub fn main() !void {
     var sched = lib.scheduler.Scheduler{};
 
     var joypad: lib.joypad.Joypad = undefined;
-    var serial: lib.serial.Serial = undefined;
+    var serial = lib.serial.Serial{
+        .sched = &sched,
+    };
     var mmio = lib.mmio.Mmio{
         .joypad = joypad.memory(),
         .serial = serial.memory(),
