@@ -1,8 +1,32 @@
 const std = @import("std");
 const lib = @import("lib");
 
-var array = [_]u8{0x00} ** 0x10000;
-var program = [_]u8{0x00} ** 0x100;
+const Scheduler = lib.scheduler.Scheduler;
+const Serial = lib.serial.Serial(Scheduler);
+const Dummy = lib.mmio.Dummy;
+const Mmio = lib.mmio.Mmio(Dummy, Serial, Dummy, Dummy, Dummy, Dummy, Dummy, Dummy);
+const Mmu = lib.mmu.Mmu(FakeCartridge, FakePpu, Mmio);
+const Cpu = lib.cpu.Cpu(Mmu);
+const Emulator = lib.emulator.Emulator(Cpu, FakePpu, Scheduler, FakeDebugger);
+
+const MockMemory = lib.mmu.MockMemory;
+
+const FakeCartridge = struct {
+    lastWrite: u8 = 0x00,
+
+    pub const Rom = MockMemory;
+    pub const Ram = MockMemory;
+};
+
+const FakePpu = struct {
+    lastWrite: u8 = 0x00,
+
+    pub const Vram = MockMemory;
+    pub const Oam = MockMemory;
+    pub const Forbidden = MockMemory;
+
+    pub fn tick(_: *FakePpu) void {}
+};
 
 const FakeDebugger = struct {
     pub fn enter_debugger_if_needed(_: *const FakeDebugger) !?lib.debugger.DebuggerResult {
@@ -10,7 +34,7 @@ const FakeDebugger = struct {
     }
 };
 
-fn spin(emu: *lib.emulator.Emulator(FakeDebugger), ticks: usize) !void {
+fn spin(emu: *Emulator, ticks: usize) !void {
     for (0..ticks) |_| {
         const res = try emu.tick();
         try std.testing.expect(!res);
@@ -18,49 +42,39 @@ fn spin(emu: *lib.emulator.Emulator(FakeDebugger), ticks: usize) !void {
 }
 
 test "serial transfer" {
-    const code = "loop: jp loop";
-    const prog = try lib.assembler.translate(code, std.testing.allocator);
-    std.mem.copyBackwards(u8, &program, prog);
-    std.testing.allocator.free(prog);
+    var cart = FakeCartridge{};
 
-    var sched = lib.scheduler.Scheduler{};
-    var serial = lib.serial.Serial{ .sched = &sched };
-    var mmio = lib.mmio.Mmio{
-        .joypad = lib.memory.SimpleMemory(false, &array, null).memory(),
-        .serial = serial.memory(),
-        .timer = lib.memory.SimpleMemory(false, &array, null).memory(),
-        .interrupts = lib.memory.SimpleMemory(false, &array, null).memory(),
-        .audio = lib.memory.SimpleMemory(false, &array, null).memory(),
-        .wave = lib.memory.SimpleMemory(false, &array, null).memory(),
-        .lcd = lib.memory.SimpleMemory(false, &array, null).memory(),
-        .boot_rom = lib.memory.SimpleMemory(false, &array, null).memory(),
-    };
-    var mmu = lib.mmu.Mmu{
-        .cartRom = lib.memory.SimpleMemory(false, &program, null).memory(),
-        .cartRam = lib.memory.SimpleMemory(false, &array, null).memory(),
-        .vram = lib.memory.SimpleMemory(false, &array, null).memory(),
-        .oam = lib.memory.SimpleMemory(false, &array, null).memory(),
-        .forbidden = lib.memory.SimpleMemory(false, &array, null).memory(),
-        .mmio = mmio.memory(),
-    };
-    lib.emulator.initialize_memory(mmu.memory());
-    var ppu = lib.ppu.Ppu.init();
-    var mem = mmu.memory();
-    var cpu = lib.cpu.Cpu.init(&mem, null);
+    var sched = Scheduler.init();
+
+    var dummy = Dummy{};
+    var serial = Serial.init(&sched);
+    var ppu = FakePpu{};
+
+    var mmio = Mmio.init(
+        &dummy,
+        &serial,
+        &dummy,
+        &dummy,
+        &dummy,
+        &dummy,
+        &dummy,
+        &dummy,
+    );
+
+    var mmu = Mmu.init(&cart, &ppu, &mmio);
+    lib.emulator.initialize_memory(Mmu, &mmu);
+
+    var cpu = Cpu.init(&mmu, null);
+
     var dbg = FakeDebugger{};
-    var emu = lib.emulator.Emulator(FakeDebugger){
-        .cpu = &cpu,
-        .ppu = &ppu,
-        .sched = &sched,
-        .debugger = &dbg,
-    };
+    var emu = Emulator.init(&cpu, &ppu, &sched, &dbg);
 
     // Wait a few cycles
     try spin(&emu, 100);
 
     // Start transfer
-    mem.write(0xFF01, 0xAA);
-    mem.write(0xFF02, 0b1000_0001);
+    mmu.write(0xFF01, 0xAA);
+    mmu.write(0xFF02, 0b1000_0001);
 
     // No changes yet
     try std.testing.expect(serial.running);

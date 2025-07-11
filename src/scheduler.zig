@@ -12,8 +12,15 @@ fn scheduled_event_comp(a: ScheduledEvent, b: ScheduledEvent) std.math.Order {
 }
 
 pub const Scheduler = struct {
-    heap: Heap = Heap{},
-    ticks: u64 = 0,
+    heap: Heap,
+    ticks: u64,
+
+    pub inline fn init() Scheduler {
+        return Scheduler{
+            .heap = Heap.init(),
+            .ticks = 0,
+        };
+    }
 
     pub fn schedule(self: *Scheduler, event: ScheduledEvent, after_ticks: u64) void {
         var e = event;
@@ -31,7 +38,7 @@ pub const Scheduler = struct {
             }
         }
 
-        // For simplicity, assume we will never overflow (around 500,000 year of continuous operation)
+        // For simplicity, assume we will never overflow (around 500,000 years of continuous operation)
         self.ticks += 1;
     }
 };
@@ -43,7 +50,7 @@ const LogContext = struct {
 };
 
 test "single event fires after correct number of ticks" {
-    var scheduler = Scheduler{};
+    var scheduler = Scheduler.init();
 
     var fired = false;
 
@@ -75,7 +82,7 @@ fn record(ctx: *anyopaque) void {
 }
 
 test "multiple events fire in correct order" {
-    var scheduler = Scheduler{};
+    var scheduler = Scheduler.init();
 
     var log: [4]u8 = undefined;
     var index: usize = 0;
@@ -103,7 +110,7 @@ fn increment(ctx: *anyopaque) void {
 }
 
 test "events scheduled for same tick all fire" {
-    var scheduler = Scheduler{};
+    var scheduler = Scheduler.init();
 
     var count: u8 = 0;
 
@@ -123,7 +130,7 @@ test "events scheduled for same tick all fire" {
 }
 
 test "scheduler tick counter advances correctly" {
-    var scheduler = Scheduler{};
+    var scheduler = Scheduler.init();
 
     try std.testing.expectEqual(@as(u64, 0), scheduler.ticks);
 

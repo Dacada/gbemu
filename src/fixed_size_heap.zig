@@ -10,8 +10,15 @@ pub fn FixedSizeHeap(Element: type, Capacity: comptime_int, comp: fn (a: Element
     return struct {
         const This = @This();
 
-        elements: [Capacity]Element = undefined,
-        count: usize = 0,
+        elements: [Capacity]Element,
+        count: usize,
+
+        pub inline fn init() This {
+            return This{
+                .elements = undefined,
+                .count = 0,
+            };
+        }
 
         pub fn push(self: *This, element: Element) if (should_panic) void else (FixedSizeHeapError!void) {
             if (self.count >= Capacity) {
@@ -108,7 +115,7 @@ fn int_comp(a: u32, b: u32) Order {
 }
 
 test "push and pop maintains min-heap order" {
-    var heap = IntHeap{};
+    var heap = IntHeap.init();
 
     try heap.push(3);
     try heap.push(1);
@@ -129,7 +136,7 @@ test "push and pop maintains min-heap order" {
 }
 
 test "peek returns smallest element without removal" {
-    var heap = IntHeap{};
+    var heap = IntHeap.init();
 
     try heap.push(5);
     try heap.push(2);
@@ -143,13 +150,13 @@ test "peek returns smallest element without removal" {
 }
 
 test "pop on empty heap returns HeapEmpty error" {
-    var heap = IntHeap{};
+    var heap = IntHeap.init();
     const result = heap.pop();
     try std.testing.expectError(FixedSizeHeapError.HeapEmpty, result);
 }
 
 test "push on full heap returns HeapFull error" {
-    var heap = IntHeap{};
+    var heap = IntHeap.init();
 
     try heap.push(1);
     try heap.push(2);
@@ -161,6 +168,6 @@ test "push on full heap returns HeapFull error" {
 }
 
 test "peek returns null when heap is empty" {
-    var heap = IntHeap{};
+    var heap = IntHeap.init();
     try std.testing.expectEqual(@as(?u32, null), heap.peek());
 }

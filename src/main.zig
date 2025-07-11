@@ -2,14 +2,26 @@ const std = @import("std");
 const lib = @import("lib");
 const cli = @import("cli.zig");
 
+const Scheduler = lib.scheduler.Scheduler;
+const Cartridge = lib.cartridge.Cartridge;
+const Joypad = lib.joypad.Joypad;
+const Serial = lib.serial.Serial(Scheduler);
+const Dummy = lib.mmio.Dummy;
+const Mmio = lib.mmio.Mmio(Joypad, Serial, Dummy, Dummy, Dummy, Dummy, Dummy, Dummy);
+const Ppu = lib.ppu.Ppu;
+const Mmu = lib.mmu.Mmu(Cartridge, Ppu, Mmio);
+const Cpu = lib.cpu.Cpu(Mmu);
+const Debugger = lib.debugger.Debugger(Cpu, Mmu, std.fs.File.Writer);
+const Emulator = lib.emulator.Emulator(Cpu, Ppu, Scheduler, Debugger);
+
 var array = [_]u8{0x00} ** 0x100;
 
-fn makeRom() !lib.cartridge.Cartridge {
+fn makeCart() !Cartridge {
     var dir = try std.fs.openDirAbsolute("/home/dacada/Downloads/testroms/mooneye-test-suite/acceptance", .{});
     defer dir.close();
     const file = try dir.openFile("call_timing.gb", .{});
     defer file.close();
-    return lib.cartridge.Cartridge.fromFile(file);
+    return Cartridge.fromFile(file);
 }
 
 pub fn main() !void {
@@ -31,45 +43,39 @@ pub fn main() !void {
     const stdout = std.io.getStdOut();
     const writer = stdout.writer();
 
-    const cartridge = try makeRom();
+    var cart = try makeCart();
 
-    var sched = lib.scheduler.Scheduler{};
+    var sched = Scheduler.init();
 
-    var joypad: lib.joypad.Joypad = undefined;
-    var serial = lib.serial.Serial{
-        .sched = &sched,
-    };
-    var mmio = lib.mmio.Mmio{
-        .joypad = joypad.memory(),
-        .serial = serial.memory(),
-        .timer = lib.memory.SimpleMemory(false, &array, null).memory(),
-        .interrupts = lib.memory.SimpleMemory(false, &array, null).memory(),
-        .audio = lib.memory.SimpleMemory(false, &array, null).memory(),
-        .wave = lib.memory.SimpleMemory(false, &array, null).memory(),
-        .lcd = lib.memory.SimpleMemory(false, &array, null).memory(),
-        .boot_rom = lib.memory.SimpleMemory(false, &array, null).memory(),
-    };
+    var joypad = Joypad.init();
+    var serial = Serial.init(&sched);
+    var timer = Dummy{};
+    var interrupt = Dummy{};
+    var audio = Dummy{};
+    var wave = Dummy{};
+    var lcd = Dummy{};
+    var boot_rom = Dummy{};
+    var ppu = Ppu.init();
 
-    var ppu = lib.ppu.Ppu.init();
-    var mmu = lib.mmu.Mmu{
-        .cartRom = cartridge.rom,
-        .cartRam = cartridge.ram,
-        .vram = ppu.vram,
-        .oam = ppu.oam,
-        .forbidden = ppu.forbidden,
-        .mmio = mmio.memory(),
-    };
-    lib.emulator.initialize_memory(mmu.memory());
-    var mem = mmu.memory();
-    var cpu = lib.cpu.Cpu.init(&mem, args.@"breakpoint-instruction");
-    lib.emulator.initialize_cpu(&cpu, cartridge.checksum);
-    var dbg = lib.debugger.Debugger(lib.cpu.Cpu, @TypeOf(writer)).init(&cpu, writer);
-    var emu = lib.emulator.Emulator(@TypeOf(dbg)){
-        .cpu = &cpu,
-        .ppu = &ppu,
-        .sched = &sched,
-        .debugger = &dbg,
-    };
+    var mmio = Mmio.init(
+        &joypad,
+        &serial,
+        &timer,
+        &interrupt,
+        &audio,
+        &wave,
+        &lcd,
+        &boot_rom,
+    );
 
+    var mmu = Mmu.init(&cart, &ppu, &mmio);
+    lib.emulator.initialize_memory(Mmu, &mmu);
+
+    var cpu = Cpu.init(&mmu, args.@"breakpoint-instruction");
+    lib.emulator.initialize_cpu(Cpu, &cpu, cart.checksum);
+
+    var dbg = Debugger.init(&cpu, &mmu, writer);
+
+    var emu = Emulator.init(&cpu, &ppu, &sched, &dbg);
     try emu.run(true);
 }

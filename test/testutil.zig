@@ -1,8 +1,8 @@
 const std = @import("std");
 const lib = @import("lib");
-const Cpu = lib.cpu.Cpu;
-const Memory = lib.memory.Memory;
-const SimpleMemory = lib.memory.SimpleMemory;
+
+const Mmu = lib.mmu.MockMmu;
+const Cpu = lib.cpu.Cpu(Mmu);
 
 const logger = std.log.scoped(.testutil);
 
@@ -34,8 +34,7 @@ pub const TestCpuState = struct {
     addresses: std.ArrayList(TestRamState),
 
     pub fn init() *TestCpuState {
-        // this should panic since we're only ever running this in a debug context
-        const state = std.testing.allocator.create(TestCpuState) catch unreachable;
+        const state = std.testing.allocator.create(TestCpuState) catch @panic("allocation failed");
         state.* = TestCpuState{
             .addresses = std.ArrayList(TestRamState).init(std.testing.allocator),
         };
@@ -200,13 +199,7 @@ fn setFlagWrite(flagOpaque: *anyopaque, _: u8) void {
     flag.* = true;
 }
 
-fn makeCpu(breakpoint: ?u8, mem: *Memory) !Cpu {
-    var cpu = Cpu.init(mem, breakpoint);
-    cpu.zeroize_regs();
-    return cpu;
-}
-
-fn expectCpuState(cpu: *const Cpu, mem: *Memory, state: *TestCpuState, program: []const u8) !void {
+fn expectCpuState(cpu: *const Cpu, state: *TestCpuState, program: []const u8) !void {
     try std.testing.expectEqual(state.flagZ, cpu.reg.AF.Lo.Z);
     try std.testing.expectEqual(state.flagN, cpu.reg.AF.Lo.N);
     try std.testing.expectEqual(state.flagH, cpu.reg.AF.Lo.H);
@@ -231,13 +224,10 @@ fn expectCpuState(cpu: *const Cpu, mem: *Memory, state: *TestCpuState, program: 
         expectedMemory[s.address] = s.value;
     }
 
-    var actualMemory: [0xFFFF + 1]u8 = undefined;
-    mem.dumpMemory(0, &actualMemory);
-
-    try std.testing.expectEqualSlices(u8, &expectedMemory, &actualMemory);
+    try std.testing.expectEqualSlices(u8, &expectedMemory, &Mmu.backingArray);
 }
 
-fn mapInitialState(cpu: *Cpu, mem: *Memory, initial_state: *TestCpuState, program: []const u8) !void {
+fn mapInitialState(cpu: *Cpu, mmu: *Mmu, initial_state: *TestCpuState, program: []const u8) !void {
     cpu.reg.AF.Lo.Z = initial_state.flagZ;
     cpu.reg.AF.Lo.N = initial_state.flagN;
     cpu.reg.AF.Lo.H = initial_state.flagH;
@@ -255,23 +245,31 @@ fn mapInitialState(cpu: *Cpu, mem: *Memory, initial_state: *TestCpuState, progra
     cpu.reg.IME = initial_state.regIME;
 
     for (initial_state.addresses.items) |state| {
-        mem.write(state.address, state.value);
+        mmu.write(state.address, state.value);
     }
     for (program, 0..) |b, i| {
-        mem.write(@intCast(i), b);
+        mmu.write(@intCast(i), b);
     }
 
     initial_state.deinit();
 }
 
-var backingArray = [_]u8{0} ** 0x10000;
+fn zeroizeRegisters(cpu: *Cpu) void {
+    cpu.reg.AF.setAll(0x0000);
+    cpu.reg.BC.setAll(0x0000);
+    cpu.reg.DE.setAll(0x0000);
+    cpu.reg.HL.setAll(0x0000);
+    cpu.reg.SP.setAll(0x0000);
+    cpu.reg.PC = 0x0000;
+}
 
 pub fn runTestCase(name: []const u8, program: []const u8, initial_state: *TestCpuState, ticks: []const *TestCpuState) !void {
-    @memset(&backingArray, 0);
-    var mem = SimpleMemory(false, &backingArray, null).memory();
-    var cpu = try makeCpu(null, &mem);
+    @memset(&Mmu.backingArray, 0);
+    var mmu = Mmu{};
+    var cpu = Cpu.init(&mmu, null);
+    zeroizeRegisters(&cpu);
 
-    try mapInitialState(&cpu, &mem, initial_state, program);
+    try mapInitialState(&cpu, &mmu, initial_state, program);
 
     defer for (ticks) |state| {
         state.deinit();
@@ -279,9 +277,9 @@ pub fn runTestCase(name: []const u8, program: []const u8, initial_state: *TestCp
 
     for (ticks, 1..) |state, idx| {
         cpu.tick();
-        try std.testing.expect(!mem.flags.illegal);
-        try std.testing.expect(!cpu.illegalInstructionExecuted());
-        expectCpuState(&cpu, &mem, state, program) catch |err| {
+        try std.testing.expect(!mmu.flags.illegal);
+        try std.testing.expect(!cpu.flags.illegal);
+        expectCpuState(&cpu, state, program) catch |err| {
             logger.debug("{s}: Failed on tick {d}", .{ name, idx });
             return err;
         };
@@ -289,22 +287,23 @@ pub fn runTestCase(name: []const u8, program: []const u8, initial_state: *TestCp
 }
 
 pub fn runProgram(program: []const u8) !Cpu {
-    @memset(&backingArray, 0);
-    var mem = SimpleMemory(false, &backingArray, null).memory();
-    var cpu = try makeCpu(0x40, &mem);
+    @memset(&Mmu.backingArray, 0);
+    var mmu = Mmu{};
+    var cpu = Cpu.init(&mmu, 0x40);
+    zeroizeRegisters(&cpu);
 
     for (program, 0..) |b, i| {
-        mem.write(@intCast(i), b);
+        mmu.write(@intCast(i), b);
     }
 
     while (true) {
         cpu.tick();
-        if (cpu.breakpointHappened()) {
+        if (cpu.flags.breakpoint) {
             cpu.reg.PC -= 1;
             break;
         }
-        try std.testing.expect(!cpu.illegalInstructionExecuted());
-        try std.testing.expect(!mem.flags.illegal);
+        try std.testing.expect(!cpu.flags.illegal);
+        try std.testing.expect(!mmu.flags.illegal);
     }
 
     return cpu;

@@ -1,6 +1,4 @@
-const memory = @import("memory.zig");
-const Memory = memory.Memory;
-const MemoryFlag = memory.MemoryFlag;
+const MemoryFlag = @import("memoryFlag.zig").MemoryFlag;
 
 pub const Joypad = packed struct {
     select_buttons: u1,
@@ -8,9 +6,16 @@ pub const Joypad = packed struct {
     buttons: u4,
     dpad: u4,
 
-    fn peek(selfptr: *anyopaque, _: u16) u8 {
-        const self: *Joypad = @alignCast(@ptrCast(selfptr));
+    pub inline fn init() Joypad {
+        return Joypad{
+            .select_buttons = undefined,
+            .select_dpad = undefined,
+            .buttons = undefined,
+            .dpad = undefined,
+        };
+    }
 
+    pub fn peek(self: *Joypad, _: u16) u8 {
         var lower: u4 = 0xF;
         if (self.select_buttons == 0) {
             lower &= self.buttons;
@@ -29,10 +34,8 @@ pub const Joypad = packed struct {
         return result;
     }
 
-    fn poke(selfptr: *anyopaque, _: u16, val: u8) void {
-        const self: *Joypad = @alignCast(@ptrCast(selfptr));
-
-        _ = write(self, undefined, val);
+    pub fn poke(self: *Joypad, _: u16, val: u8) void {
+        _ = self.write(undefined, val);
 
         // We allow poke to set the joypad button state
         // TODO: This is forever now, but when this is actually using proper input, it should probably be until after the next read (not peek)
@@ -44,25 +47,14 @@ pub const Joypad = packed struct {
         }
     }
 
-    fn read(selfptr: *anyopaque, _: u16) struct { ?MemoryFlag, u8 } {
-        return .{ null, peek(selfptr, undefined) };
+    pub fn read(self: *Joypad, _: u16) struct { MemoryFlag, u8 } {
+        return .{ .{}, self.peek(undefined) };
     }
 
-    fn write(selfptr: *anyopaque, _: u16, val: u8) ?MemoryFlag {
-        const self: *Joypad = @alignCast(@ptrCast(selfptr));
+    pub fn write(self: *Joypad, _: u16, val: u8) MemoryFlag {
         self.select_buttons = @intCast((val & 0b0010_0000) >> 5);
         self.select_dpad = @intCast((val & 0b0001_0000) >> 4);
-        return null;
-    }
-
-    pub fn memory(self: *Joypad) Memory {
-        return Memory{
-            .ctx = self,
-            .peek_cb = peek,
-            .poke_cb = poke,
-            .read_cb = read,
-            .write_cb = write,
-        };
+        return .{};
     }
 };
 
@@ -76,8 +68,7 @@ test "Joypad initial state reads 0xFF" {
         .dpad = 0b0000,
     };
 
-    var mem = joypad.memory();
-    const result = mem.read(0x00);
+    _, const result = joypad.read(0x00);
     try std.testing.expectEqual(0xFF, result);
 }
 
@@ -89,12 +80,10 @@ test "Joypad button selection returns button state" {
         .dpad = 0b0000,
     };
 
-    var mem = joypad.memory();
-
-    mem.poke(0x00, 0b1101_1010);
+    joypad.poke(0x00, 0b1101_1010);
     try std.testing.expectEqual(0b1010, joypad.buttons);
 
-    const result = mem.read(0x00);
+    _, const result = joypad.read(0x00);
     try std.testing.expectEqual(0b1101_1010, result);
 }
 
@@ -106,12 +95,10 @@ test "Joypad dpad selection returns dpad state" {
         .dpad = 0b0000,
     };
 
-    var mem = joypad.memory();
-
-    mem.poke(0x00, 0b1110_0101);
+    joypad.poke(0x00, 0b1110_0101);
     try std.testing.expectEqual(0b0101, joypad.dpad);
 
-    const result = mem.read(0x00);
+    _, const result = joypad.read(0x00);
     try std.testing.expectEqual(0b1110_0101, result);
 }
 
@@ -123,13 +110,11 @@ test "Joypad selection bits update correctly" {
         .dpad = 0b0000,
     };
 
-    var mem = joypad.memory();
-
-    _ = mem.write(0x00, 0b1110_0000);
+    _ = joypad.write(0x00, 0b1110_0000);
     try std.testing.expectEqual(1, joypad.select_buttons);
     try std.testing.expectEqual(0, joypad.select_dpad);
 
-    _ = mem.write(0x00, 0b1101_0000);
+    _ = joypad.write(0x00, 0b1101_0000);
     try std.testing.expectEqual(0, joypad.select_buttons);
     try std.testing.expectEqual(1, joypad.select_dpad);
 }
@@ -142,9 +127,7 @@ test "Joypad preserves unselected group state" {
         .dpad = 0b1111,
     };
 
-    var mem = joypad.memory();
-
-    mem.poke(0x00, 0b1111_0011);
+    joypad.poke(0x00, 0b1111_0011);
     try std.testing.expectEqual(0b0000, joypad.buttons);
     try std.testing.expectEqual(0b1111, joypad.dpad);
 }

@@ -1,6 +1,6 @@
 const std = @import("std");
 const assembler = @import("assembler.zig");
-const MemoryFlag = @import("memory.zig").MemoryFlag;
+const MemoryFlag = @import("memoryFlag.zig").MemoryFlag;
 
 extern fn readline(prompt: [*:0]const u8) callconv(.C) ?[*:0]u8;
 extern fn add_history(line: [*:0]const u8) callconv(.C) void;
@@ -119,7 +119,7 @@ fn Commands(DebuggerImpl: type) type {
                 return null;
             };
 
-            dbg.cpu.mem.poke(addr, value);
+            dbg.mmu.poke(addr, value);
             return null;
         }
 
@@ -146,7 +146,7 @@ fn Commands(DebuggerImpl: type) type {
             };
 
             var memory: [10]u8 = undefined;
-            dbg.cpu.mem.dumpMemory(addr, &memory);
+            dbg.mmu.dumpMemory(addr, &memory);
             for (0..count) |_| {
                 if (dbg.cpu.reg.PC - 1 == addr) {
                     try writer.print("[{X:0>4}]:  ", .{addr});
@@ -162,7 +162,7 @@ fn Commands(DebuggerImpl: type) type {
                 try writer.writeAll("]\n");
 
                 addr += adv;
-                dbg.cpu.mem.dumpMemory(addr, &memory);
+                dbg.mmu.dumpMemory(addr, &memory);
             }
 
             return null;
@@ -237,7 +237,7 @@ fn Commands(DebuggerImpl: type) type {
 
         pub fn _print_memory(dbg: *DebuggerImpl, writer: anytype, addr: u16, count: u16) !void {
             if (count == 1) {
-                const val = dbg.cpu.mem.peek(addr);
+                const val = dbg.mmu.peek(addr);
                 try writer.print("0x{X:0>2}", .{val});
                 if (std.ascii.isPrint(val)) {
                     try writer.print(" ({c})", .{val});
@@ -254,7 +254,7 @@ fn Commands(DebuggerImpl: type) type {
                     if (offset + i >= count) {
                         try writer.writeAll("   ");
                     } else {
-                        try writer.print("{X:0>2} ", .{dbg.cpu.mem.peek(addr + offset + i)});
+                        try writer.print("{X:0>2} ", .{dbg.mmu.peek(addr + offset + i)});
                     }
                 }
                 try writer.writeAll(" |");
@@ -263,7 +263,7 @@ fn Commands(DebuggerImpl: type) type {
                     if (offset + i >= count - 1) {
                         try writer.writeAll(" ");
                     } else {
-                        const val = dbg.cpu.mem.peek(addr + offset + i);
+                        const val = dbg.mmu.peek(addr + offset + i);
                         if (std.ascii.isPrint(val)) {
                             try writer.print("{c}", .{val});
                         } else {
@@ -281,21 +281,26 @@ fn Commands(DebuggerImpl: type) type {
     };
 }
 
-pub fn Debugger(CpuImpl: type, Writer: type) type {
+pub fn Debugger(Cpu: type, Mmu: type, Writer: type) type {
     return struct {
         const This = @This();
 
-        cpu: *CpuImpl,
+        cpu: *Cpu,
+        mmu: *Mmu,
         output: Writer,
 
-        stepping_cycles: bool = false,
-        stepping: bool = false,
-        breakpoints: [0x10]?u16 = [_]?u16{null} ** 0x10,
+        stepping_cycles: bool,
+        stepping: bool,
+        breakpoints: [0x10]?u16,
 
-        pub fn init(cpu: *CpuImpl, output: Writer) This {
+        pub inline fn init(cpu: *Cpu, mmu: *Mmu, output: Writer) This {
             return This{
                 .cpu = cpu,
+                .mmu = mmu,
                 .output = output,
+                .stepping_cycles = false,
+                .stepping = false,
+                .breakpoints = [_]?u16{null} ** 0x10,
             };
         }
 
@@ -328,19 +333,19 @@ pub fn Debugger(CpuImpl: type, Writer: type) type {
                 return true;
             }
 
-            if (!self.cpu.instructionBoundary()) {
+            if (!self.cpu.isInstructionBoundary()) {
                 return false;
             }
             if (self.stepping) {
                 return true;
             }
-            if (self.cpu.breakpointHappened()) {
+            if (self.cpu.flags.breakpoint) {
                 return true;
             }
-            if (self.cpu.illegalInstructionExecuted()) {
+            if (self.cpu.flags.illegal) {
                 return true;
             }
-            if (self.cpu.mem.flags.any()) {
+            if (self.mmu.flags.any()) {
                 return true;
             }
 
@@ -358,8 +363,8 @@ pub fn Debugger(CpuImpl: type, Writer: type) type {
         fn clear_flags(self: *This) void {
             self.stepping_cycles = false;
             self.stepping = false;
-            self.cpu.clearBreakpoint();
-            self.cpu.mem.flags = .{};
+            self.cpu.flags.breakpoint = false;
+            self.mmu.flags = .{};
         }
 
         pub fn enter(self: *This) !DebuggerResult {
@@ -409,36 +414,37 @@ pub fn Debugger(CpuImpl: type, Writer: type) type {
     };
 }
 
-const FakeCpu = struct {
+const MockMmu = struct {
+    flags: MemoryFlag = .{},
+    pub fn poke(_: *MockMmu, _: u16, _: u8) void {}
+};
+
+const MockCpu = struct {
     const This = @This();
 
     reg: struct {
         PC: u16 = 0,
     } = .{},
-    mem: struct {
-        flags: MemoryFlag = .{},
-        pub fn poke(_: *This, _: u16, _: u8) void {}
+    flags: struct {
+        illegal: bool = false,
+        breakpoint: bool = false,
     } = .{},
+    mmu: *MockMmu,
 
-    pub fn instructionBoundary(_: *This) bool {
+    pub fn isInstructionBoundary(_: *This) bool {
         return true;
-    }
-
-    pub fn breakpointHappened(_: *This) bool {
-        return false;
-    }
-
-    pub fn illegalInstructionExecuted(_: *This) bool {
-        return false;
     }
 
     pub fn clearBreakpoint(_: *This) void {}
 };
 
+const MockedDebugger = Debugger(MockCpu, MockMmu, @TypeOf(std.io.null_writer));
+const Cmds = Commands(MockedDebugger);
+
 test "Debugger add and remove breakpoints" {
-    const DebuggerType = Debugger(FakeCpu, @TypeOf(std.io.null_writer));
-    var fake_cpu = FakeCpu{};
-    var dbg = DebuggerType.init(&fake_cpu, std.io.null_writer);
+    var fake_mmu = MockMmu{};
+    var fake_cpu = MockCpu{ .mmu = &fake_mmu };
+    var dbg = MockedDebugger.init(&fake_cpu, &fake_mmu, std.io.null_writer);
 
     try std.testing.expect(dbg.add_breakpoint(0x1234));
     try std.testing.expect(dbg.add_breakpoint(0x5678));
@@ -454,25 +460,25 @@ test "Debugger add and remove breakpoints" {
 }
 
 test "Debugger clears flags correctly" {
-    const DebuggerType = Debugger(FakeCpu, @TypeOf(std.io.null_writer));
-    var fake_cpu = FakeCpu{};
-    var dbg = DebuggerType.init(&fake_cpu, std.io.null_writer);
+    var fake_mmu = MockMmu{};
+    var fake_cpu = MockCpu{ .mmu = &fake_mmu };
+    var dbg = MockedDebugger.init(&fake_cpu, &fake_mmu, std.io.null_writer);
 
     dbg.stepping = true;
     dbg.stepping_cycles = true;
-    dbg.cpu.mem.flags = .{ .illegal = true };
+    dbg.mmu.flags = .{ .illegal = true };
 
     dbg.clear_flags();
 
     try std.testing.expect(!dbg.stepping);
     try std.testing.expect(!dbg.stepping_cycles);
-    try std.testing.expect(!dbg.cpu.mem.flags.any());
+    try std.testing.expect(!dbg.mmu.flags.any());
 }
 
 test "Debugger should_enter triggers on stepping" {
-    const DebuggerType = Debugger(FakeCpu, @TypeOf(std.io.null_writer));
-    var fake_cpu = FakeCpu{};
-    var dbg = DebuggerType.init(&fake_cpu, std.io.null_writer);
+    var fake_mmu = MockMmu{};
+    var fake_cpu = MockCpu{ .mmu = &fake_mmu };
+    var dbg = MockedDebugger.init(&fake_cpu, &fake_mmu, std.io.null_writer);
 
     dbg.stepping = true;
 
@@ -480,9 +486,9 @@ test "Debugger should_enter triggers on stepping" {
 }
 
 test "Debugger should_enter triggers on stepping_cycles" {
-    const DebuggerType = Debugger(FakeCpu, @TypeOf(std.io.null_writer));
-    var fake_cpu = FakeCpu{};
-    var dbg = DebuggerType.init(&fake_cpu, std.io.null_writer);
+    var fake_mmu = MockMmu{};
+    var fake_cpu = MockCpu{ .mmu = &fake_mmu };
+    var dbg = MockedDebugger.init(&fake_cpu, &fake_mmu, std.io.null_writer);
 
     dbg.stepping_cycles = true;
 
@@ -490,9 +496,9 @@ test "Debugger should_enter triggers on stepping_cycles" {
 }
 
 test "Debugger should_enter triggers on breakpoint match" {
-    const DebuggerType = Debugger(FakeCpu, @TypeOf(std.io.null_writer));
-    var fake_cpu = FakeCpu{};
-    var dbg = DebuggerType.init(&fake_cpu, std.io.null_writer);
+    var fake_mmu = MockMmu{};
+    var fake_cpu = MockCpu{ .mmu = &fake_mmu };
+    var dbg = MockedDebugger.init(&fake_cpu, &fake_mmu, std.io.null_writer);
 
     try std.testing.expect(dbg.add_breakpoint(0x0042));
 
@@ -502,24 +508,22 @@ test "Debugger should_enter triggers on breakpoint match" {
 }
 
 test "Debugger should_enter triggers on memory flags" {
-    const DebuggerType = Debugger(FakeCpu, @TypeOf(std.io.null_writer));
-    var fake_cpu = FakeCpu{};
-    var dbg = DebuggerType.init(&fake_cpu, std.io.null_writer);
+    var fake_mmu = MockMmu{};
+    var fake_cpu = MockCpu{ .mmu = &fake_mmu };
+    var dbg = MockedDebugger.init(&fake_cpu, &fake_mmu, std.io.null_writer);
 
-    dbg.cpu.mem.flags = .{ .uninitialized = true };
+    dbg.mmu.flags = .{ .uninitialized = true };
 
     try std.testing.expect(try dbg.should_enter());
 }
 
 test "Commands: help command outputs text" {
-    const DebuggerType = Debugger(FakeCpu, @TypeOf(std.io.null_writer));
-    var fake_cpu = FakeCpu{};
-    var dbg = DebuggerType.init(&fake_cpu, std.io.null_writer);
+    var fake_mmu = MockMmu{};
+    var fake_cpu = MockCpu{ .mmu = &fake_mmu };
+    var dbg = MockedDebugger.init(&fake_cpu, &fake_mmu, std.io.null_writer);
 
     var buffer: [1024]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buffer);
-
-    const Cmds = Commands(DebuggerType);
 
     const input = "help";
     var it = std.mem.tokenizeScalar(u8, input, ' ');
@@ -530,11 +534,9 @@ test "Commands: help command outputs text" {
 }
 
 test "Commands: step command sets stepping flag" {
-    const DebuggerType = Debugger(FakeCpu, @TypeOf(std.io.null_writer));
-    var fake_cpu = FakeCpu{};
-    var dbg = DebuggerType.init(&fake_cpu, std.io.null_writer);
-
-    const Cmds = Commands(DebuggerType);
+    var fake_mmu = MockMmu{};
+    var fake_cpu = MockCpu{ .mmu = &fake_mmu };
+    var dbg = MockedDebugger.init(&fake_cpu, &fake_mmu, std.io.null_writer);
 
     const input = "step";
     var it = std.mem.tokenizeScalar(u8, input, ' ');
@@ -545,11 +547,9 @@ test "Commands: step command sets stepping flag" {
 }
 
 test "Commands: stepc command sets stepping_cycles flag" {
-    const DebuggerType = Debugger(FakeCpu, @TypeOf(std.io.null_writer));
-    var fake_cpu = FakeCpu{};
-    var dbg = DebuggerType.init(&fake_cpu, std.io.null_writer);
-
-    const Cmds = Commands(DebuggerType);
+    var fake_mmu = MockMmu{};
+    var fake_cpu = MockCpu{ .mmu = &fake_mmu };
+    var dbg = MockedDebugger.init(&fake_cpu, &fake_mmu, std.io.null_writer);
 
     const input = "stepc";
     var it = std.mem.tokenizeScalar(u8, input, ' ');
@@ -560,11 +560,9 @@ test "Commands: stepc command sets stepping_cycles flag" {
 }
 
 test "Commands: quit command returns should_stop" {
-    const DebuggerType = Debugger(FakeCpu, @TypeOf(std.io.null_writer));
-    var fake_cpu = FakeCpu{};
-    var dbg = DebuggerType.init(&fake_cpu, std.io.null_writer);
-
-    const Cmds = Commands(DebuggerType);
+    var fake_mmu = MockMmu{};
+    var fake_cpu = MockCpu{ .mmu = &fake_mmu };
+    var dbg = MockedDebugger.init(&fake_cpu, &fake_mmu, std.io.null_writer);
 
     const input = "quit";
     var it = std.mem.tokenizeScalar(u8, input, ' ');
@@ -574,11 +572,9 @@ test "Commands: quit command returns should_stop" {
 }
 
 test "Commands: break add, list, and del" {
-    const DebuggerType = Debugger(FakeCpu, @TypeOf(std.io.null_writer));
-    var fake_cpu = FakeCpu{};
-    var dbg = DebuggerType.init(&fake_cpu, std.io.null_writer);
-
-    const Cmds = Commands(DebuggerType);
+    var fake_mmu = MockMmu{};
+    var fake_cpu = MockCpu{ .mmu = &fake_mmu };
+    var dbg = MockedDebugger.init(&fake_cpu, &fake_mmu, std.io.null_writer);
 
     // Add breakpoint
     const add_input = "add 0x0042";

@@ -1,8 +1,6 @@
 const std = @import("std");
-const memory = @import("memory.zig");
-const Memory = memory.Memory;
-const MemoryFlag = memory.MemoryFlag;
-const SimpleMemory = memory.SimpleMemory;
+
+const MemoryFlag = @import("memoryFlag.zig").MemoryFlag;
 
 const logger = std.log.scoped(.cartridge);
 
@@ -18,34 +16,61 @@ const logo = [_]u8{
     0xBB, 0xBB, 0x67, 0x63, 0x6E, 0x0E, 0xEC, 0xCC, 0xDD, 0xDC, 0x99, 0x9F, 0xBB, 0xB9, 0x33, 0x3E,
 };
 
+// TODO: might need to make rom/ram non global
+
 // This memory will always contain the totality of the currently loaded ROM
 var STATIC_ROM: [0x8000]u8 = undefined;
 
 // This memory holds the cartridge's RAM
 var STATIC_RAM: [0x2000]u8 = undefined;
-var STATIC_RAM_INIT: [0x2000]bool = undefined;
+var STATIC_INIT_RAM: [0x2000]bool = undefined;
 
 // https://gbdev.io/pandocs/The_Cartridge_Header.html
 pub const Cartridge = struct {
     // DMG ONLY -- We interpret the title simply, however in "newer cartridges" this has a more complicated meaning
     title: []const u8,
     checksum: u8,
-    rom: Memory,
-    ram: Memory,
 
     // TODO: licensee code (old and new), CGB/SGB flag, destination code, version number, global checksum
 
-    pub fn fromBinary(program: []const u8, title: []const u8, program_offset: u16) !Cartridge {
-        std.mem.copyForwards(u8, STATIC_ROM[program_offset..], program);
-        @memset(&STATIC_RAM_INIT, false);
+    pub const Rom = struct {
+        pub fn read(_: *Cartridge, addr: u16) struct { MemoryFlag, u8 } {
+            const val = STATIC_ROM[addr];
+            return .{ .{}, val };
+        }
 
-        return Cartridge{
-            .title = title,
-            .checksum = 0xFF,
-            .rom = SimpleMemory(true, &STATIC_ROM, null).memory(),
-            .ram = SimpleMemory(false, &STATIC_RAM, &STATIC_RAM_INIT).memory(),
-        };
-    }
+        pub fn write(_: *Cartridge, _: u16, _: u8) MemoryFlag {
+            return .{ .illegal = true };
+        }
+
+        pub fn peek(_: *Cartridge, addr: u16) u8 {
+            return STATIC_ROM[addr];
+        }
+        pub fn poke(_: *Cartridge, addr: u16, val: u8) void {
+            STATIC_ROM[addr] = val;
+        }
+    };
+
+    pub const Ram = struct {
+        pub fn read(_: *Cartridge, addr: u16) struct { MemoryFlag, u8 } {
+            const val = STATIC_RAM[addr];
+            const flags = MemoryFlag{ .uninitialized = !STATIC_INIT_RAM[addr] };
+            return .{ flags, val };
+        }
+
+        pub fn write(_: *Cartridge, addr: u16, val: u8) MemoryFlag {
+            STATIC_RAM[addr] = val;
+            STATIC_INIT_RAM[addr] = true;
+            return .{};
+        }
+
+        pub fn peek(_: *Cartridge, addr: u16) u8 {
+            return STATIC_RAM[addr];
+        }
+        pub fn poke(_: *Cartridge, addr: u16, val: u8) void {
+            STATIC_RAM[addr] = val;
+        }
+    };
 
     pub fn fromFile(file: std.fs.File) !Cartridge {
         const offset = 0x0100;
@@ -96,13 +121,11 @@ pub const Cartridge = struct {
             return CartridgeHeaderParseError.NoRom;
         }
 
-        @memset(&STATIC_RAM_INIT, false);
+        @memset(&STATIC_INIT_RAM, false);
 
         return Cartridge{
             .title = title,
             .checksum = checksum,
-            .rom = SimpleMemory(true, &STATIC_ROM, null).memory(),
-            .ram = SimpleMemory(false, &STATIC_RAM, &STATIC_RAM_INIT).memory(),
         };
     }
 
@@ -134,24 +157,6 @@ fn craftValidRomBuffer(buff: []u8, title: []const u8, checksum: u8) void {
     buff[0x148] = 0x00;
     buff[0x149] = 0x00;
     buff[0x14D] = checksum;
-}
-
-test "Cartridge fromBinary loads correct ROM and resets RAM init" {
-    var rom = [_]u8{0xAA} ** 0x4000;
-    const title = "TEST";
-    const offset: u16 = 0x0100;
-
-    const cartridge = try Cartridge.fromBinary(rom[0..], title, offset);
-
-    try std.testing.expectEqualStrings(title, cartridge.title);
-
-    // Check that the ROM data was copied correctly
-    try std.testing.expectEqual(@as(u8, 0xAA), STATIC_ROM[offset]);
-
-    // Check that RAM init tracking was reset
-    for (STATIC_RAM_INIT) |v| {
-        try std.testing.expect(!v);
-    }
 }
 
 test "Cartridge fromFile loads valid ROM successfully" {
