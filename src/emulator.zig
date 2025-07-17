@@ -67,6 +67,7 @@ pub fn initialize_cpu(T: type, cpu: *T, header_checksum: u8) void {
     cpu.reg.HL.Lo = 0x4D;
     cpu.reg.PC = 0x0100;
     cpu.reg.SP.setAll(0xFFFE);
+    cpu.reg.IME = 0;
 }
 
 pub fn initialize_memory(T: type, mmu: *T) void {

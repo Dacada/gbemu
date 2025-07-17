@@ -1,24 +1,19 @@
 const std = @import("std");
 const lib = @import("lib");
 
-const Scheduler = lib.scheduler.Scheduler;
-const Serial = lib.serial.Serial(Scheduler);
-const Dummy = lib.mmio.Dummy;
-const Mmio = lib.mmio.Mmio(Dummy, Serial, Dummy, Dummy, Dummy, Dummy, Dummy, Dummy);
-const Mmu = lib.mmu.Mmu(FakeCartridge, FakePpu, Mmio);
-const Cpu = lib.cpu.Cpu(Mmu);
-const Emulator = lib.emulator.Emulator(Cpu, FakePpu, Scheduler, FakeDebugger);
-
 const MockMemory = lib.mmu.MockMemory;
+const InterruptKind = lib.interruptKind.InterruptKind;
 
-const FakeCartridge = struct {
+pub const FakeScheduler = struct {};
+
+pub const FakeCartridge = struct {
     lastWrite: u8 = 0x00,
 
     pub const Rom = MockMemory;
     pub const Ram = MockMemory;
 };
 
-const FakePpu = struct {
+pub const FakePpu = struct {
     lastWrite: u8 = 0x00,
 
     pub const Vram = MockMemory;
@@ -28,11 +23,27 @@ const FakePpu = struct {
     pub fn tick(_: *FakePpu) void {}
 };
 
-const FakeDebugger = struct {
+pub const FakeDebugger = struct {
     pub fn enter_debugger_if_needed(_: *const FakeDebugger) !?lib.debugger.DebuggerResult {
         return null;
     }
 };
+
+pub const FakeInterrupt = struct {
+    pub fn request(_: *FakeInterrupt, _: InterruptKind) void {}
+};
+
+pub const FakeCpu = struct {
+    pub fn tick(_: FakeCpu) void {}
+};
+
+const Scheduler = lib.scheduler.Scheduler;
+const Serial = lib.serial.Serial(Scheduler, FakeInterrupt);
+const Dummy = lib.mmio.Dummy;
+const Mmio = lib.mmio.Mmio(Dummy, Serial, Dummy, Dummy, Dummy, Dummy, Dummy, Dummy);
+const Mmu = lib.mmu.Mmu(FakeCartridge, FakePpu, Mmio);
+const Cpu = FakeCpu;
+const Emulator = lib.emulator.Emulator(Cpu, FakePpu, Scheduler, FakeDebugger);
 
 fn spin(emu: *Emulator, ticks: usize) !void {
     for (0..ticks) |_| {
@@ -47,7 +58,8 @@ test "serial transfer" {
     var sched = Scheduler.init();
 
     var dummy = Dummy{};
-    var serial = Serial.init(&sched);
+    var intr = FakeInterrupt{};
+    var serial = Serial.init(&sched, &intr);
     var ppu = FakePpu{};
 
     var mmio = Mmio.init(
@@ -64,7 +76,7 @@ test "serial transfer" {
     var mmu = Mmu.init(&cart, &ppu, &mmio);
     lib.emulator.initialize_memory(Mmu, &mmu);
 
-    var cpu = Cpu.init(&mmu, null);
+    var cpu = FakeCpu{};
 
     var dbg = FakeDebugger{};
     var emu = Emulator.init(&cpu, &ppu, &sched, &dbg);

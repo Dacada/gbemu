@@ -1,8 +1,17 @@
 const std = @import("std");
 const lib = @import("lib");
 
+const InterruptKind = lib.interruptKind.InterruptKind;
+
+pub const FakeInterrupt = struct {
+    pub fn pending(_: *FakeInterrupt) ?InterruptKind {
+        return null;
+    }
+    pub fn acknowledge(_: *FakeInterrupt, _: InterruptKind) void {}
+};
+
 const Mmu = lib.mmu.MockMmu;
-const Cpu = lib.cpu.Cpu(Mmu);
+const Cpu = lib.cpu.Cpu(Mmu, FakeInterrupt);
 
 const logger = std.log.scoped(.testutil);
 
@@ -266,7 +275,8 @@ fn zeroizeRegisters(cpu: *Cpu) void {
 pub fn runTestCase(name: []const u8, program: []const u8, initial_state: *TestCpuState, ticks: []const *TestCpuState) !void {
     @memset(&Mmu.backingArray, 0);
     var mmu = Mmu{};
-    var cpu = Cpu.init(&mmu, null);
+    var intr = FakeInterrupt{};
+    var cpu = Cpu.init(&mmu, &intr, null);
     zeroizeRegisters(&cpu);
 
     try mapInitialState(&cpu, &mmu, initial_state, program);
@@ -289,7 +299,8 @@ pub fn runTestCase(name: []const u8, program: []const u8, initial_state: *TestCp
 pub fn runProgram(program: []const u8) !Cpu {
     @memset(&Mmu.backingArray, 0);
     var mmu = Mmu{};
-    var cpu = Cpu.init(&mmu, 0x40);
+    var intr = FakeInterrupt{};
+    var cpu = Cpu.init(&mmu, &intr, 0x40);
     zeroizeRegisters(&cpu);
 
     for (program, 0..) |b, i| {

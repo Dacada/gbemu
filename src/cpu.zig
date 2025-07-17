@@ -4,6 +4,7 @@ const alu = @import("alu.zig");
 const AluRegister = alu.AluRegister;
 const RegisterWithHalves = alu.RegisterWithHalves;
 const RegisterFlags = alu.RegisterFlags;
+const InterruptKind = @import("interruptKind.zig").InterruptKind;
 
 const MemoryReferenceFn = @import("reference.zig").MemoryReference;
 
@@ -109,7 +110,9 @@ pub const CpuFlag = packed struct {
     breakpoint: bool = false,
 };
 
-pub fn Cpu(Mmu: type) type {
+pub fn Cpu(Mmu: type, Interrupt: type) type {
+    const interruptVectors = [_]u16{ 0x40, 0x48, 0x50, 0x58, 0x60 };
+
     const MemoryReference = MemoryReferenceFn(Mmu);
 
     const CpuOp1Union = union {
@@ -120,6 +123,7 @@ pub fn Cpu(Mmu: type) type {
         to_8bit: MemoryReference,
         ptr_reg_stack: StackRegister,
         ptr_reg_16bit: *RegisterWithHalves,
+        pending_interrupt: InterruptKind,
     };
 
     const CpuOp2Union = union {
@@ -146,6 +150,7 @@ pub fn Cpu(Mmu: type) type {
         };
 
         mmu: *Mmu,
+        intr: *Interrupt,
         reg: RegisterBank,
 
         next_tick: SelfRefCpuMethod,
@@ -160,9 +165,10 @@ pub fn Cpu(Mmu: type) type {
 
         flags: CpuFlag,
 
-        pub inline fn init(mmu: *Mmu, breakpoint_instruction: ?u8) This {
+        pub inline fn init(mmu: *Mmu, intr: *Interrupt, breakpoint_instruction: ?u8) This {
             return This{
                 .mmu = mmu,
+                .intr = intr,
                 .reg = undefined,
                 .next_tick = SelfRefCpuMethod.init(This.fetchOpcode),
                 .next_op_1 = undefined,
@@ -205,6 +211,11 @@ pub fn Cpu(Mmu: type) type {
             if (self.enable_interrupt_next_instruction) {
                 self.enable_interrupt_next_instruction = false;
                 self.enable_interrupt_current_instruction = true;
+            }
+
+            if (self.reg.IME == 1 and self.intr.pending() != null) {
+                // overwrite next tick to start servicing the interrupt instead
+                self.next_tick = SelfRefCpuMethod.init(This.executeInterrupt);
             }
         }
 
@@ -810,6 +821,11 @@ pub fn Cpu(Mmu: type) type {
             }
         }
 
+        fn executeInterrupt(self: *This) SelfRefCpuMethod {
+            // https://gist.github.com/SonoSooS/c0055300670d678b5ae8433e20bea595#isr-and-nmi
+            return self.decrementPCAndContinue(This.decrementSPForIRQ);
+        }
+
         // HELPERS //
 
         fn fetchImmediateAndContinue(self: *This, handler: fn (*This) SelfRefCpuMethod) SelfRefCpuMethod {
@@ -829,6 +845,11 @@ pub fn Cpu(Mmu: type) type {
 
         fn decrementSPAndContinue(self: *This, handler: fn (*This) SelfRefCpuMethod) SelfRefCpuMethod {
             self.reg.SP.dec();
+            return SelfRefCpuMethod.init(handler);
+        }
+
+        fn decrementPCAndContinue(self: *This, handler: fn (*This) SelfRefCpuMethod) SelfRefCpuMethod {
+            self.reg.PC -%= 1;
             return SelfRefCpuMethod.init(handler);
         }
 
@@ -1061,6 +1082,25 @@ pub fn Cpu(Mmu: type) type {
             return SelfRefCpuMethod.init(This.fetchOpcode);
         }
 
+        fn decrementSPForIRQ(self: *This) SelfRefCpuMethod {
+            return self.decrementSPAndContinue(This.pushPCHighForIRQ);
+        }
+
+        fn pushPCHighForIRQ(self: *This) SelfRefCpuMethod {
+            self.mmu.write(self.reg.SP.all(), @intCast((self.reg.PC & 0xFF00) >> 8));
+            return self.decrementSPAndContinue(This.pushPCLowAndStartIRQ);
+        }
+
+        fn pushPCLowAndStartIRQ(self: *This) SelfRefCpuMethod {
+            self.mmu.write(self.reg.SP.all(), @intCast(self.reg.PC & 0x00FF));
+            const kind = self.intr.pending().?;
+            const addr = interruptVectors[kind.asOffset()];
+            self.intr.acknowledge(kind);
+            self.reg.IME = 0;
+            self.reg.PC = addr;
+            return SelfRefCpuMethod.init(This.fetchOpcode);
+        }
+
         // REFERENCES //
 
         fn ptrReg8Bit(self: *This, idx: u3) MemoryReference {
@@ -1097,11 +1137,13 @@ pub fn Cpu(Mmu: type) type {
 }
 
 const MockMmu = @import("mmu.zig").MockMmu;
-const MockedCpu = Cpu(MockMmu);
+const MockInterrupt = struct {};
+const MockedCpu = Cpu(MockMmu, MockInterrupt);
 
 test "Cpu: ptrReg8Bit maps correctly" {
     var mem = MockMmu{};
-    var cpu = MockedCpu.init(&mem, null);
+    var intr = MockInterrupt{};
+    var cpu = MockedCpu.init(&mem, &intr, null);
 
     cpu.reg.BC.Hi = 0x10;
     cpu.reg.BC.Lo = 0x11;
@@ -1128,7 +1170,8 @@ test "Cpu: ptrReg8Bit maps correctly" {
 
 test "Cpu: ptrReg16Bit maps correctly" {
     var mem = MockMmu{};
-    var cpu = MockedCpu.init(&mem, null);
+    var intr = MockInterrupt{};
+    var cpu = MockedCpu.init(&mem, &intr, null);
 
     cpu.reg.BC.setAll(0x1111);
     cpu.reg.DE.setAll(0x2222);
@@ -1143,7 +1186,8 @@ test "Cpu: ptrReg16Bit maps correctly" {
 
 test "Cpu: ptrRegStack maps correctly" {
     var mem = MockMmu{};
-    var cpu = MockedCpu.init(&mem, null);
+    var intr = MockInterrupt{};
+    var cpu = MockedCpu.init(&mem, &intr, null);
 
     cpu.reg.BC.setAll(0xAAAA);
     cpu.reg.DE.setAll(0xBBBB);
