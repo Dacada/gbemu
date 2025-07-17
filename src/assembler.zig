@@ -4499,7 +4499,7 @@ test "parser succeed" {
     }
 }
 
-pub fn assembler(input: []const Opcode, labelMap: *std.StringHashMap(usize), allocator: std.mem.Allocator) ![]u8 {
+pub fn assembler(input: []const Opcode, labelMap: *std.StringHashMap(usize), allocator: std.mem.Allocator, offset: u16) ![]u8 {
     var accumulatedOpcodeSize = try allocator.alloc(usize, input.len + 1);
     defer allocator.free(accumulatedOpcodeSize);
 
@@ -4559,8 +4559,9 @@ pub fn assembler(input: []const Opcode, labelMap: *std.StringHashMap(usize), all
                 logger.err("Undefined label {s}", .{label});
                 return AssemblerError.UndefinedLabel;
             }
-            const lsb: u8 = @intCast(location.? & 0xFF);
-            const msb: u8 = @intCast((location.? & 0xFF00) >> 8);
+            const address = location.? + offset;
+            const lsb: u8 = @intCast(address & 0xFF);
+            const msb: u8 = @intCast((address & 0xFF00) >> 8);
             for (pair.value_ptr.items) |idx| {
                 result.items[idx + 1] = lsb;
                 result.items[idx + 2] = msb;
@@ -4613,7 +4614,37 @@ test "assembler" {
         0b00000001, 0x00, 0x00,
     };
 
-    const actual = try assembler(opcodes, &labelMap, std.testing.allocator);
+    const actual = try assembler(opcodes, &labelMap, std.testing.allocator, 0);
+    defer std.testing.allocator.free(actual);
+
+    try std.testing.expectEqualSlices(u8, &expected, actual);
+}
+
+test "assembler offset" {
+    const input =
+        \\ lbl1:
+        \\       ld BC lbl3
+        \\ lbl2: ld BC lbl2
+        \\       ld BC lbl1
+        \\ lbl3:
+    ;
+
+    const tokens = try lexer(input, std.testing.allocator);
+    defer std.testing.allocator.free(tokens);
+
+    var labelMap, const opcodes = try parser(tokens, std.testing.allocator);
+    defer labelMap.deinit();
+    defer std.testing.allocator.free(opcodes);
+    defer freeLabelMap(&labelMap, std.testing.allocator);
+    defer freeOpcodes(opcodes, std.testing.allocator);
+
+    const expected = [_]u8{
+        0b00000001, 0x0E, 0x00,
+        0b00000001, 0x08, 0x00,
+        0b00000001, 0x05, 0x00,
+    };
+
+    const actual = try assembler(opcodes, &labelMap, std.testing.allocator, 0x5);
     defer std.testing.allocator.free(actual);
 
     try std.testing.expectEqualSlices(u8, &expected, actual);
@@ -4631,7 +4662,7 @@ test "assembler bad argument" {
     defer freeLabelMap(&labelMap, std.testing.allocator);
     defer freeOpcodes(opcodes, std.testing.allocator);
 
-    const actual = assembler(opcodes, &labelMap, std.testing.allocator);
+    const actual = assembler(opcodes, &labelMap, std.testing.allocator, 0);
 
     try std.testing.expectError(AssemblerError.InvalidInstructionArguments, actual);
 }
@@ -4648,12 +4679,12 @@ test "assembler bad label" {
     defer freeLabelMap(&labelMap, std.testing.allocator);
     defer freeOpcodes(opcodes, std.testing.allocator);
 
-    const actual = assembler(opcodes, &labelMap, std.testing.allocator);
+    const actual = assembler(opcodes, &labelMap, std.testing.allocator, 0);
 
     try std.testing.expectError(AssemblerError.UndefinedLabel, actual);
 }
 
-pub fn translate(code: []const u8, allocator: std.mem.Allocator) ![]u8 {
+pub fn translate(code: []const u8, allocator: std.mem.Allocator, offset: u16) ![]u8 {
     const tokens = try lexer(code, allocator);
     defer allocator.free(tokens);
 
@@ -4663,7 +4694,7 @@ pub fn translate(code: []const u8, allocator: std.mem.Allocator) ![]u8 {
     defer freeLabelMap(&labelMap, allocator);
     defer freeOpcodes(opcodes, allocator);
 
-    return assembler(opcodes, &labelMap, allocator);
+    return assembler(opcodes, &labelMap, allocator, offset);
 }
 
 pub fn formatNext(stream: []const u8, writer: anytype) ![]const u8 {
@@ -4973,7 +5004,7 @@ test "translate" {
         0x00, // NOP
     };
 
-    const actual = try translate(input, std.testing.allocator);
+    const actual = try translate(input, std.testing.allocator, 0);
     defer std.testing.allocator.free(actual);
 
     try std.testing.expectEqualSlices(u8, &expected, actual);

@@ -66,7 +66,7 @@ test "LD only integ test" {
         \\ LD (0xC00F), A                                         
         \\ LD B, B  ; end of program breakpoint
     ;
-    const program = try lib.assembler.translate(code, std.testing.allocator);
+    const program = try lib.assembler.translate(code, std.testing.allocator, 0);
     defer std.testing.allocator.free(program);
 
     var cpu = try runProgram(program);
@@ -133,7 +133,7 @@ test "LD only integ test (16-bit)" {
         \\ LD (0xC01F), A                                                        
         \\ LD B, B  ; end of program breakpoint
     ;
-    const program = try lib.assembler.translate(code, std.testing.allocator);
+    const program = try lib.assembler.translate(code, std.testing.allocator, 0);
     defer std.testing.allocator.free(program);
 
     var cpu = try runProgram(program);
@@ -212,7 +212,7 @@ test "Arithmetic (8-bit)" {
         \\ LD (HL), D
         \\ LD B, B  ; end of program breakpoint
     ;
-    const program = try lib.assembler.translate(code, std.testing.allocator);
+    const program = try lib.assembler.translate(code, std.testing.allocator, 0);
     defer std.testing.allocator.free(program);
 
     var cpu = try runProgram(program);
@@ -271,7 +271,7 @@ test "Arithmetic (16-bit)" {
         \\ ADD SP, -4         ; SP = 0xFFEC
         \\ LD B, B  ; end of program breakpoint
     ;
-    const program = try lib.assembler.translate(code, std.testing.allocator);
+    const program = try lib.assembler.translate(code, std.testing.allocator, 0);
     defer std.testing.allocator.free(program);
 
     var cpu = try runProgram(program);
@@ -304,7 +304,7 @@ test "Misc bit operations" {
         \\ BIT 3, H         ; Zero flag = 0 (bit 3 is set)
         \\ LD B, B  ; end of program breakpoint
     ;
-    const program = try lib.assembler.translate(code, std.testing.allocator);
+    const program = try lib.assembler.translate(code, std.testing.allocator, 0);
     defer std.testing.allocator.free(program);
 
     const cpu = try runProgram(program);
@@ -367,7 +367,7 @@ test "Jump operations" {
         \\ end:
         \\  LD B, B  ; end of program breakpoint
     ;
-    const program = try lib.assembler.translate(code, std.testing.allocator);
+    const program = try lib.assembler.translate(code, std.testing.allocator, 0);
     defer std.testing.allocator.free(program);
 
     const cpu = try runProgram(program);
@@ -418,7 +418,7 @@ test "Fibonacci" {
         \\
         \\ LD B, B  ; end of program breakpoint
     ;
-    const program = try lib.assembler.translate(code, std.testing.allocator);
+    const program = try lib.assembler.translate(code, std.testing.allocator, 0);
     defer std.testing.allocator.free(program);
 
     var cpu = try runProgram(program);
@@ -487,7 +487,7 @@ test "Prime Sieve" {
         \\ end:
         \\   LD B, B  ; end of program breakpoint
     ;
-    const program = try lib.assembler.translate(code, std.testing.allocator);
+    const program = try lib.assembler.translate(code, std.testing.allocator, 0);
     defer std.testing.allocator.free(program);
 
     var cpu = try runProgram(program);
@@ -544,7 +544,7 @@ test "Integer Division" {
         \\ end:
         \\   LD B, B  ; end of program breakpoint
     ;
-    const program = try lib.assembler.translate(code, std.testing.allocator);
+    const program = try lib.assembler.translate(code, std.testing.allocator, 0);
     defer std.testing.allocator.free(program);
 
     const cpu = try runProgram(program);
