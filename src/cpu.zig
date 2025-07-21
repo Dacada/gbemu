@@ -108,6 +108,7 @@ const RegisterBank = struct {
 pub const CpuFlag = packed struct {
     illegal: bool = false,
     breakpoint: bool = false,
+    double_halt: bool = false,
 };
 
 pub fn Cpu(Mmu: type, Interrupt: type) type {
@@ -158,12 +159,13 @@ pub fn Cpu(Mmu: type, Interrupt: type) type {
         next_op_2: CpuOp2Union,
         next_op_3: CpuOp3Union,
 
-        enable_interrupt_next_instruction: bool,
-        enable_interrupt_current_instruction: bool,
+        should_enable_interrupt_after_next_instruction: bool,
+        should_enable_interrupt_after_current_instruction: bool,
 
         breakpoint_instruction: ?u8,
 
         flags: CpuFlag,
+        halted: bool,
 
         pub inline fn init(mmu: *Mmu, intr: *Interrupt, breakpoint_instruction: ?u8) This {
             return This{
@@ -174,10 +176,11 @@ pub fn Cpu(Mmu: type, Interrupt: type) type {
                 .next_op_1 = undefined,
                 .next_op_2 = undefined,
                 .next_op_3 = undefined,
-                .enable_interrupt_next_instruction = false,
-                .enable_interrupt_current_instruction = false,
+                .should_enable_interrupt_after_next_instruction = false,
+                .should_enable_interrupt_after_current_instruction = false,
                 .breakpoint_instruction = breakpoint_instruction,
                 .flags = .{},
+                .halted = false,
             };
         }
 
@@ -201,28 +204,37 @@ pub fn Cpu(Mmu: type, Interrupt: type) type {
             if (self.isInstructionBoundary()) {
                 self.onInstructionStart();
             }
+
+            if (self.halted) {
+                return;
+            }
+
             self.next_tick = self.next_tick.func(self);
+
             if (self.isInstructionBoundary()) {
                 self.onInstructionEnd();
             }
         }
 
         fn onInstructionStart(self: *This) void {
-            if (self.enable_interrupt_next_instruction) {
-                self.enable_interrupt_next_instruction = false;
-                self.enable_interrupt_current_instruction = true;
+            if (self.should_enable_interrupt_after_next_instruction) {
+                self.should_enable_interrupt_after_next_instruction = false;
+                self.should_enable_interrupt_after_current_instruction = true;
             }
 
-            if (self.reg.IME == 1 and self.intr.pending() != null) {
-                // overwrite next tick to start servicing the interrupt instead
-                self.next_tick = SelfRefCpuMethod.init(This.executeInterrupt);
+            if (self.intr.pending() != null) {
+                if (self.reg.IME == 1) {
+                    // overwrite next tick to start servicing the interrupt instead
+                    self.next_tick = SelfRefCpuMethod.init(This.executeInterrupt);
+                }
+                self.halted = false;
             }
         }
 
         fn onInstructionEnd(self: *This) void {
-            if (self.enable_interrupt_current_instruction) {
+            if (self.should_enable_interrupt_after_current_instruction) {
                 self.reg.IME = 1;
-                self.enable_interrupt_current_instruction = false;
+                self.should_enable_interrupt_after_current_instruction = false;
             }
         }
 
@@ -455,8 +467,22 @@ pub fn Cpu(Mmu: type, Interrupt: type) type {
         }
 
         fn executeHalt(self: *This) SelfRefCpuMethod {
-            // TODO
-            return self.fetchOpcode();
+            self.halted = true;
+
+            // Variation of fetchOpcode where we might fail to increment the PC due to the HALT bug
+            self.reg.IR = self.mmu.read(self.reg.PC);
+            if (self.reg.IME == 1 or self.intr.pending() == null) {
+                // https://gbdev.io/pandocs/halt.html#halt
+                self.reg.PC +%= 1;
+            } else {
+                logger.warn("halt bug: failing to increment PC", .{});
+                if (self.reg.IR == 0b01_110_110) { // halt again
+                    logger.warn("double halt bug detected: CPU is stalled", .{});
+                    self.flags.double_halt = true;
+                }
+            }
+
+            return SelfRefCpuMethod.init(This.decodeOpcode);
         }
 
         fn executeStop(self: *This) SelfRefCpuMethod {
@@ -465,14 +491,14 @@ pub fn Cpu(Mmu: type, Interrupt: type) type {
         }
 
         fn executeDisableInterrupt(self: *This) SelfRefCpuMethod {
-            self.enable_interrupt_next_instruction = false;
-            self.enable_interrupt_current_instruction = false;
+            self.should_enable_interrupt_after_next_instruction = false;
+            self.should_enable_interrupt_after_current_instruction = false;
             self.reg.IME = 0;
             return self.fetchOpcode();
         }
 
         fn executeEnableInterrupt(self: *This) SelfRefCpuMethod {
-            self.enable_interrupt_next_instruction = true;
+            self.should_enable_interrupt_after_next_instruction = true;
             return self.fetchOpcode();
         }
 
@@ -1137,7 +1163,11 @@ pub fn Cpu(Mmu: type, Interrupt: type) type {
 }
 
 const MockMmu = @import("mmu.zig").MockMmu;
-const MockInterrupt = struct {};
+const MockInterrupt = struct {
+    fn pending(_: *MockInterrupt) ?InterruptKind {
+        return null;
+    }
+};
 const MockedCpu = Cpu(MockMmu, MockInterrupt);
 
 test "Cpu: ptrReg8Bit maps correctly" {
