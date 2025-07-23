@@ -4,13 +4,14 @@ const cli = @import("cli.zig");
 
 const Scheduler = lib.scheduler.Scheduler;
 const Cartridge = lib.cartridge.Cartridge;
-const Joypad = lib.joypad.Joypad;
-const Serial = lib.serial.Serial(Scheduler);
+const Interrupt = lib.interrupt.Interrupt;
+const Joypad = lib.joypad.Joypad(Interrupt);
+const Serial = lib.serial.Serial(Scheduler, Interrupt);
 const Dummy = lib.mmio.Dummy;
 const Mmio = lib.mmio.Mmio(Joypad, Serial, Dummy, Dummy, Dummy, Dummy, Dummy, Dummy);
 const Ppu = lib.ppu.Ppu;
 const Mmu = lib.mmu.Mmu(Cartridge, Ppu, Mmio);
-const Cpu = lib.cpu.Cpu(Mmu);
+const Cpu = lib.cpu.Cpu(Mmu, Interrupt);
 const Debugger = lib.debugger.Debugger(Cpu, Mmu, std.fs.File.Writer);
 const Emulator = lib.emulator.Emulator(Cpu, Ppu, Scheduler, Debugger);
 
@@ -47,8 +48,9 @@ pub fn main() !void {
 
     var sched = Scheduler.init();
 
-    var joypad = Joypad.init();
-    var serial = Serial.init(&sched);
+    var intr = Interrupt.init();
+    var joypad = Joypad.init(&intr);
+    var serial = Serial.init(&sched, &intr);
     var timer = Dummy{};
     var interrupt = Dummy{};
     var audio = Dummy{};
@@ -71,7 +73,7 @@ pub fn main() !void {
     var mmu = Mmu.init(&cart, &ppu, &mmio);
     lib.emulator.initialize_memory(Mmu, &mmu);
 
-    var cpu = Cpu.init(&mmu, args.@"breakpoint-instruction");
+    var cpu = Cpu.init(&mmu, &intr, args.@"breakpoint-instruction");
     lib.emulator.initialize_cpu(Cpu, &cpu, cart.checksum);
 
     var dbg = Debugger.init(&cpu, &mmu, writer);
