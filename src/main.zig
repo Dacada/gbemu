@@ -76,6 +76,9 @@ pub fn main() !void {
     var cpu = Cpu.init(&mmu, &intr, args.@"breakpoint-instruction");
     lib.emulator.initialize_cpu(Cpu, &cpu, cart.checksum);
 
+    // This executes a nop and fetches the first instruction of the ROM
+    cpu.tick();
+
     var dbg = Debugger.init(&cpu, &mmu, writer);
 
     var emu = Emulator.init(&cpu, &ppu, &sched, &dbg);

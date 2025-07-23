@@ -171,8 +171,18 @@ pub fn Cpu(Mmu: type, Interrupt: type) type {
             return This{
                 .mmu = mmu,
                 .intr = intr,
-                .reg = undefined,
-                .next_tick = SelfRefCpuMethod.init(This.fetchOpcode),
+                .reg = .{
+                    .AF = undefined,
+                    .BC = undefined,
+                    .DE = undefined,
+                    .HL = undefined,
+                    .SP = undefined,
+                    .PC = undefined,
+                    .IR = 0x00, // nop
+                    .WZ = undefined,
+                    .IME = undefined,
+                },
+                .next_tick = SelfRefCpuMethod.init(This.decodeOpcode),
                 .next_op_1 = undefined,
                 .next_op_2 = undefined,
                 .next_op_3 = undefined,
