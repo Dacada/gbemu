@@ -369,7 +369,8 @@ pub fn Debugger(Cpu: type, Mmu: type, Writer: type) type {
 
         pub fn enter(self: *This) !DebuggerResult {
             var promptBuff = [_]u8{undefined} ** 256;
-            const prompt = try std.fmt.bufPrintZ(&promptBuff, "[0x{X:0>4}] dbg> ", .{self.cpu.reg.PC});
+            // show pc - 1 as that is the currently fetched opcode's location
+            const prompt = try std.fmt.bufPrintZ(&promptBuff, "[0x{X:0>4}] dbg> ", .{self.cpu.reg.PC - 1});
 
             while (true) {
                 const input = readline(prompt);

@@ -1,5 +1,5 @@
 const std = @import("std");
-const MemoryFlag = @import("memoryFlag.zig");
+const MemoryFlag = @import("memoryFlag.zig").MemoryFlag;
 const InterruptKind = @import("interruptKind.zig").InterruptKind;
 
 pub const Interrupt = packed struct {
