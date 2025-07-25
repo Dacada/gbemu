@@ -15,6 +15,7 @@ pub const scheduler = @import("scheduler.zig");
 pub const fixed_size_heap = @import("fixed_size_heap.zig");
 pub const interruptKind = @import("interruptKind.zig");
 pub const interrupt = @import("interrupt.zig");
+pub const timer = @import("timer.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());

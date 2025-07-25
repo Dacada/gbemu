@@ -7,13 +7,14 @@ const Cartridge = lib.cartridge.Cartridge;
 const Interrupt = lib.interrupt.Interrupt;
 const Joypad = lib.joypad.Joypad(Interrupt);
 const Serial = lib.serial.Serial(Scheduler, Interrupt);
+const Timer = lib.timer.Timer(Interrupt);
 const Dummy = lib.mmio.Dummy;
-const Mmio = lib.mmio.Mmio(Joypad, Serial, Dummy, Dummy, Dummy, Dummy, Dummy, Dummy);
+const Mmio = lib.mmio.Mmio(Joypad, Serial, Timer, Interrupt, Dummy, Dummy, Dummy, Dummy);
 const Ppu = lib.ppu.Ppu;
 const Mmu = lib.mmu.Mmu(Cartridge, Ppu, Mmio);
 const Cpu = lib.cpu.Cpu(Mmu, Interrupt);
 const Debugger = lib.debugger.Debugger(Cpu, Mmu, std.fs.File.Writer);
-const Emulator = lib.emulator.Emulator(Cpu, Ppu, Scheduler, Debugger);
+const Emulator = lib.emulator.Emulator(Cpu, Ppu, Timer, Scheduler, Debugger);
 
 var array = [_]u8{0x00} ** 0x100;
 
@@ -51,8 +52,7 @@ pub fn main() !void {
     var intr = Interrupt.init();
     var joypad = Joypad.init(&intr);
     var serial = Serial.init(&sched, &intr);
-    var timer = Dummy{};
-    var interrupt = Dummy{};
+    var timer = Timer.init(&intr);
     var audio = Dummy{};
     var wave = Dummy{};
     var lcd = Dummy{};
@@ -63,7 +63,7 @@ pub fn main() !void {
         &joypad,
         &serial,
         &timer,
-        &interrupt,
+        &intr,
         &audio,
         &wave,
         &lcd,
@@ -81,6 +81,6 @@ pub fn main() !void {
 
     var dbg = Debugger.init(&cpu, &mmu, writer);
 
-    var emu = Emulator.init(&cpu, &ppu, &sched, &dbg);
+    var emu = Emulator.init(&cpu, &ppu, &timer, &sched, &dbg);
     try emu.run(true);
 }

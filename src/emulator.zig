@@ -1,20 +1,22 @@
 const std = @import("std");
 
-pub fn Emulator(Cpu: type, Ppu: type, Scheduler: type, Debugger: type) type {
+pub fn Emulator(Cpu: type, Ppu: type, Timer: type, Scheduler: type, Debugger: type) type {
     return struct {
         const This = @This();
 
         cpu: *Cpu,
         ppu: *Ppu,
+        timer: *Timer,
         sched: *Scheduler,
         dbg: *Debugger,
 
         divider: u2,
 
-        pub inline fn init(cpu: *Cpu, ppu: *Ppu, sched: *Scheduler, dbg: *Debugger) This {
+        pub inline fn init(cpu: *Cpu, ppu: *Ppu, timer: *Timer, sched: *Scheduler, dbg: *Debugger) This {
             return This{
                 .cpu = cpu,
                 .ppu = ppu,
+                .timer = timer,
                 .sched = sched,
                 .dbg = dbg,
                 .divider = 0,
@@ -25,6 +27,12 @@ pub fn Emulator(Cpu: type, Ppu: type, Scheduler: type, Debugger: type) type {
             self.ppu.tick();
             if (self.divider == 0) {
                 self.cpu.tick();
+
+                // timer overwrites some registers even if CPU writes to them on the same tick and it also needs to
+                // react to falling edges on memory writes, to emulate all this we update it right after the CPU but
+                // before any debugger calls
+                self.timer.tick();
+
                 const result = try self.dbg.enter_debugger_if_needed();
                 if (result == .should_stop) {
                     return true;
@@ -78,7 +86,7 @@ pub fn initialize_memory(T: type, mmu: *T) void {
     mmu.poke(0xFF04, 0xAB);
     mmu.poke(0xFF05, 0x00);
     mmu.poke(0xFF06, 0x00);
-    mmu.poke(0xFF07, 0xF8);
+    mmu.write(0xFF07, 0xF8);
     mmu.poke(0xFF0F, 0xE1);
     mmu.poke(0xFF10, 0x80);
     mmu.poke(0xFF11, 0xBF);

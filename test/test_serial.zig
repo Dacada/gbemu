@@ -23,6 +23,10 @@ pub const FakePpu = struct {
     pub fn tick(_: *FakePpu) void {}
 };
 
+pub const FakeTimer = struct {
+    pub fn tick(_: *FakeTimer) void {}
+};
+
 pub const FakeDebugger = struct {
     pub fn enter_debugger_if_needed(_: *const FakeDebugger) !?lib.debugger.DebuggerResult {
         return null;
@@ -43,7 +47,7 @@ const Dummy = lib.mmio.Dummy;
 const Mmio = lib.mmio.Mmio(Dummy, Serial, Dummy, Dummy, Dummy, Dummy, Dummy, Dummy);
 const Mmu = lib.mmu.Mmu(FakeCartridge, FakePpu, Mmio);
 const Cpu = FakeCpu;
-const Emulator = lib.emulator.Emulator(Cpu, FakePpu, Scheduler, FakeDebugger);
+const Emulator = lib.emulator.Emulator(Cpu, FakePpu, FakeTimer, Scheduler, FakeDebugger);
 
 fn spin(emu: *Emulator, ticks: usize) !void {
     for (0..ticks) |_| {
@@ -77,9 +81,10 @@ test "serial transfer" {
     lib.emulator.initialize_memory(Mmu, &mmu);
 
     var cpu = FakeCpu{};
+    var timer = FakeTimer{};
 
     var dbg = FakeDebugger{};
-    var emu = Emulator.init(&cpu, &ppu, &sched, &dbg);
+    var emu = Emulator.init(&cpu, &ppu, &timer, &sched, &dbg);
 
     // Wait a few cycles
     try spin(&emu, 100);
