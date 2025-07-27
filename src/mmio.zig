@@ -1,6 +1,9 @@
 const std = @import("std");
 
 const MemoryFlag = @import("memoryFlag.zig").MemoryFlag;
+const GenericRouter = @import("router.zig").Router;
+const GenericRange = @import("router.zig").Range;
+const GenericTargetField = @import("router.zig").TargetField;
 
 const logger = std.log.scoped(.mmio);
 
@@ -18,25 +21,18 @@ pub fn Mmio(Joypad: type, Serial: type, Timer: type, Interrupt: type, Audio: typ
         boot_rom: *BootRom,
 
         const Invalid = struct {
-            fn read(_: *This, _: u16) struct { MemoryFlag, u8 } {
+            pub fn read(_: *This, _: u16) struct { MemoryFlag, u8 } {
                 return .{ .{ .illegal = true }, 0xFF };
             }
 
-            fn write(_: *This, _: u16, _: u8) MemoryFlag {
+            pub fn write(_: *This, _: u16, _: u8) MemoryFlag {
                 return .{ .illegal = true };
             }
 
-            fn peek(_: *This, _: u16) u8 {
+            pub fn peek(_: *This, _: u16) u8 {
                 return 0xFF;
             }
-            fn poke(_: *This, _: u16, _: u8) void {}
-        };
-
-        const Operation = enum {
-            read,
-            write,
-            peek,
-            poke,
+            pub fn poke(_: *This, _: u16, _: u8) void {}
         };
 
         const Target = enum {
@@ -50,6 +46,110 @@ pub fn Mmio(Joypad: type, Serial: type, Timer: type, Interrupt: type, Audio: typ
             boot_rom,
             invalid,
         };
+
+        const Range = GenericRange(Target);
+        const TargetField = GenericTargetField(Target);
+        const Router = GenericRouter(
+            Target,
+            &[_]Range{
+                .{
+                    .start = 0x00,
+                    .end = 0x00,
+                    .target = .joypad,
+                },
+                .{
+                    .start = 0x01,
+                    .end = 0x02,
+                    .target = .serial,
+                },
+                .{
+                    .start = 0x04,
+                    .end = 0x07,
+                    .target = .timer,
+                },
+                .{
+                    .start = 0x0F,
+                    .end = 0x0F,
+                    .target = .interrupt,
+                },
+                .{
+                    .start = 0x10,
+                    .end = 0x26,
+                    .target = .audio,
+                },
+                .{
+                    .start = 0x30,
+                    .end = 0x3F,
+                    .target = .wave,
+                },
+                .{
+                    .start = 0x40,
+                    .end = 0x4B,
+                    .target = .lcd,
+                },
+                .{
+                    .start = 0x50,
+                    .end = 0x50,
+                    .target = .boot_rom,
+                },
+                .{
+                    .start = 0x80,
+                    .end = 0x80,
+                    .target = .interrupt,
+                },
+            },
+            .{
+                .addr = undefined,
+                .target = .invalid,
+            },
+            &[_]TargetField{
+                .{
+                    .target = .joypad,
+                    .field = "joypad",
+                    .namespace = Joypad,
+                },
+                .{
+                    .target = .serial,
+                    .field = "serial",
+                    .namespace = Serial,
+                },
+                .{
+                    .target = .timer,
+                    .field = "timer",
+                    .namespace = Timer,
+                },
+                .{
+                    .target = .interrupt,
+                    .field = "interrupt",
+                    .namespace = Interrupt,
+                },
+                .{
+                    .target = .audio,
+                    .field = "audio",
+                    .namespace = Audio,
+                },
+                .{
+                    .target = .wave,
+                    .field = "wave",
+                    .namespace = Wave,
+                },
+                .{
+                    .target = .lcd,
+                    .field = "lcd",
+                    .namespace = Lcd,
+                },
+                .{
+                    .target = .boot_rom,
+                    .field = "boot_rom",
+                    .namespace = BootRom,
+                },
+                .{
+                    .target = .invalid,
+                    .field = null,
+                    .namespace = This.Invalid,
+                },
+            },
+        );
 
         pub inline fn init(
             joypad: *Joypad,
@@ -73,64 +173,21 @@ pub fn Mmio(Joypad: type, Serial: type, Timer: type, Interrupt: type, Audio: typ
             };
         }
 
-        inline fn decode(addr: u16) struct { u16, Target } {
-            return switch (addr) {
-                0x00 => .{ 0x00, .joypad },
-                0x01...0x02 => .{ addr - 0x01, .serial },
-                0x04...0x07 => .{ addr - 0x04, .timer },
-                0x0F => .{ 0x00, .interrupt },
-                0x10...0x26 => .{ addr - 0x10, .audio },
-                0x30...0x3F => .{ addr - 0x30, .wave },
-                0x40...0x4B => .{ addr - 0x40, .lcd },
-                0x50 => .{ 0x00, .boot_rom },
-                0x80 => .{ 0x01, .interrupt },
-                else => .{ addr, .invalid },
-            };
-        }
-
-        inline fn dispatch(self: *This, addr: u16, comptime operation: Operation, value: u8) struct { MemoryFlag, u8 } {
-            const resolved_address, const target = decode(addr);
-            return switch (target) {
-                .joypad => make_call(self.joypad, Joypad, operation, resolved_address, value),
-                .serial => make_call(self.serial, Serial, operation, resolved_address, value),
-                .timer => make_call(self.timer, Timer, operation, resolved_address, value),
-                .interrupt => make_call(self.interrupt, Interrupt, operation, resolved_address, value),
-                .audio => make_call(self.audio, Audio, operation, resolved_address, value),
-                .wave => make_call(self.wave, Wave, operation, resolved_address, value),
-                .lcd => make_call(self.lcd, Lcd, operation, resolved_address, value),
-                .boot_rom => make_call(self.boot_rom, BootRom, operation, resolved_address, value),
-                .invalid => make_call(self, This.Invalid, operation, resolved_address, value),
-            };
-        }
-
-        inline fn make_call(instance: anytype, comptime namespace: type, comptime operation: Operation, addr: u16, value: u8) struct { MemoryFlag, u8 } {
-            const opname = @tagName(operation);
-            switch (operation) {
-                .peek => return .{ undefined, @field(namespace, opname)(instance, addr) },
-                .poke => {
-                    @field(namespace, opname)(instance, addr, value);
-                    return undefined;
-                },
-                .read => return @field(namespace, opname)(instance, addr),
-                .write => return .{ @field(namespace, opname)(instance, addr, value), undefined },
-            }
-        }
-
         pub inline fn peek(self: *This, addr: u16) u8 {
-            _, const ret = self.dispatch(addr, .peek, undefined);
+            _, const ret = Router.dispatch(self, addr, .peek, undefined);
             return ret;
         }
 
         pub inline fn poke(self: *This, addr: u16, val: u8) void {
-            _ = self.dispatch(addr, .poke, val);
+            _ = Router.dispatch(self, addr, .poke, val);
         }
 
         pub inline fn read(self: *This, addr: u16) struct { MemoryFlag, u8 } {
-            return self.dispatch(addr, .read, undefined);
+            return Router.dispatch(self, addr, .read, undefined);
         }
 
         pub inline fn write(self: *This, addr: u16, val: u8) MemoryFlag {
-            const ret, _ = self.dispatch(addr, .write, val);
+            const ret, _ = Router.dispatch(self, addr, .write, val);
             return ret;
         }
     };

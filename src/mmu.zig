@@ -1,6 +1,9 @@
 const std = @import("std");
 
 const MemoryFlag = @import("memoryFlag.zig").MemoryFlag;
+const GenericRouter = @import("router.zig").Router;
+const GenericRange = @import("router.zig").Range;
+const GenericTargetField = @import("router.zig").TargetField;
 
 const logger = std.log.scoped(.mmu);
 
@@ -17,41 +20,41 @@ pub fn Mmu(Cartridge: type, Ppu: type, Mmio: type) type {
         const This = @This();
 
         const Wram = struct {
-            fn read(_: *This, addr: u16) struct { MemoryFlag, u8 } {
+            pub fn read(_: *This, addr: u16) struct { MemoryFlag, u8 } {
                 const val = STATIC_WRAM[addr];
                 const flags = MemoryFlag{ .uninitialized = !STATIC_INIT_WRAM[addr] };
                 return .{ flags, val };
             }
 
-            fn write(_: *This, addr: u16, val: u8) MemoryFlag {
+            pub fn write(_: *This, addr: u16, val: u8) MemoryFlag {
                 STATIC_WRAM[addr] = val;
                 STATIC_INIT_WRAM[addr] = true;
                 return .{};
             }
 
-            fn peek(_: *This, addr: u16) u8 {
+            pub fn peek(_: *This, addr: u16) u8 {
                 return STATIC_WRAM[addr];
             }
-            fn poke(_: *This, addr: u16, val: u8) void {
+            pub fn poke(_: *This, addr: u16, val: u8) void {
                 STATIC_WRAM[addr] = val;
             }
         };
 
         const Hram = struct {
-            fn read(_: *This, addr: u16) struct { MemoryFlag, u8 } {
+            pub fn read(_: *This, addr: u16) struct { MemoryFlag, u8 } {
                 const val = STATIC_HRAM[addr];
                 const flags = MemoryFlag{ .uninitialized = !STATIC_INIT_HRAM[addr] };
                 return .{ flags, val };
             }
-            fn write(_: *This, addr: u16, val: u8) MemoryFlag {
+            pub fn write(_: *This, addr: u16, val: u8) MemoryFlag {
                 STATIC_HRAM[addr] = val;
                 STATIC_INIT_HRAM[addr] = true;
                 return .{};
             }
-            fn peek(_: *This, addr: u16) u8 {
+            pub fn peek(_: *This, addr: u16) u8 {
                 return STATIC_HRAM[addr];
             }
-            fn poke(_: *This, addr: u16, val: u8) void {
+            pub fn poke(_: *This, addr: u16, val: u8) void {
                 STATIC_HRAM[addr] = val;
             }
         };
@@ -61,13 +64,6 @@ pub fn Mmu(Cartridge: type, Ppu: type, Mmio: type) type {
         mmio: *Mmio,
 
         flags: MemoryFlag,
-
-        const Operation = enum {
-            read,
-            write,
-            peek,
-            poke,
-        };
 
         const Target = enum {
             cart_rom,
@@ -80,6 +76,105 @@ pub fn Mmu(Cartridge: type, Ppu: type, Mmio: type) type {
             hram,
         };
 
+        const Range = GenericRange(Target);
+        const TargetField = GenericTargetField(Target);
+        const Router = GenericRouter(
+            Target,
+            &[_]Range{
+                .{
+                    .start = 0x0000,
+                    .end = 0x7FFF,
+                    .target = .cart_rom,
+                },
+                .{
+                    .start = 0x8000,
+                    .end = 0x9FFF,
+                    .target = .vram,
+                },
+                .{
+                    .start = 0xA000,
+                    .end = 0xBFFF,
+                    .target = .cart_ram,
+                },
+                .{
+                    .start = 0xC000,
+                    .end = 0xDFFF,
+                    .target = .wram,
+                },
+                .{
+                    .start = 0xE000,
+                    .end = 0xFDFF,
+                    .target = .wram,
+                },
+                .{
+                    .start = 0xFE00,
+                    .end = 0xFE9F,
+                    .target = .oam,
+                },
+                .{
+                    .start = 0xFEA0,
+                    .end = 0xFEFF,
+                    .target = .forbidden,
+                },
+                .{
+                    .start = 0xFF00,
+                    .end = 0xFF7F,
+                    .target = .mmio,
+                },
+                .{
+                    .start = 0xFF80,
+                    .end = 0xFFFE,
+                    .target = .hram,
+                },
+            },
+            .{
+                .addr = 0x80,
+                .target = .mmio,
+            },
+            &[_]TargetField{
+                .{
+                    .target = .cart_rom,
+                    .field = "cart",
+                    .namespace = Cartridge.Rom,
+                },
+                .{
+                    .target = .cart_ram,
+                    .field = "cart",
+                    .namespace = Cartridge.Ram,
+                },
+                .{
+                    .target = .vram,
+                    .field = "ppu",
+                    .namespace = Ppu.Vram,
+                },
+                .{
+                    .target = .oam,
+                    .field = "ppu",
+                    .namespace = Ppu.Oam,
+                },
+                .{
+                    .target = .forbidden,
+                    .field = "ppu",
+                    .namespace = Ppu.Forbidden,
+                },
+                .{
+                    .target = .mmio,
+                    .field = "mmio",
+                    .namespace = Mmio,
+                },
+                .{
+                    .target = .wram,
+                    .field = null,
+                    .namespace = This.Wram,
+                },
+                .{
+                    .target = .hram,
+                    .field = null,
+                    .namespace = This.Hram,
+                },
+            },
+        );
+
         pub inline fn init(cart: *Cartridge, ppu: *Ppu, mmio: *Mmio) This {
             return This{
                 .cart = cart,
@@ -89,75 +184,33 @@ pub fn Mmu(Cartridge: type, Ppu: type, Mmio: type) type {
             };
         }
 
-        inline fn decode(addr: u16) struct { u16, Target } {
-            return switch (addr) {
-                0x0000...0x7FFF => .{ addr, .cart_rom },
-                0x8000...0x9FFF => .{ addr - 0x8000, .vram },
-                0xA000...0xBFFF => .{ addr - 0xA000, .cart_ram },
-                0xC000...0xDFFF => .{ addr - 0xC000, .wram },
-                0xE000...0xFDFF => .{ addr - 0xE000, .wram }, // Echo RAM
-                0xFE00...0xFE9F => .{ addr - 0xFE00, .oam },
-                0xFEA0...0xFEFF => .{ addr - 0xFEA0, .forbidden },
-                0xFF00...0xFF7F => .{ addr - 0xFF00, .mmio },
-                0xFF80...0xFFFE => .{ addr - 0xFF80, .hram },
-                else => .{ 0x80, .mmio }, // IE is handled by mmio module
-            };
-        }
-
-        inline fn dispatch(self: *This, addr: u16, comptime operation: Operation, value: u8) u8 {
-            const resolved_address, const target = decode(addr);
-            return switch (target) {
-                .cart_rom => self.make_call(self.cart, Cartridge.Rom, operation, resolved_address, value),
-                .cart_ram => self.make_call(self.cart, Cartridge.Ram, operation, resolved_address, value),
-                .vram => self.make_call(self.ppu, Ppu.Vram, operation, resolved_address, value),
-                .oam => self.make_call(self.ppu, Ppu.Oam, operation, resolved_address, value),
-                .forbidden => self.make_call(self.ppu, Ppu.Forbidden, operation, resolved_address, value),
-                .mmio => self.make_call(self.mmio, Mmio, operation, resolved_address, value),
-                .wram => self.make_call(self, This.Wram, operation, resolved_address, value),
-                .hram => self.make_call(self, This.Hram, operation, resolved_address, value),
-            };
-        }
-
-        inline fn make_call(self: *This, instance: anytype, comptime namespace: type, comptime operation: Operation, addr: u16, value: u8) u8 {
-            const opname = @tagName(operation);
-            switch (operation) {
-                .peek => return @field(namespace, opname)(instance, addr),
-                .poke => {
-                    @field(namespace, opname)(instance, addr, value);
-                    return undefined;
-                },
-                .read => {
-                    self.flags, const res = @field(namespace, opname)(instance, addr);
-                    return res;
-                },
-                .write => {
-                    self.flags = @field(namespace, opname)(instance, addr, value);
-                    return undefined;
-                },
-            }
-        }
-
         pub fn peek(self: *This, addr: u16) u8 {
-            return self.dispatch(addr, .peek, undefined);
+            _, const ret = Router.dispatch(self, addr, .peek, undefined);
+            return ret;
         }
 
         pub fn poke(self: *This, addr: u16, val: u8) void {
-            _ = self.dispatch(addr, .poke, val);
+            _ = Router.dispatch(self, addr, .poke, val);
         }
 
         pub fn read(self: *This, addr: u16) u8 {
-            const ret = self.dispatch(addr, .read, undefined);
+            const flags, const ret = Router.dispatch(self, addr, .read, undefined);
+            self.flags = flags;
+
             if (self.flags.illegal) {
                 logger.warn("Illegal read from address 0x{X:0>4}", .{addr});
             }
             if (self.flags.uninitialized) {
                 logger.warn("Uninitialized read from address 0x{X:0>4}", .{addr});
             }
+
             return ret;
         }
 
         pub fn write(self: *This, addr: u16, val: u8) void {
-            _ = self.dispatch(addr, .write, val);
+            const flags, _ = Router.dispatch(self, addr, .write, val);
+            self.flags = flags;
+
             if (self.flags.illegal) {
                 logger.warn("Illegal write of 0x{X:0>2} to address 0x{X:0>4}", .{ val, addr });
             }
@@ -198,21 +251,21 @@ pub const MockMmu = struct {
 pub const MockMemory = struct {
     lastWrite: u8 = 0x00,
 
-    fn read(self: anytype, _: u16) struct { MemoryFlag, u8 } {
+    pub fn read(self: anytype, _: u16) struct { MemoryFlag, u8 } {
         return .{ .{}, self.lastWrite };
     }
 
-    fn write(self: anytype, _: u16, val: u8) MemoryFlag {
+    pub fn write(self: anytype, _: u16, val: u8) MemoryFlag {
         self.lastWrite = val;
         return .{};
     }
 
-    fn peek(self: anytype, addr: u16) u8 {
+    pub fn peek(self: anytype, addr: u16) u8 {
         _, const res = read(self, addr);
         return res;
     }
 
-    fn poke(self: anytype, addr: u16, val: u8) void {
+    pub fn poke(self: anytype, addr: u16, val: u8) void {
         _ = write(self, addr, val);
     }
 };
