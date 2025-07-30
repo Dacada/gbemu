@@ -2,19 +2,22 @@ const std = @import("std");
 const lib = @import("lib");
 const cli = @import("cli.zig");
 
+const AudioBackend = lib.backend.NullAudioBackend;
 const Scheduler = lib.scheduler.Scheduler;
 const Cartridge = lib.cartridge.Cartridge;
 const Interrupt = lib.interrupt.Interrupt;
 const Joypad = lib.joypad.Joypad(Interrupt);
 const Serial = lib.serial.Serial(Scheduler, Interrupt);
-const Timer = lib.timer.Timer(Interrupt);
-const Dummy = lib.mmio.Dummy;
-const Mmio = lib.mmio.Mmio(Joypad, Serial, Timer, Interrupt, Dummy, Dummy, Dummy, Dummy);
+const Apu = lib.apu.Apu(AudioBackend);
+const Timer = lib.timer.Timer(Apu, Interrupt);
+const Lcd = lib.mmio.Dummy;
+const BootRom = lib.mmio.Dummy;
+const Mmio = lib.mmio.Mmio(Joypad, Serial, Timer, Interrupt, Apu, Lcd, BootRom);
 const Ppu = lib.ppu.Ppu;
 const Mmu = lib.mmu.Mmu(Cartridge, Ppu, Mmio);
 const Cpu = lib.cpu.Cpu(Mmu, Interrupt);
 const Debugger = lib.debugger.Debugger(Cpu, Mmu, std.fs.File.Writer);
-const Emulator = lib.emulator.Emulator(Cpu, Ppu, Timer, Scheduler, Debugger);
+const Emulator = lib.emulator.Emulator(Cpu, Apu, Ppu, Timer, Scheduler, Debugger);
 
 var array = [_]u8{0x00} ** 0x100;
 
@@ -45,6 +48,8 @@ pub fn main() !void {
     const stdout = std.io.getStdOut();
     const writer = stdout.writer();
 
+    var audioBackend = AudioBackend.init();
+
     var cart = try makeCart();
 
     var sched = Scheduler.init();
@@ -52,11 +57,10 @@ pub fn main() !void {
     var intr = Interrupt.init();
     var joypad = Joypad.init(&intr);
     var serial = Serial.init(&sched, &intr);
-    var timer = Timer.init(&intr);
-    var audio = Dummy{};
-    var wave = Dummy{};
-    var lcd = Dummy{};
-    var boot_rom = Dummy{};
+    var apu = Apu.init(&audioBackend);
+    var timer = Timer.init(&apu, &intr);
+    var lcd = Lcd{};
+    var boot_rom = BootRom{};
     var ppu = Ppu.init();
 
     var mmio = Mmio.init(
@@ -64,8 +68,7 @@ pub fn main() !void {
         &serial,
         &timer,
         &intr,
-        &audio,
-        &wave,
+        &apu,
         &lcd,
         &boot_rom,
     );
@@ -81,6 +84,6 @@ pub fn main() !void {
 
     var dbg = Debugger.init(&cpu, &mmu, writer);
 
-    var emu = Emulator.init(&cpu, &ppu, &timer, &sched, &dbg);
+    var emu = Emulator.init(&cpu, &apu, &ppu, &timer, &sched, &dbg);
     try emu.run(true);
 }

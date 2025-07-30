@@ -23,6 +23,10 @@ pub const FakePpu = struct {
     pub fn tick(_: *FakePpu) void {}
 };
 
+pub const FakeApu = struct {
+    pub fn tick(_: FakeApu) void {}
+};
+
 pub const FakeTimer = struct {
     pub fn tick(_: *FakeTimer) void {}
 };
@@ -44,10 +48,10 @@ pub const FakeCpu = struct {
 const Scheduler = lib.scheduler.Scheduler;
 const Serial = lib.serial.Serial(Scheduler, FakeInterrupt);
 const Dummy = lib.mmio.Dummy;
-const Mmio = lib.mmio.Mmio(Dummy, Serial, Dummy, Dummy, Dummy, Dummy, Dummy, Dummy);
+const Mmio = lib.mmio.Mmio(Dummy, Serial, Dummy, Dummy, Dummy, Dummy, Dummy);
 const Mmu = lib.mmu.Mmu(FakeCartridge, FakePpu, Mmio);
 const Cpu = FakeCpu;
-const Emulator = lib.emulator.Emulator(Cpu, FakePpu, FakeTimer, Scheduler, FakeDebugger);
+const Emulator = lib.emulator.Emulator(Cpu, FakeApu, FakePpu, FakeTimer, Scheduler, FakeDebugger);
 
 fn spin(emu: *Emulator, ticks: usize) !void {
     for (0..ticks) |_| {
@@ -65,11 +69,11 @@ test "serial transfer" {
     var intr = FakeInterrupt{};
     var serial = Serial.init(&sched, &intr);
     var ppu = FakePpu{};
+    var apu = FakeApu{};
 
     var mmio = Mmio.init(
         &dummy,
         &serial,
-        &dummy,
         &dummy,
         &dummy,
         &dummy,
@@ -84,7 +88,7 @@ test "serial transfer" {
     var timer = FakeTimer{};
 
     var dbg = FakeDebugger{};
-    var emu = Emulator.init(&cpu, &ppu, &timer, &sched, &dbg);
+    var emu = Emulator.init(&cpu, &apu, &ppu, &timer, &sched, &dbg);
 
     // Wait a few cycles
     try spin(&emu, 100);

@@ -1,10 +1,11 @@
 const MemoryFlag = @import("memoryFlag.zig").MemoryFlag;
 const InterruptKind = @import("interruptKind.zig").InterruptKind;
 
-pub fn Timer(Interrupt: type) type {
+pub fn Timer(Apu: type, Interrupt: type) type {
     return struct {
         const This = @This();
 
+        apu: *Apu,
         intr: *Interrupt,
 
         div: u16,
@@ -15,8 +16,9 @@ pub fn Timer(Interrupt: type) type {
         timaOverflowNextTick: bool,
         wroteTimaThisTick: bool,
 
-        pub inline fn init(intr: *Interrupt) This {
+        pub inline fn init(apu: *Apu, intr: *Interrupt) This {
             return This{
+                .apu = apu,
                 .intr = intr,
                 .div = undefined,
                 .tima = undefined,
@@ -93,6 +95,11 @@ pub fn Timer(Interrupt: type) type {
 
         // TODO: check if worth optimizing
         fn triggerTimerTick(self: *This, prevDiv: u16, prevTac: u8) void {
+            // DMG ONLY -- DIV-APU event uses a different bit in CGB in double speed mode
+            if (prevDiv & (1 << 10) != 0 and self.div & (1 << 10) == 0) {
+                self.apu.divtick();
+            }
+
             // DMG ONLY -- In CGB the hardware is slightly different, review: https://gbdev.io/pandocs/Timer_Obscure_Behaviour.html#relation-between-timer-and-divider-register
 
             const mask = getBitMaskForDiv(self.tac);
@@ -147,11 +154,16 @@ const DummyInterrupt = struct {
     }
 };
 
-const MockedTimer = Timer(DummyInterrupt);
+const DummyApu = struct {
+    fn divtick(_: DummyApu) void {}
+};
+
+const MockedTimer = Timer(DummyApu, DummyInterrupt);
 
 test "timer increments TIMA when enabled and selected DIV bit falls" {
+    var apu = DummyApu{};
     var intr = DummyInterrupt{};
-    var timer = MockedTimer.init(&intr);
+    var timer = MockedTimer.init(&apu, &intr);
     timer.div = 0b00000001111111111; // bit 9 set
     timer.tac = 0b00000100; // enable + select bit 9
     timer.tima = 0xAB;
@@ -161,8 +173,9 @@ test "timer increments TIMA when enabled and selected DIV bit falls" {
 }
 
 test "timer does not increment TIMA when disabled" {
+    var apu = DummyApu{};
     var intr = DummyInterrupt{};
-    var timer = MockedTimer.init(&intr);
+    var timer = MockedTimer.init(&apu, &intr);
     timer.div = 0b00000001111111111; // bit 9 set
     timer.tac = 0b00000000; // disabled
 
@@ -172,8 +185,9 @@ test "timer does not increment TIMA when disabled" {
 }
 
 test "TIMA overflows and sets interrupt on next tick" {
+    var apu = DummyApu{};
     var intr = DummyInterrupt{};
-    var timer = MockedTimer.init(&intr);
+    var timer = MockedTimer.init(&apu, &intr);
     timer.tac = 0b00000100; // enabled, bit 9
     timer.tma = 0xAB;
     timer.div = 0b00000001111111111; // bit 9 set
@@ -190,8 +204,9 @@ test "TIMA overflows and sets interrupt on next tick" {
 }
 
 test "writing to TIMA cancels overflow latching" {
+    var apu = DummyApu{};
     var intr = DummyInterrupt{};
-    var timer = MockedTimer.init(&intr);
+    var timer = MockedTimer.init(&apu, &intr);
     timer.tac = 0b00000100;
     timer.tma = 0x55;
     timer.div = 0b00000001111111111; // bit 9 set
@@ -205,8 +220,9 @@ test "writing to TIMA cancels overflow latching" {
 }
 
 test "writing to DIV causes TIMA tick if falling edge is triggered" {
+    var apu = DummyApu{};
     var intr = DummyInterrupt{};
-    var timer = MockedTimer.init(&intr);
+    var timer = MockedTimer.init(&apu, &intr);
     timer.tac = 0b00000100; // enabled, bit 9
     timer.div = 0b00000001111111111; // bit 9 set
     const startTima = timer.tima;
@@ -216,8 +232,9 @@ test "writing to DIV causes TIMA tick if falling edge is triggered" {
 }
 
 test "writing to TAC can cause immediate TIMA increment if falling edge is triggered" {
+    var apu = DummyApu{};
     var intr = DummyInterrupt{};
-    var timer = MockedTimer.init(&intr);
+    var timer = MockedTimer.init(&apu, &intr);
     timer.div = 0b00000001111111111; // bit 9 set
     timer.tac = 0b00000100;
     timer.tima = 0xAB;
@@ -227,8 +244,9 @@ test "writing to TAC can cause immediate TIMA increment if falling edge is trigg
 }
 
 test "writing to TMA during pending overflow updates TIMA correctly" {
+    var apu = DummyApu{};
     var intr = DummyInterrupt{};
-    var timer = MockedTimer.init(&intr);
+    var timer = MockedTimer.init(&apu, &intr);
     timer.div = 0b00000001111111111; // bit 9 set
     timer.tac = 0b00000100;
     timer.tima = 0xFF;
@@ -240,8 +258,9 @@ test "writing to TMA during pending overflow updates TIMA correctly" {
 }
 
 test "no tick occurs when no falling edge on selected bit" {
+    var apu = DummyApu{};
     var intr = DummyInterrupt{};
-    var timer = MockedTimer.init(&intr);
+    var timer = MockedTimer.init(&apu, &intr);
     timer.div = 0b0000000000000000;
     timer.tac = 0b00000100;
 

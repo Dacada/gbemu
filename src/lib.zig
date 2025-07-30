@@ -16,6 +16,8 @@ pub const fixed_size_heap = @import("fixed_size_heap.zig");
 pub const interruptKind = @import("interruptKind.zig");
 pub const interrupt = @import("interrupt.zig");
 pub const timer = @import("timer.zig");
+pub const apu = @import("apu.zig");
+pub const backend = @import("backend.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());

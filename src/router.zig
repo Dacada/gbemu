@@ -36,7 +36,13 @@ pub fn Router(
             inline for (targetFields) |targetField| {
                 if (target == targetField.target) {
                     return make_call(
-                        if (targetField.field) |field| @field(parent, field) else parent,
+                        if (targetField.field) |field|
+                            (if (@typeInfo(@TypeOf(@field(parent, field))) == .pointer)
+                                @field(parent, field)
+                            else
+                                &@field(parent, field))
+                        else
+                            parent,
                         targetField.namespace,
                         operation,
                         resolved_address,

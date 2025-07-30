@@ -1,10 +1,11 @@
 const std = @import("std");
 
-pub fn Emulator(Cpu: type, Ppu: type, Timer: type, Scheduler: type, Debugger: type) type {
+pub fn Emulator(Cpu: type, Apu: type, Ppu: type, Timer: type, Scheduler: type, Debugger: type) type {
     return struct {
         const This = @This();
 
         cpu: *Cpu,
+        apu: *Apu,
         ppu: *Ppu,
         timer: *Timer,
         sched: *Scheduler,
@@ -12,9 +13,10 @@ pub fn Emulator(Cpu: type, Ppu: type, Timer: type, Scheduler: type, Debugger: ty
 
         divider: u2,
 
-        pub inline fn init(cpu: *Cpu, ppu: *Ppu, timer: *Timer, sched: *Scheduler, dbg: *Debugger) This {
+        pub inline fn init(cpu: *Cpu, apu: *Apu, ppu: *Ppu, timer: *Timer, sched: *Scheduler, dbg: *Debugger) This {
             return This{
                 .cpu = cpu,
+                .apu = apu,
                 .ppu = ppu,
                 .timer = timer,
                 .sched = sched,
@@ -32,6 +34,9 @@ pub fn Emulator(Cpu: type, Ppu: type, Timer: type, Scheduler: type, Debugger: ty
                 // react to falling edges on memory writes, to emulate all this we update it right after the CPU but
                 // before any debugger calls
                 self.timer.tick();
+
+                // Sound system counters advance
+                self.apu.tick();
 
                 const result = try self.dbg.enter_debugger_if_needed();
                 if (result == .should_stop) {

@@ -7,7 +7,7 @@ const GenericTargetField = @import("router.zig").TargetField;
 
 const logger = std.log.scoped(.mmio);
 
-pub fn Mmio(Joypad: type, Serial: type, Timer: type, Interrupt: type, Audio: type, Wave: type, Lcd: type, BootRom: type) type {
+pub fn Mmio(Joypad: type, Serial: type, Timer: type, Interrupt: type, Apu: type, Lcd: type, BootRom: type) type {
     return struct {
         const This = @This();
 
@@ -15,8 +15,7 @@ pub fn Mmio(Joypad: type, Serial: type, Timer: type, Interrupt: type, Audio: typ
         serial: *Serial,
         timer: *Timer,
         interrupt: *Interrupt,
-        audio: *Audio,
-        wave: *Wave,
+        apu: *Apu,
         lcd: *Lcd,
         boot_rom: *BootRom,
 
@@ -40,8 +39,7 @@ pub fn Mmio(Joypad: type, Serial: type, Timer: type, Interrupt: type, Audio: typ
             serial,
             timer,
             interrupt,
-            audio,
-            wave,
+            apu,
             lcd,
             boot_rom,
             invalid,
@@ -74,13 +72,8 @@ pub fn Mmio(Joypad: type, Serial: type, Timer: type, Interrupt: type, Audio: typ
                 },
                 .{
                     .start = 0x10,
-                    .end = 0x26,
-                    .target = .audio,
-                },
-                .{
-                    .start = 0x30,
                     .end = 0x3F,
-                    .target = .wave,
+                    .target = .apu,
                 },
                 .{
                     .start = 0x40,
@@ -124,14 +117,9 @@ pub fn Mmio(Joypad: type, Serial: type, Timer: type, Interrupt: type, Audio: typ
                     .namespace = Interrupt,
                 },
                 .{
-                    .target = .audio,
-                    .field = "audio",
-                    .namespace = Audio,
-                },
-                .{
-                    .target = .wave,
-                    .field = "wave",
-                    .namespace = Wave,
+                    .target = .apu,
+                    .field = "apu",
+                    .namespace = Apu,
                 },
                 .{
                     .target = .lcd,
@@ -156,8 +144,7 @@ pub fn Mmio(Joypad: type, Serial: type, Timer: type, Interrupt: type, Audio: typ
             serial: *Serial,
             timer: *Timer,
             interrupt: *Interrupt,
-            audio: *Audio,
-            wave: *Wave,
+            apu: *Apu,
             lcd: *Lcd,
             boot_rom: *BootRom,
         ) This {
@@ -166,8 +153,7 @@ pub fn Mmio(Joypad: type, Serial: type, Timer: type, Interrupt: type, Audio: typ
                 .serial = serial,
                 .timer = timer,
                 .interrupt = interrupt,
-                .audio = audio,
-                .wave = wave,
+                .apu = apu,
                 .lcd = lcd,
                 .boot_rom = boot_rom,
             };
@@ -214,19 +200,18 @@ pub const Dummy = struct {
     }
 };
 
-const MockedMmio = Mmio(Dummy, Dummy, Dummy, Dummy, Dummy, Dummy, Dummy, Dummy);
+const MockedMmio = Mmio(Dummy, Dummy, Dummy, Dummy, Dummy, Dummy, Dummy);
 
 test "Mmio unit tests with Dummy" {
     var joypad = Dummy{};
     var serial = Dummy{};
     var timer = Dummy{};
     var interrupts = Dummy{};
-    var audio = Dummy{};
-    var wave = Dummy{};
+    var apu = Dummy{};
     var lcd = Dummy{};
     var boot_rom = Dummy{};
 
-    var mmio = MockedMmio.init(&joypad, &serial, &timer, &interrupts, &audio, &wave, &lcd, &boot_rom);
+    var mmio = MockedMmio.init(&joypad, &serial, &timer, &interrupts, &apu, &lcd, &boot_rom);
 
     // Test writing and reading joypad
     _ = mmio.write(0x00, 0xAA);
@@ -250,14 +235,13 @@ test "Mmio unit tests with Dummy" {
     _ = mmio.write(0x0F, 0x12);
     try std.testing.expectEqual(.{ MemoryFlag{}, 0x12 }, mmio.read(0x0F));
 
-    // Test writing and reading audio
+    // Test writing and reading apu
     _ = mmio.write(0x10, 0x34);
     try std.testing.expectEqual(.{ MemoryFlag{}, 0x34 }, mmio.read(0x10));
 
     _ = mmio.write(0x26, 0x56);
     try std.testing.expectEqual(.{ MemoryFlag{}, 0x56 }, mmio.read(0x26));
 
-    // Test writing and reading wave
     _ = mmio.write(0x30, 0x78);
     try std.testing.expectEqual(.{ MemoryFlag{}, 0x78 }, mmio.read(0x30));
 
