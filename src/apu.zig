@@ -1,9 +1,10 @@
 const std = @import("std");
 
 const MemoryFlag = @import("memoryFlag.zig").MemoryFlag;
-const GenericRouter = @import("router.zig").Router;
-const GenericRange = @import("router.zig").Range;
-const GenericTargetField = @import("router.zig").TargetField;
+const router = @import("router.zig");
+const GenericRouter = router.Router;
+const GenericRange = router.Range;
+const GenericTargetField = router.TargetField;
 
 // TODO: The mysterious fifth channel? (absolutely not worth it)
 
