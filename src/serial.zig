@@ -35,7 +35,6 @@ pub fn Serial(Scheduler: type, Interrupt: type) type {
                     output |= self.transfer_enable;
                     output <<= 7;
                     output |= self.clock_select;
-                    output |= 0b0111_1110;
                     break :blk output;
                 },
                 else => unreachable,

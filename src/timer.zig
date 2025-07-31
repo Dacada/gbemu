@@ -11,7 +11,8 @@ pub fn Timer(Apu: type, Interrupt: type) type {
         div: u16,
         tima: u8,
         tma: u8,
-        tac: u8,
+        enable: u1,
+        clock_select: u2,
 
         timaOverflowNextTick: bool,
         wroteTimaThisTick: bool,
@@ -23,7 +24,8 @@ pub fn Timer(Apu: type, Interrupt: type) type {
                 .div = undefined,
                 .tima = undefined,
                 .tma = undefined,
-                .tac = undefined,
+                .enable = undefined,
+                .clock_select = undefined,
                 .timaOverflowNextTick = false,
                 .wroteTimaThisTick = false,
             };
@@ -38,7 +40,7 @@ pub fn Timer(Apu: type, Interrupt: type) type {
 
             const prevDiv = self.div;
             self.div +%= 1;
-            self.triggerTimerTick(prevDiv, self.tac);
+            self.triggerTimerTick(prevDiv, self.enable, self.clock_select);
             self.wroteTimaThisTick = false;
         }
 
@@ -47,7 +49,13 @@ pub fn Timer(Apu: type, Interrupt: type) type {
                 0 => @intCast(self.div >> 8),
                 1 => self.tima,
                 2 => self.tma,
-                3 => self.tac,
+                3 => blk: {
+                    var val: u8 = 0;
+                    val |= self.enable;
+                    val <<= 2;
+                    val |= self.clock_select;
+                    break :blk val;
+                },
                 else => unreachable,
             };
         }
@@ -57,7 +65,10 @@ pub fn Timer(Apu: type, Interrupt: type) type {
                 0 => self.div = @as(u16, @intCast(val)) << 8,
                 1 => self.tima = val,
                 2 => self.tma = val,
-                3 => self.tac = val,
+                3 => {
+                    self.enable = @intCast((val & 0b100) >> 2);
+                    self.clock_select = @intCast(val & 0b11);
+                },
                 else => unreachable,
             }
         }
@@ -71,22 +82,23 @@ pub fn Timer(Apu: type, Interrupt: type) type {
                 0 => {
                     const prevDiv = self.div;
                     self.div = 0;
-                    self.triggerTimerTick(prevDiv, self.tac);
+                    self.triggerTimerTick(prevDiv, self.enable, self.clock_select);
                 },
                 1 => {
                     // Assume tick will be called AFTER the CPU's tick, overwriting this write with TMA if needed
-                    self.tima = val;
+                    self.poke(addr, val);
                     // HOWEVER, if instead of overwriting it THIS TICK we would overwrite it NEXT TICK, then we DO NOT because of the write "cancelling" the overflow
                     self.wroteTimaThisTick = true;
                 },
                 2 => {
                     // If this cycle would update tima, it will do so with the written to value, will work assuming timer is updated AFTER cpu
-                    self.tma = val;
+                    self.poke(addr, val);
                 },
                 3 => {
-                    const prevTac = self.tac;
-                    self.tac = val;
-                    self.triggerTimerTick(self.div, prevTac);
+                    const prevEnable = self.enable;
+                    const prevClockSelect = self.clock_select;
+                    self.poke(addr, val);
+                    self.triggerTimerTick(self.div, prevEnable, prevClockSelect);
                 },
                 else => unreachable,
             }
@@ -94,7 +106,7 @@ pub fn Timer(Apu: type, Interrupt: type) type {
         }
 
         // TODO: check if worth optimizing
-        fn triggerTimerTick(self: *This, prevDiv: u16, prevTac: u8) void {
+        fn triggerTimerTick(self: *This, prevDiv: u16, prevEnable: u1, prevClockSelect: u2) void {
             // DMG ONLY -- DIV-APU event uses a different bit in CGB in double speed mode
             if (prevDiv & (1 << 10) != 0 and self.div & (1 << 10) == 0) {
                 self.apu.divtick();
@@ -102,17 +114,14 @@ pub fn Timer(Apu: type, Interrupt: type) type {
 
             // DMG ONLY -- In CGB the hardware is slightly different, review: https://gbdev.io/pandocs/Timer_Obscure_Behaviour.html#relation-between-timer-and-divider-register
 
-            const mask = getBitMaskForDiv(self.tac);
-            const prevMask = getBitMaskForDiv(prevTac);
+            const mask = getBitMaskForDiv(self.clock_select);
+            const prevMask = getBitMaskForDiv(prevClockSelect);
 
             const bit = self.div & mask != 0;
             const prevBit = prevDiv & prevMask != 0;
 
-            const enable = self.tac & (1 << 2) != 0;
-            const prevEnable = prevTac & (1 << 2) != 0;
-
-            const curr = bit and enable;
-            const prev = prevBit and prevEnable;
+            const curr = bit and self.enable == 1;
+            const prev = prevBit and prevEnable == 1;
 
             if (prev and !curr) {
                 self.doTimerTick();
@@ -131,8 +140,7 @@ pub fn Timer(Apu: type, Interrupt: type) type {
             }
         }
 
-        fn getBitMaskForDiv(tac: u8) u16 {
-            const sel: u2 = @intCast(tac & 0b11);
+        fn getBitMaskForDiv(sel: u2) u16 {
             // can be computed with bitwise operations but this looks cleaner
             return switch (sel) {
                 0b00 => 1 << 9,
@@ -165,7 +173,8 @@ test "timer increments TIMA when enabled and selected DIV bit falls" {
     var intr = DummyInterrupt{};
     var timer = MockedTimer.init(&apu, &intr);
     timer.div = 0b00000001111111111; // bit 9 set
-    timer.tac = 0b00000100; // enable + select bit 9
+    timer.enable = 1; // enable
+    timer.clock_select = 0; // select bit 9
     timer.tima = 0xAB;
 
     timer.tick(); // fall of bit 9
@@ -177,7 +186,7 @@ test "timer does not increment TIMA when disabled" {
     var intr = DummyInterrupt{};
     var timer = MockedTimer.init(&apu, &intr);
     timer.div = 0b00000001111111111; // bit 9 set
-    timer.tac = 0b00000000; // disabled
+    timer.enable = 0; // disabled
 
     const startTima = timer.tima;
     timer.tick();
@@ -188,7 +197,8 @@ test "TIMA overflows and sets interrupt on next tick" {
     var apu = DummyApu{};
     var intr = DummyInterrupt{};
     var timer = MockedTimer.init(&apu, &intr);
-    timer.tac = 0b00000100; // enabled, bit 9
+    timer.enable = 1; // enabled
+    timer.clock_select = 0; // bit 9
     timer.tma = 0xAB;
     timer.div = 0b00000001111111111; // bit 9 set
 
@@ -207,7 +217,8 @@ test "writing to TIMA cancels overflow latching" {
     var apu = DummyApu{};
     var intr = DummyInterrupt{};
     var timer = MockedTimer.init(&apu, &intr);
-    timer.tac = 0b00000100;
+    timer.enable = 1;
+    timer.clock_select = 0;
     timer.tma = 0x55;
     timer.div = 0b00000001111111111; // bit 9 set
     timer.tima = 0xFF;
@@ -223,7 +234,8 @@ test "writing to DIV causes TIMA tick if falling edge is triggered" {
     var apu = DummyApu{};
     var intr = DummyInterrupt{};
     var timer = MockedTimer.init(&apu, &intr);
-    timer.tac = 0b00000100; // enabled, bit 9
+    timer.enable = 1; // enabled
+    timer.clock_select = 0; // bit 9
     timer.div = 0b00000001111111111; // bit 9 set
     const startTima = timer.tima;
 
@@ -236,7 +248,8 @@ test "writing to TAC can cause immediate TIMA increment if falling edge is trigg
     var intr = DummyInterrupt{};
     var timer = MockedTimer.init(&apu, &intr);
     timer.div = 0b00000001111111111; // bit 9 set
-    timer.tac = 0b00000100;
+    timer.enable = 1;
+    timer.clock_select = 0;
     timer.tima = 0xAB;
 
     _ = timer.write(3, 0b00000000); // disable, select bit 9 — triggers fall
@@ -248,7 +261,8 @@ test "writing to TMA during pending overflow updates TIMA correctly" {
     var intr = DummyInterrupt{};
     var timer = MockedTimer.init(&apu, &intr);
     timer.div = 0b00000001111111111; // bit 9 set
-    timer.tac = 0b00000100;
+    timer.enable = 1; // enabled
+    timer.clock_select = 0; // bit 9
     timer.tima = 0xFF;
 
     timer.tick(); // latch overflow
@@ -262,7 +276,8 @@ test "no tick occurs when no falling edge on selected bit" {
     var intr = DummyInterrupt{};
     var timer = MockedTimer.init(&apu, &intr);
     timer.div = 0b0000000000000000;
-    timer.tac = 0b00000100;
+    timer.enable = 1;
+    timer.clock_select = 0;
 
     const startTima = timer.tima;
     timer.tick();
