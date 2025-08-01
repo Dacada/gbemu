@@ -4,7 +4,7 @@ pub const NullAudioBackend = struct {
             return Resampler{};
         }
 
-        pub fn resample(_: *Resampler, _: u4) ?u8 {
+        pub fn resample(_: *Resampler, _: u4, _: u16) ?u8 {
             return null;
         }
     };

@@ -169,7 +169,7 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
                 const dacName = std.fmt.comptimePrint("dac{d}", .{n});
                 const sample = @field(self, channelName).tick();
                 if (sample) |s| {
-                    const resampled = @field(self, dacName).resample(s);
+                    const resampled = @field(self, dacName).resample(s.value, s.ticks);
                     if (resampled) |r| {
                         self.backend.submit(r);
                     }
@@ -204,6 +204,11 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
     };
 }
 
+const Sample = packed struct {
+    value: u4,
+    ticks: u16,
+};
+
 const MockChannel = struct {
     ticks: usize = 0,
     divticks: usize = 0,
@@ -234,9 +239,9 @@ const MockChannel = struct {
         return .{};
     }
 
-    pub fn tick(self: *MockChannel) ?u4 {
+    pub fn tick(self: *MockChannel) ?Sample {
         self.ticks += 1;
-        return @as(u4, 0b1010); // arbitrary non-null sample
+        return .{ .value = 0b1010, .ticks = 0xFFFF }; // arbitrary non-null sample
     }
 
     pub fn divtick(self: *MockChannel) void {
@@ -269,7 +274,7 @@ const MockBackend = struct {
             return .{};
         }
 
-        pub fn resample(self: *Resampler, sample: u4) ?u8 {
+        pub fn resample(self: *Resampler, sample: u4, _: u16) ?u8 {
             self.resample_count += 1;
             return sample;
         }
