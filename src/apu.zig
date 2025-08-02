@@ -6,9 +6,11 @@ const GenericRouter = router.Router;
 const GenericRange = router.Range;
 const GenericTargetField = router.TargetField;
 
-// TODO: The mysterious fifth channel? (absolutely not worth it)
+// TODO: The mysterious fifth channel from the cartridge itself? (absolutely not worth it)
 
 // DMG ONLY -- CGB models include registers that allow inspecting the emitted sample
+
+const MockChannel = struct {};
 
 pub fn Apu(AudioBackend: type) type {
     return ApuGeneric(MockChannel, MockChannel, MockChannel, MockChannel, AudioBackend);
@@ -23,12 +25,26 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
         channel3: Channel3,
         channel4: Channel4,
 
-        dac1: AudioBackend.Resampler,
-        dac2: AudioBackend.Resampler,
-        dac3: AudioBackend.Resampler,
-        dac4: AudioBackend.Resampler,
-
         backend: *AudioBackend,
+
+        vin_left: u1,
+        vin_right: u1,
+        left_vol: u3,
+        right_vol: u3,
+
+        ch1_left: u1,
+        ch2_left: u1,
+        ch3_left: u1,
+        ch4_left: u1,
+        ch1_right: u1,
+        ch2_right: u1,
+        ch3_right: u1,
+        ch4_right: u1,
+
+        audio_on: u1,
+
+        hpf_left: f32,
+        hpf_right: f32,
 
         const Invalid = struct {
             pub fn read(_: *This, _: u16) struct { MemoryFlag, u8 } {
@@ -46,18 +62,104 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
         };
 
         const Control = struct {
-            pub fn read(_: *This, _: u16) struct { MemoryFlag, u8 } {
-                return .{ .{}, 0xFF };
+            pub fn peek(self: *This, addr: u16) u8 {
+                switch (addr) {
+                    0 => {
+                        var res: u8 = 0;
+                        res |= self.vin_left;
+                        res <<= 3;
+                        res |= self.left_vol;
+                        res <<= 1;
+                        res |= self.vin_right;
+                        res <<= 3;
+                        res |= self.right_vol;
+                        return res;
+                    },
+
+                    1 => {
+                        var res: u8 = 0;
+                        res |= self.ch4_left;
+                        res <<= 1;
+                        res |= self.ch3_left;
+                        res <<= 1;
+                        res |= self.ch2_left;
+                        res <<= 1;
+                        res |= self.ch1_left;
+                        res <<= 1;
+                        res |= self.ch4_right;
+                        res <<= 1;
+                        res |= self.ch3_right;
+                        res <<= 1;
+                        res |= self.ch2_right;
+                        res <<= 1;
+                        res |= self.ch1_right;
+                        return res;
+                    },
+
+                    2 => {
+                        var res: u8 = 0;
+                        res |= self.audio_on;
+                        res <<= 4;
+                        res |= if (self.channel1.running()) 1 else 0;
+                        res <<= 1;
+                        res |= if (self.channel2.running()) 1 else 0;
+                        res <<= 1;
+                        res |= if (self.channel3.running()) 1 else 0;
+                        res <<= 1;
+                        res |= if (self.channel4.running()) 1 else 0;
+                        return res;
+                    },
+                }
+                unreachable;
             }
 
-            pub fn write(_: *This, _: u16, _: u8) MemoryFlag {
-                return .{};
+            pub fn poke(self: *This, addr: u16, val: u8) void {
+                switch (addr) {
+                    0 => {
+                        self.vin_left = @intCast((val & 0b1000_0000) >> 7);
+                        self.vin_right = @intCast((val & 0b0000_1000) >> 3);
+                        self.left_vol = @intCast((val & 0b0111_0000) >> 4);
+                        self.right_vol = @intCast(val & 0b0000_0111);
+                    },
+                    1 => {
+                        self.ch4_left = @intCast((val & 0b1000_0000) >> 7);
+                        self.ch3_left = @intCast((val & 0b0100_0000) >> 6);
+                        self.ch2_left = @intCast((val & 0b0010_0000) >> 5);
+                        self.ch1_left = @intCast((val & 0b0001_0000) >> 4);
+                        self.ch4_right = @intCast((val & 0b0000_1000) >> 3);
+                        self.ch3_right = @intCast((val & 0b0000_0100) >> 2);
+                        self.ch2_right = @intCast((val & 0b0000_0010) >> 1);
+                        self.ch1_right = @intCast(val & 0b0000_0001);
+                    },
+                    2 => {
+                        self.audio_on = @intCast((val & 0b1000_0000) >> 7);
+                    },
+                }
+                unreachable;
             }
 
-            pub fn peek(_: *This, _: u16) u8 {
-                return 0xFF;
+            pub fn read(self: *This, addr: u16) struct { MemoryFlag, u8 } {
+                return .{ .{}, self.peek(addr) };
             }
-            pub fn poke(_: *This, _: u16, _: u8) void {}
+
+            pub fn write(self: *This, addr: u16, val: u8) MemoryFlag {
+                if (self.audio_on == 0) {
+                    // If audio is off, registers are read-only
+                    return;
+                }
+
+                const prev_audio_on = self.audio_on;
+                self.poke(addr, val);
+                if (addr == 2 and (prev_audio_on == 1 and self.audio_on == 0)) {
+                    // Turning the apu off zeroes all registers (except this one)
+                    self.poke(0, 0);
+                    self.poke(1, 0);
+                    self.channel1.poweroff();
+                    self.channel2.poweroff();
+                    self.channel3.poweroff();
+                    self.channel4.poweroff();
+                }
+            }
         };
 
         const Target = enum {
@@ -156,25 +258,69 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
                 .channel2 = Channel2.init(),
                 .channel3 = Channel3.init(),
                 .channel4 = Channel4.init(),
-                .dac1 = AudioBackend.Resampler.init(),
-                .dac2 = AudioBackend.Resampler.init(),
-                .dac3 = AudioBackend.Resampler.init(),
-                .dac4 = AudioBackend.Resampler.init(),
+                .dac1 = 0,
+                .dac2 = 0,
+                .dac3 = 0,
+                .dac4 = 0,
             };
         }
 
         pub fn tick(self: *This) void {
+            if (self.audio_on == 0) {
+                return;
+            }
+
             inline for (1..5) |n| {
                 const channelName = std.fmt.comptimePrint("channel{d}", .{n});
-                const dacName = std.fmt.comptimePrint("dac{d}", .{n});
-                const sample = @field(self, channelName).tick();
-                if (sample) |s| {
-                    const resampled = @field(self, dacName).resample(s.value, s.ticks);
-                    if (resampled) |r| {
-                        self.backend.submit(r);
-                    }
-                }
+                @field(self, channelName).tick();
             }
+
+            self.ticks += 1;
+            if (self.ticks < AudioBackend.SamplingPeriod) {
+                return;
+            }
+            self.ticks -= AudioBackend.SamplingPeriod;
+
+            var left: f32 = 0;
+            var right: f32 = 0;
+            inline for (1..5) |n| {
+                const channelName = std.fmt.comptimePrint("channel{d}", .{n});
+                const channelSelectNameLeft = std.fmt.comptimePrint("ch{d}_left", .{n});
+                const channelSelectNameRight = std.fmt.comptimePrint("ch{d}_right", .{n});
+
+                // Each channel knows its output DAC value as a u4 sample. Or null if the DAC is disabled, which will
+                // result in it outputting a neutral value of 0 volts (here ast 7.5 pre-normalization).
+                var sample: f32 = @field(self, channelName).dacValue orelse 7.5;
+
+                // Normalize into the analog signal (actual DAC emulation)
+                sample = (sample / 15.0) * 2.0 - 1.0;
+
+                // Select audio channels. If a channel is deselected the result is that the DAC's contribution
+                // disappears, which should cause an audio pop due to the DC component changing level, which we
+                // want.
+                left += sample * @field(self, channelSelectNameLeft);
+                right += sample * @field(self, channelSelectNameRight);
+            }
+
+            // Attenuate each of the two stereo channels
+            left = left * (self.left_vol + 1.0) / 8.0;
+            right = right * (self.right_vol + 1.0) / 8.0;
+
+            // Apply high-pass filter
+            left = apply_hpf(&self.hpf_left, left);
+            right = apply_hpf(&self.hpf_right, right);
+
+            // Submit to the audio backend, normalized
+            self.backend.submit(left / 4, right / 4);
+        }
+
+        fn apply_hpf(capacitor: *f32, value: f32) f32 {
+            const capacitor_factor = comptime std.math.pow(f32, 0.999958, 4194304.0 / AudioBackend.SamplingFrequency);
+
+            var out: f32 = 0;
+            out = value - capacitor.*;
+            capacitor.* = value - out * capacitor_factor;
+            return out;
         }
 
         pub fn divtick(self: *This) void {
@@ -202,137 +348,4 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
             return ret;
         }
     };
-}
-
-const Sample = packed struct {
-    value: u4,
-    ticks: u16,
-};
-
-const MockChannel = struct {
-    ticks: usize = 0,
-    divticks: usize = 0,
-    last_read_addr: ?u16 = null,
-    last_write_addr: ?u16 = null,
-    last_write_val: ?u8 = null,
-
-    const Wave = struct {
-        pub fn read(self: *MockChannel, addr: u16) struct { MemoryFlag, u8 } {
-            self.last_read_addr = addr;
-            return .{ .{}, 0x42 };
-        }
-
-        pub fn write(self: *MockChannel, addr: u16, val: u8) MemoryFlag {
-            self.last_write_addr = addr;
-            self.last_write_val = val;
-            return .{};
-        }
-
-        pub fn peek(_: *MockChannel, _: u16) u8 {
-            return 0x42;
-        }
-
-        pub fn poke(_: *MockChannel, _: u16, _: u8) void {}
-    };
-
-    pub fn init() MockChannel {
-        return .{};
-    }
-
-    pub fn tick(self: *MockChannel) ?Sample {
-        self.ticks += 1;
-        return .{ .value = 0b1010, .ticks = 0xFFFF }; // arbitrary non-null sample
-    }
-
-    pub fn divtick(self: *MockChannel) void {
-        self.divticks += 1;
-    }
-
-    pub fn read(self: *MockChannel, addr: u16) struct { MemoryFlag, u8 } {
-        self.last_read_addr = addr;
-        return .{ .{}, 0x42 };
-    }
-
-    pub fn write(self: *MockChannel, addr: u16, val: u8) MemoryFlag {
-        self.last_write_addr = addr;
-        self.last_write_val = val;
-        return .{};
-    }
-
-    pub fn peek(_: *MockChannel, _: u16) u8 {
-        return 0x42;
-    }
-
-    pub fn poke(_: *MockChannel, _: u16, _: u8) void {}
-};
-
-const MockBackend = struct {
-    const Resampler = struct {
-        resample_count: usize = 0,
-
-        pub fn init() Resampler {
-            return .{};
-        }
-
-        pub fn resample(self: *Resampler, sample: u4, _: u16) ?u8 {
-            self.resample_count += 1;
-            return sample;
-        }
-    };
-
-    submissions: usize = 0,
-
-    pub fn submit(self: *MockBackend, _: u8) void {
-        self.submissions += 1;
-    }
-};
-
-const MockedApu = ApuGeneric(MockChannel, MockChannel, MockChannel, MockChannel, MockBackend);
-
-test "tick increases counters and submits samples" {
-    var backend = MockBackend{};
-    var apu = MockedApu.init(&backend);
-
-    apu.tick();
-
-    try std.testing.expectEqual(4, backend.submissions);
-    try std.testing.expectEqual(1, apu.channel1.ticks);
-    try std.testing.expectEqual(1, apu.channel2.ticks);
-    try std.testing.expectEqual(1, apu.channel3.ticks);
-    try std.testing.expectEqual(1, apu.channel4.ticks);
-    try std.testing.expectEqual(1, apu.dac1.resample_count);
-    try std.testing.expectEqual(1, apu.dac2.resample_count);
-    try std.testing.expectEqual(1, apu.dac3.resample_count);
-    try std.testing.expectEqual(1, apu.dac4.resample_count);
-}
-
-test "divtick increases divtick counters" {
-    var backend = MockBackend{};
-    var apu = MockedApu.init(&backend);
-
-    apu.divtick();
-
-    try std.testing.expectEqual(1, apu.channel1.divticks);
-    try std.testing.expectEqual(1, apu.channel2.divticks);
-    try std.testing.expectEqual(1, apu.channel3.divticks);
-    try std.testing.expectEqual(1, apu.channel4.divticks);
-}
-
-test "read and write are routed to correct channel" {
-    var backend = MockBackend{};
-    var apu = MockedApu.init(&backend);
-
-    const addr1: u16 = 0x01; // Channel 1 range
-    const addr2: u16 = 0x07; // Channel 2 range
-    const val: u8 = 0x99;
-
-    _ = apu.write(addr1, val);
-    _ = apu.read(addr2);
-
-    try std.testing.expectEqual(null, apu.channel1.last_read_addr);
-    try std.testing.expectEqual(addr1, apu.channel1.last_write_addr);
-    try std.testing.expectEqual(val, apu.channel1.last_write_val);
-    try std.testing.expectEqual(addr2 - 0x05, apu.channel2.last_read_addr);
-    try std.testing.expectEqual(null, apu.channel2.last_write_addr);
-    try std.testing.expectEqual(null, apu.channel2.last_write_val);
 }
