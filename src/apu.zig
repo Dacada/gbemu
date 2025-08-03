@@ -26,15 +26,15 @@ const MockChannel = struct {
     fn init() MockChannel {
         return MockChannel{};
     }
-    fn tick(_: *MockChannel) void {}
-    fn divtick(_: *MockChannel) void {}
     fn running(_: *const MockChannel) bool {
         return false;
     }
     fn poweroff(_: *MockChannel) void {}
-    fn lastValue(_: *const MockChannel) f32 {
-        return 0.0;
+    fn tick(_: *MockChannel) f32 {
+        return 0;
     }
+    fn divtick(_: *MockChannel) void {}
+
     pub fn read(_: *MockChannel, _: u16) struct { MemoryFlag, u8 } {
         return .{ .{}, 0xFF };
     }
@@ -54,6 +54,14 @@ pub fn Apu(AudioBackend: type) type {
 fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, AudioBackend: type) type {
     return struct {
         const This = @This();
+
+        const ApuTickRate = 1_048_576;
+
+        const Accumulator = packed struct {
+            sum: f32 = 0,
+            count: u64 = 0,
+            prev: f32 = 0,
+        };
 
         channel1: Channel1,
         channel2: Channel2,
@@ -80,6 +88,17 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
 
         hpf_left: f32,
         hpf_right: f32,
+
+        ch1_acc_left: Accumulator,
+        ch2_acc_left: Accumulator,
+        ch3_acc_left: Accumulator,
+        ch4_acc_left: Accumulator,
+        ch1_acc_right: Accumulator,
+        ch2_acc_right: Accumulator,
+        ch3_acc_right: Accumulator,
+        ch4_acc_right: Accumulator,
+
+        samplingError: u64,
 
         const Invalid = struct {
             pub fn read(_: *This, _: u16) struct { MemoryFlag, u8 } {
@@ -311,6 +330,15 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
                 .audio_on = 1,
                 .hpf_left = 0.0,
                 .hpf_right = 0.0,
+                .ch1_acc_left = .{},
+                .ch2_acc_left = .{},
+                .ch3_acc_left = .{},
+                .ch4_acc_left = .{},
+                .ch1_acc_right = .{},
+                .ch2_acc_right = .{},
+                .ch3_acc_right = .{},
+                .ch4_acc_right = .{},
+                .samplingError = 0,
             };
         }
 
@@ -322,47 +350,68 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
 
             inline for (1..5) |n| {
                 const channelName = std.fmt.comptimePrint("channel{d}", .{n});
-                @field(self, channelName).tick();
-            }
-        }
-
-        /// This is intended to be called every sampling frequency tick???
-        pub fn submitBackend(self: *This) void {
-            var left: f32 = 0;
-            var right: f32 = 0;
-            inline for (1..5) |n| {
-                const channelName = std.fmt.comptimePrint("channel{d}", .{n});
-                const channelSelectNameLeft = std.fmt.comptimePrint("ch{d}_left", .{n});
-                const channelSelectNameRight = std.fmt.comptimePrint("ch{d}_right", .{n});
 
                 // Each channel knows its DAC output value as a normalized floating point sample between 1 and -1. A
                 // disabled DAC is expected to output 0.
-                var sample: f32 = @field(self, channelName).lastValue();
+                const sample: f32 = @field(self, channelName).tick();
 
-                // Normalize into the analog signal (actual DAC emulation)
-                sample = (sample / 15.0) * 2.0 - 1.0;
+                inline for (.{ "left", "right" }) |side| {
+                    const channelSelectName = std.fmt.comptimePrint("ch{d}_{s}", .{ n, side });
+                    const accumulatorChannelName = std.fmt.comptimePrint("ch{d}_acc_{s}", .{ n, side });
+                    const volume_name = std.fmt.comptimePrint("{s}_vol", .{side});
 
-                // Select audio channels. If a channel is deselected the result is that the DAC's contribution
-                // disappears, which should cause an audio pop due to the DC component changing level, which we
-                // want.
-                left += sample * @as(f32, @floatFromInt(@field(self, channelSelectNameLeft)));
-                right += sample * @as(f32, @floatFromInt(@field(self, channelSelectNameRight)));
+                    // Select audio channels, attenuate, and accumulate for sampling.
+                    if (@field(self, channelSelectName) == 1) {
+                        // Attenuate the selected channel if needed
+                        var attenuation: f32 = @floatFromInt(@field(self, volume_name));
+                        attenuation += 1.0;
+                        attenuation /= 8.0;
+
+                        const value = sample * attenuation;
+                        @field(self, accumulatorChannelName).sum += value;
+                    }
+
+                    // If a channel is deselected the result is that the DAC's contribution
+                    // disappears, which should cause an audio pop due to the DC component changing level, which we
+                    // want. Therefore we always add that sample even if the channel is not selected
+                    @field(self, accumulatorChannelName).count += 1;
+                }
             }
 
-            // Attenuate each of the two stereo channels
-            left = left * (@as(f32, @floatFromInt(self.left_vol)) + 1.0) / 8.0;
-            right = right * (@as(f32, @floatFromInt(self.right_vol)) + 1.0) / 8.0;
+            // Resampling logic, take the accumulated samples and contruct a new sample from them, or keep the previous
+            // sample
+            self.samplingError += AudioBackend.SamplingRate;
+            if (self.samplingError >= This.ApuTickRate) {
+                self.samplingError -= AudioBackend.SamplingRate;
 
-            // Apply high-pass filter
-            left = apply_hpf(&self.hpf_left, left);
-            right = apply_hpf(&self.hpf_right, right);
+                var results: struct { left: f32 = 0, right: f32 = 0 } = .{};
+                inline for (.{ "left", "right" }) |side| {
+                    const hpfName = std.fmt.comptimePrint("hpf_{s}", .{side});
+                    var mixed_total: f32 = 0;
+                    inline for (1..5) |n| {
+                        const accumulatorChannelName = std.fmt.comptimePrint("ch{d}_acc_{s}", .{ n, side });
+                        var acc = &@field(self, accumulatorChannelName);
+                        if (acc.count != 0) {
+                            // We keep track of the last sample and keep it if there have been no new samples in the interval.
+                            acc.prev = acc.sum / @as(f32, @floatFromInt(acc.count));
+                        }
+                        mixed_total += acc.prev;
+                        acc.count = 0;
+                        acc.sum = 0;
+                    }
 
-            // Submit to the audio backend, normalized
-            self.backend.submit(left / 4, right / 4);
+                    // Renormalize first and then apply the high pass filter.
+                    mixed_total /= 4;
+                    @field(results, side) = apply_hpf(&@field(self, hpfName), mixed_total);
+                }
+
+                self.backend.submit(results.left, results.right);
+            }
         }
 
         fn apply_hpf(capacitor: *f32, value: f32) f32 {
-            const capacitor_factor = comptime std.math.pow(f32, 0.999958, 4194304.0 / AudioBackend.SamplingFrequency);
+            // This magic constant comes from the Pan Docs documentation
+            const capacitor_factor = comptime std.math.pow(f32, 0.999958, 4194304.0 / AudioBackend.SamplingRate);
 
             var out: f32 = 0;
             out = value - capacitor.*;

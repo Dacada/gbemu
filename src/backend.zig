@@ -1,13 +1,5 @@
 pub const NullAudioBackend = struct {
-    pub const SamplingFrequency = 44100;
-    pub const Resampler = struct {
-        pub inline fn init() Resampler {
-            return Resampler{};
-        }
-        pub fn resample(_: *Resampler, _: u4, _: u16) ?u8 {
-            return null;
-        }
-    };
+    pub const SamplingRate = 44_100.0;
     pub inline fn init() NullAudioBackend {
         return NullAudioBackend{};
     }
