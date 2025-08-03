@@ -10,7 +10,42 @@ const GenericTargetField = router.TargetField;
 
 // DMG ONLY -- CGB models include registers that allow inspecting the emitted sample
 
-const MockChannel = struct {};
+const MockChannel = struct {
+    const Wave = struct {
+        pub fn read(_: *MockChannel, _: u16) struct { MemoryFlag, u8 } {
+            return .{ .{}, 0xFF };
+        }
+        pub fn write(_: *MockChannel, _: u16, _: u8) MemoryFlag {
+            return .{};
+        }
+        pub fn peek(_: *MockChannel, _: u16) u8 {
+            return 0xFF;
+        }
+        pub fn poke(_: *MockChannel, _: u16, _: u8) void {}
+    };
+    fn init() MockChannel {
+        return MockChannel{};
+    }
+    fn tick(_: *MockChannel) void {}
+    fn divtick(_: *MockChannel) void {}
+    fn running(_: *const MockChannel) bool {
+        return false;
+    }
+    fn poweroff(_: *MockChannel) void {}
+    fn lastValue(_: *const MockChannel) f32 {
+        return 0.0;
+    }
+    pub fn read(_: *MockChannel, _: u16) struct { MemoryFlag, u8 } {
+        return .{ .{}, 0xFF };
+    }
+    pub fn write(_: *MockChannel, _: u16, _: u8) MemoryFlag {
+        return .{};
+    }
+    pub fn peek(_: *MockChannel, _: u16) u8 {
+        return 0xFF;
+    }
+    pub fn poke(_: *MockChannel, _: u16, _: u8) void {}
+};
 
 pub fn Apu(AudioBackend: type) type {
     return ApuGeneric(MockChannel, MockChannel, MockChannel, MockChannel, AudioBackend);
@@ -109,8 +144,9 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
                         res |= if (self.channel4.running()) 1 else 0;
                         return res;
                     },
+
+                    else => unreachable,
                 }
-                unreachable;
             }
 
             pub fn poke(self: *This, addr: u16, val: u8) void {
@@ -134,8 +170,8 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
                     2 => {
                         self.audio_on = @intCast((val & 0b1000_0000) >> 7);
                     },
+                    else => unreachable,
                 }
-                unreachable;
             }
 
             pub fn read(self: *This, addr: u16) struct { MemoryFlag, u8 } {
@@ -145,7 +181,7 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
             pub fn write(self: *This, addr: u16, val: u8) MemoryFlag {
                 if (self.audio_on == 0) {
                     // If audio is off, registers are read-only
-                    return;
+                    return .{};
                 }
 
                 const prev_audio_on = self.audio_on;
@@ -159,6 +195,8 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
                     self.channel3.poweroff();
                     self.channel4.poweroff();
                 }
+
+                return .{};
             }
         };
 
@@ -253,18 +291,30 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
 
         pub inline fn init(backend: *AudioBackend) This {
             return This{
-                .backend = backend,
                 .channel1 = Channel1.init(),
                 .channel2 = Channel2.init(),
                 .channel3 = Channel3.init(),
                 .channel4 = Channel4.init(),
-                .dac1 = 0,
-                .dac2 = 0,
-                .dac3 = 0,
-                .dac4 = 0,
+                .backend = backend,
+                .vin_left = undefined,
+                .vin_right = undefined,
+                .left_vol = undefined,
+                .right_vol = undefined,
+                .ch1_left = undefined,
+                .ch2_left = undefined,
+                .ch3_left = undefined,
+                .ch4_left = undefined,
+                .ch1_right = undefined,
+                .ch2_right = undefined,
+                .ch3_right = undefined,
+                .ch4_right = undefined,
+                .audio_on = 1,
+                .hpf_left = 0.0,
+                .hpf_right = 0.0,
             };
         }
 
+        /// This is intended to be called every APU tick
         pub fn tick(self: *This) void {
             if (self.audio_on == 0) {
                 return;
@@ -274,13 +324,10 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
                 const channelName = std.fmt.comptimePrint("channel{d}", .{n});
                 @field(self, channelName).tick();
             }
+        }
 
-            self.ticks += 1;
-            if (self.ticks < AudioBackend.SamplingPeriod) {
-                return;
-            }
-            self.ticks -= AudioBackend.SamplingPeriod;
-
+        /// This is intended to be called every sampling frequency tick???
+        pub fn submitBackend(self: *This) void {
             var left: f32 = 0;
             var right: f32 = 0;
             inline for (1..5) |n| {
@@ -288,9 +335,9 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
                 const channelSelectNameLeft = std.fmt.comptimePrint("ch{d}_left", .{n});
                 const channelSelectNameRight = std.fmt.comptimePrint("ch{d}_right", .{n});
 
-                // Each channel knows its output DAC value as a u4 sample. Or null if the DAC is disabled, which will
-                // result in it outputting a neutral value of 0 volts (here ast 7.5 pre-normalization).
-                var sample: f32 = @field(self, channelName).dacValue orelse 7.5;
+                // Each channel knows its DAC output value as a normalized floating point sample between 1 and -1. A
+                // disabled DAC is expected to output 0.
+                var sample: f32 = @field(self, channelName).lastValue();
 
                 // Normalize into the analog signal (actual DAC emulation)
                 sample = (sample / 15.0) * 2.0 - 1.0;
@@ -298,13 +345,13 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
                 // Select audio channels. If a channel is deselected the result is that the DAC's contribution
                 // disappears, which should cause an audio pop due to the DC component changing level, which we
                 // want.
-                left += sample * @field(self, channelSelectNameLeft);
-                right += sample * @field(self, channelSelectNameRight);
+                left += sample * @as(f32, @floatFromInt(@field(self, channelSelectNameLeft)));
+                right += sample * @as(f32, @floatFromInt(@field(self, channelSelectNameRight)));
             }
 
             // Attenuate each of the two stereo channels
-            left = left * (self.left_vol + 1.0) / 8.0;
-            right = right * (self.right_vol + 1.0) / 8.0;
+            left = left * (@as(f32, @floatFromInt(self.left_vol)) + 1.0) / 8.0;
+            right = right * (@as(f32, @floatFromInt(self.right_vol)) + 1.0) / 8.0;
 
             // Apply high-pass filter
             left = apply_hpf(&self.hpf_left, left);
@@ -323,6 +370,7 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
             return out;
         }
 
+        /// This is intended to be called every DIV-APU tick
         pub fn divtick(self: *This) void {
             inline for (1..5) |n| {
                 const channelName = std.fmt.comptimePrint("channel{d}", .{n});
