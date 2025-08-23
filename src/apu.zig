@@ -26,7 +26,7 @@ const MockChannel = struct {
     fn init() MockChannel {
         return MockChannel{};
     }
-    fn running(_: *const MockChannel) bool {
+    fn isActive(_: *const MockChannel) bool {
         return false;
     }
     fn poweroff(_: *MockChannel) void {}
@@ -154,13 +154,13 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
                         var res: u8 = 0;
                         res |= self.audio_on;
                         res <<= 4;
-                        res |= if (self.channel1.running()) 1 else 0;
+                        res |= if (self.channel1.isActive()) 1 else 0;
                         res <<= 1;
-                        res |= if (self.channel2.running()) 1 else 0;
+                        res |= if (self.channel2.isActive()) 1 else 0;
                         res <<= 1;
-                        res |= if (self.channel3.running()) 1 else 0;
+                        res |= if (self.channel3.isActive()) 1 else 0;
                         res <<= 1;
-                        res |= if (self.channel4.running()) 1 else 0;
+                        res |= if (self.channel4.isActive()) 1 else 0;
                         return res;
                     },
 
@@ -198,8 +198,8 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
             }
 
             pub fn write(self: *This, addr: u16, val: u8) MemoryFlag {
-                if (self.audio_on == 0) {
-                    // If audio is off, registers are read-only
+                if (self.audio_on == 0 and addr != 2) {
+                    // If audio is off, registers are read-only (except the one to turn it back on)
                     return .{};
                 }
 

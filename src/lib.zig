@@ -18,6 +18,7 @@ pub const interrupt = @import("interrupt.zig");
 pub const timer = @import("timer.zig");
 pub const apu = @import("apu.zig");
 pub const backend = @import("backend.zig");
+pub const channel = @import("channel.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());
