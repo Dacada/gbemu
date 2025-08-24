@@ -1,6 +1,7 @@
 const std = @import("std");
 const lib = @import("lib");
-const Channel2 = lib.channel.Channel2;
+const Channel1 = lib.channel.Channel(1);
+const Channel2 = lib.channel.Channel(2);
 
 const cpu_freq_hz = 4_194_304;
 const apu_freq_hz = cpu_freq_hz / 4;
@@ -15,7 +16,7 @@ const period: u11 = 1750;
 const period_low = period & 0xFF;
 const period_high = (period & 0x0700) >> 8;
 
-fn wait_and_collect_until(channel: *Channel2, max_samples: usize) !std.ArrayList(f32) {
+fn wait_and_collect_until(channel: anytype, max_samples: usize) !std.ArrayList(f32) {
     var samples = std.ArrayList(f32).init(std.testing.allocator);
     var div_counter: usize = 0;
 
@@ -31,6 +32,48 @@ fn wait_and_collect_until(channel: *Channel2, max_samples: usize) !std.ArrayList
     }
 
     return samples;
+}
+
+test "test channel 1" {
+    // freq sweep
+    // pace = slowest, direction = increasing, step = large (small increments)
+    const nr10_val = 0b0_111_0_111;
+
+    // duty and length
+    // duty = 50%, length = don't care (disabled)
+    const nr11_val = 0b10_000000;
+
+    // envelope:
+    // disabled (but do not disable the dac!)
+    const nr12_val = 0b1111_0_000;
+
+    // period and length enable
+    const nr13_val = period_low;
+    const nr14_val = 0b1_0_000_000 | period_high;
+
+    var channel = Channel1.init();
+
+    try std.testing.expect(!channel.write(0, 0).any());
+    try std.testing.expect(!channel.write(1, 0).any());
+    try std.testing.expect(!channel.write(2, 0).any());
+    try std.testing.expect(!channel.write(3, 0).any());
+    try std.testing.expect(!channel.write(4, 0).any());
+
+    try std.testing.expect(!channel.write(0, nr10_val).any());
+    try std.testing.expect(!channel.write(1, nr11_val).any());
+    try std.testing.expect(!channel.write(2, nr12_val).any());
+    try std.testing.expect(!channel.write(3, nr13_val).any());
+    try std.testing.expect(!channel.write(4, nr14_val).any());
+
+    var samples = try wait_and_collect_until(&channel, 1_200_000);
+    defer samples.deinit();
+
+    const output_file = try std.fs.createFileAbsolute("/tmp/out_ch1.raw", .{});
+    defer output_file.close();
+    try output_file.writeAll(std.mem.sliceAsBytes(samples.items));
+
+    const expected: []const f32 = @alignCast(std.mem.bytesAsSlice(f32, @embedFile("res/ch1.raw")));
+    try std.testing.expectEqualSlices(f32, expected, samples.items);
 }
 
 test "test channel 2" {
