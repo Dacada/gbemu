@@ -36,15 +36,15 @@ fn wait_and_collect_until(channel: *Channel2, max_samples: usize) !std.ArrayList
 test "test channel 2" {
     // duty and length
     // duty = 50%, length = 0 (64 steps)
-    const nr21_val = (0b10 << 6) | 0;
+    const nr21_val = 0b10_000000;
 
     // envelope:
     // initial volume = 0, direction = up, period = 1 step
-    const nr22_val = (0 << 4) | (1 << 3) | 0b001;
+    const nr22_val = 0b0000_1_001;
 
     // period and length enable
     const nr23_val = period_low;
-    const nr24_val = (1 << 7) | (1 << 6) | period_high;
+    const nr24_val = 0b1_1_000_000 | period_high;
 
     var channel = Channel2.init();
 

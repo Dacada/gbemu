@@ -95,8 +95,11 @@ pub const Channel2 = struct {
             self.periodCounter = self.period;
 
             var dacSample: u8 = self.sample();
-            dacSample *= self.currentEnvelope;
-            self.dacHold = dac(@intCast(dacSample >> 4));
+            if (self.sweepPace != 0) {
+                dacSample *= self.currentEnvelope;
+                dacSample /= 15;
+            }
+            self.dacHold = dac(@intCast(dacSample));
         }
         return self.dacHold;
     }
@@ -338,13 +341,11 @@ test "tick() obeys dacEnabled and active; waveform progression matches table" {
     _ = ch.write(4, 0x87); // trigger, upper period=0b111
 
     // With waveDuty=0, the first 7 samples are 0xF (high), then 0x0.
-    // Volume mixing: (0xF * 0xF) >> 4 = 14 -> dac(14) = -13/15.
-    const neg_13_over_15: f32 = -13.0 / 15.0;
-    try std.testing.expectApproxEqAbs(neg_13_over_15, ch.tick(), eps);
+    try std.testing.expectApproxEqAbs(-1.0, ch.tick(), eps);
 
     // Next 6 ticks: still 'high' (same value)
     inline for (0..6) |_| {
-        try std.testing.expectApproxEqAbs(neg_13_over_15, ch.tick(), eps);
+        try std.testing.expectApproxEqAbs(-1.0, ch.tick(), eps);
     }
 
     // 8th tick of the duty cycle returns 0x0 -> dac(0) = 1.0
