@@ -21,258 +21,352 @@ inline fn dac(sample: u4) f32 {
     };
 }
 
-pub fn Channel(channel_number: comptime_int) type {
+const SweepPeriodUnit = struct {
+    pace: u3,
+    individual_step: u3,
+    direction: u1,
+
+    counter: u3,
+    enabled: bool,
+    shadow: u11,
+
+    fn init() SweepPeriodUnit {
+        return SweepPeriodUnit{
+            .pace = undefined,
+            .individual_step = undefined,
+            .direction = undefined,
+
+            .counter = 0,
+            .enabled = false,
+            .shadow = 0,
+        };
+    }
+
+    fn tick(self: *SweepPeriodUnit, control: *ControlUnit, period: *PeriodUnit) void {
+        self.counter +%= 1;
+        if (self.counter < self.pace) {
+            return;
+        }
+        self.counter = 0;
+
+        // Entire confusing and weird implementation from Pan Docs
+        if (self.enabled and self.pace != 0) {
+            const new_period = self.period_calculation();
+            self.overflow_check(new_period, control);
+            if (new_period <= 0x7FF and self.individual_step != 0) {
+                self.shadow = @intCast(new_period);
+                period.period = @intCast(new_period);
+                self.overflow_check(self.period_calculation(), control);
+            }
+        }
+    }
+
+    fn period_calculation(self: *const SweepPeriodUnit) u12 {
+        const shifted = self.shadow >> self.individual_step;
+        // store it as a u12 to check for "overflow" later
+        var new_period: u12 = @intCast(self.shadow);
+        if (self.direction == 0) {
+            new_period += @intCast(shifted);
+        } else {
+            // shifted will always be smaller since it's the result of right shifting that value
+            new_period -= @intCast(shifted);
+        }
+        return new_period;
+    }
+
+    fn overflow_check(self: *SweepPeriodUnit, period: u12, control: *ControlUnit) void {
+        if (period > 0x7FF) {
+            control.active = false;
+            self.enabled = false;
+        }
+    }
+
+    fn reset(self: *SweepPeriodUnit, period: *const PeriodUnit, control: *ControlUnit) void {
+        self.shadow = period.period;
+        self.counter = 0;
+        self.enabled = self.pace != 0 or self.individual_step != 0;
+
+        // Pan Docs says: If the individual step is non-zero, frequency calculation and overflow check are performed immediately.
+        if (self.individual_step != 0) {
+            self.overflow_check(self.period_calculation(), control);
+        }
+    }
+};
+
+const VolumeUnit = struct {
+    pace: u3,
+    direction: u1,
+    initial_volume: u4,
+
+    counter: u3,
+    volume: u4,
+
+    inline fn init() VolumeUnit {
+        return VolumeUnit{
+            .pace = undefined,
+            .direction = undefined,
+            .initial_volume = undefined,
+
+            .counter = 0,
+            .volume = 0,
+        };
+    }
+
+    fn tick(self: *VolumeUnit) void {
+        if (self.pace == 0) {
+            return;
+        }
+
+        self.counter +%= 1;
+        if (self.counter >= self.pace) {
+            self.counter = 0;
+            if (self.direction == 0) {
+                self.volume -|= 1;
+            } else {
+                self.volume +|= 1;
+            }
+        }
+    }
+
+    fn reset(self: *VolumeUnit) void {
+        self.counter = 0;
+        self.volume = self.initial_volume;
+    }
+};
+
+const PeriodUnit = struct {
+    period: u11,
+
+    counter: u11,
+
+    inline fn init() PeriodUnit {
+        return PeriodUnit{
+            .period = undefined,
+            .counter = 0,
+        };
+    }
+
+    fn tick(self: *PeriodUnit) bool {
+        self.counter +%= 1;
+        if (self.counter == 0) {
+            self.reset();
+            return true;
+        }
+        return false;
+    }
+
+    fn reset(self: *PeriodUnit) void {
+        self.counter = self.period;
+    }
+};
+
+const ControlUnit = struct {
+    active: bool,
+    dacEnabled: bool,
+
+    inline fn init() ControlUnit {
+        return ControlUnit{
+            .active = false,
+            .dacEnabled = false,
+        };
+    }
+
+    fn isActive(self: *const ControlUnit) bool {
+        return self.active and self.dacEnabled;
+    }
+
+    fn poweroff(self: *ControlUnit) void {
+        self.active = false;
+        self.dacEnabled = false;
+    }
+};
+
+const LengthUnit = struct {
+    enable: u1,
+    initialCounter: u6,
+
+    counter: u6, // TODO: u8 for channel3!
+
+    inline fn init() LengthUnit {
+        return LengthUnit{
+            .enable = undefined,
+            .initialCounter = undefined,
+            .counter = 0,
+        };
+    }
+
+    fn tick(self: *LengthUnit, control: *ControlUnit) void {
+        if (self.enable == 0) {
+            return;
+        }
+        self.counter +%= 1;
+        if (self.counter == 0) {
+            control.active = false;
+        }
+    }
+
+    fn reset(self: *LengthUnit) void {
+        self.counter = self.initialCounter;
+    }
+};
+
+const SquareWaveUnit = struct {
+    duty: u2,
+
+    counter: u3,
+
+    inline fn init() SquareWaveUnit {
+        return SquareWaveUnit{
+            .duty = undefined,
+            .counter = 0,
+        };
+    }
+
+    fn sample(self: *SquareWaveUnit) u4 {
+        const waveforms: [4][8]u4 = .{
+            .{ 0xF, 0xF, 0xF, 0xF, 0xF, 0xF, 0xF, 0x0 },
+            .{ 0x0, 0xF, 0xF, 0xF, 0xF, 0xF, 0xF, 0x0 },
+            .{ 0x0, 0xF, 0xF, 0xF, 0xF, 0x0, 0x0, 0x0 },
+            .{ 0xF, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xF },
+        };
+        defer self.counter +%= 1;
+        return waveforms[self.duty][self.counter];
+    }
+};
+
+pub fn Channel(number: comptime_int) type {
     return struct {
         const This = @This();
 
-        poweredOff: bool,
-        active: bool,
-        dacEnabled: bool,
+        control: ControlUnit,
+        period_sweep: if (number == 1) SweepPeriodUnit else void,
+        period: PeriodUnit,
+        volume: VolumeUnit,
+        length: LengthUnit,
+        square: SquareWaveUnit,
 
-        periodSweepEnabled: if (channel_number == 1) bool else void,
-        periodSweepTimer: if (channel_number == 1) u3 else void,
-        periodSweepShadowRegister: if (channel_number == 1) u11 else void,
+        current: f32,
+        divtick_counter: u3,
+        powered_off: bool,
 
-        periodCounter: u11,
-        dutyCounter: u3,
-        dacHold: f32,
-        currentEnvelope: u4,
-        divtickdiv: u3,
-        lengthTimer: u6, // TODO: u8 for channel 3
-        sweepPaceCounter: u3,
-
-        periodSweepPace: if (channel_number == 1) u3 else void,
-        periodSweepDirection: if (channel_number == 1) u1 else void,
-        periodSweepIndividualStep: if (channel_number == 1) u3 else void,
-
-        waveDuty: u2,
-        initialLengthTimer: u6,
-        initialVolume: u4,
-        envDir: u1,
-        sweepPace: u3,
-        period: u11,
-        lengthEnable: u1,
-
-        pub fn init() This {
+        pub inline fn init() This {
             return This{
-                .poweredOff = false,
-                .active = false,
-                .dacEnabled = false,
-                .periodSweepEnabled = if (channel_number == 1) false else {},
-                .periodSweepTimer = if (channel_number == 1) 0 else {},
-                .periodSweepShadowRegister = if (channel_number == 1) 0 else {},
-                .periodCounter = 0,
-                .dutyCounter = 0,
-                .dacHold = 0.0,
-                .currentEnvelope = 0,
-                .divtickdiv = 0,
-                .lengthTimer = 0,
-                .sweepPaceCounter = 0,
-                .periodSweepPace = undefined,
-                .periodSweepDirection = undefined,
-                .periodSweepIndividualStep = undefined,
-                .waveDuty = undefined,
-                .initialLengthTimer = undefined,
-                .initialVolume = undefined,
-                .envDir = undefined,
-                .sweepPace = undefined,
-                .period = undefined,
-                .lengthEnable = undefined,
+                .control = ControlUnit.init(),
+                .period_sweep = if (number == 1) SweepPeriodUnit.init() else {},
+                .period = PeriodUnit.init(),
+                .volume = VolumeUnit.init(),
+                .length = LengthUnit.init(),
+                .square = SquareWaveUnit.init(),
+                .current = 0.0,
+                .divtick_counter = 0,
+                .powered_off = false,
             };
         }
 
-        pub fn isActive(self: *const This) bool {
-            return self.active and self.dacEnabled;
+        pub inline fn isActive(self: *const This) bool {
+            return self.control.isActive();
         }
 
         pub fn poweroff(self: *This) void {
-            self.poweredOff = true;
-            self.active = false;
+            self.powered_off = true;
+            self.control.poweroff();
+
             self.poke(0, 0);
             // DMG ONLY -- Length timers are unaffected by power off only on monochrome models
             //self.poke(1, 0);
             self.poke(2, 0);
             self.poke(3, 0);
             self.poke(4, 0);
-            self.periodCounter = 0;
-            self.dutyCounter = 0;
-            self.dacHold = 0.0;
-            self.currentEnvelope = 0;
         }
 
         pub fn tick(self: *This) f32 {
-            if (!self.dacEnabled) {
+            if (!self.control.dacEnabled) {
                 return 0.0;
             }
-            if (!self.active) {
+
+            if (!self.control.active) {
                 return dac(0);
             }
-            self.periodCounter +%= 1;
-            if (self.periodCounter == 0) {
-                self.periodCounter = self.period;
 
-                var dacSample: u8 = self.sample();
-                if (self.sweepPace != 0) {
-                    dacSample *= self.currentEnvelope;
-                    dacSample /= 15;
-                }
-                self.dacHold = dac(@intCast(dacSample));
+            if (self.period.tick()) {
+                var s: u8 = self.sample();
+                s *= self.volume.volume;
+                s /= 15;
+                self.current = dac(@intCast(s));
             }
-            return self.dacHold;
+
+            return self.current;
         }
 
         fn sample(self: *This) u4 {
-            const waveforms: [4][8]u4 = .{
-                .{ 0xF, 0xF, 0xF, 0xF, 0xF, 0xF, 0xF, 0x0 },
-                .{ 0x0, 0xF, 0xF, 0xF, 0xF, 0xF, 0xF, 0x0 },
-                .{ 0x0, 0xF, 0xF, 0xF, 0xF, 0x0, 0x0, 0x0 },
-                .{ 0xF, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xF },
-            };
-            defer self.dutyCounter +%= 1;
-            return waveforms[self.waveDuty][self.dutyCounter];
+            return self.square.sample();
         }
 
         pub fn divtick(self: *This) void {
-            self.divtickdiv +%= 1;
-            if (self.divtickdiv % 2 == 0) {
-                self.soundLengthTick();
+            self.divtick_counter +%= 1;
+            if (self.divtick_counter % 2 == 0) {
+                self.length.tick(&self.control);
             }
-            if (channel_number == 1 and self.divtickdiv % 4 == 0) {
-                self.periodSweepTick();
+            if (self.divtick_counter % 4 == 0) {
+                if (number == 1) self.period_sweep.tick(&self.control, &self.period);
             }
-            if (self.divtickdiv == 0) {
-                self.envelopeSweepTick();
-            }
-        }
-
-        fn periodSweepTick(self: *This) void {
-            self.periodSweepTimer +%= 1;
-            if (self.periodSweepTimer < self.periodSweepPace) {
-                return;
-            }
-            self.periodSweepTimer = 0;
-
-            // Entire confusing and weird implementation from Pan Docs
-            if (self.periodSweepEnabled and self.periodSweepPace != 0) {
-                const new_frequency = self.periodSweepFrequencyCalculation();
-                self.periodSweepOverflowCheck(new_frequency);
-                if (new_frequency <= 0x7FF and self.periodSweepIndividualStep != 0) {
-                    self.periodSweepShadowRegister = @intCast(new_frequency);
-                    self.period = @intCast(new_frequency);
-                    const new_new_frequency = self.periodSweepFrequencyCalculation();
-                    self.periodSweepOverflowCheck(new_new_frequency);
-                }
-            }
-        }
-
-        fn periodSweepFrequencyCalculation(self: *const This) u12 {
-            const shifted = self.periodSweepShadowRegister >> self.periodSweepIndividualStep;
-            // store it as a u12 to check for "overflow" later
-            var new_frequency: u12 = @intCast(self.periodSweepShadowRegister);
-            if (self.periodSweepDirection == 0) {
-                new_frequency += @intCast(shifted);
-            } else {
-                // shifted will always be smaller since it's the result of right shifting that value
-                new_frequency -= @intCast(shifted);
-            }
-            return new_frequency;
-        }
-
-        fn periodSweepOverflowCheck(self: *This, freq: u12) void {
-            if (freq > 0x7FF) {
-                self.active = false;
-                self.periodSweepEnabled = false;
-            }
-        }
-
-        fn soundLengthTick(self: *This) void {
-            if (self.lengthEnable == 0) {
-                return;
-            }
-            self.lengthTimer +%= 1;
-            if (self.lengthTimer == 0) {
-                self.active = false;
-            }
-        }
-
-        fn envelopeSweepTick(self: *This) void {
-            if (self.sweepPace == 0) {
-                return;
-            }
-            self.sweepPaceCounter +%= 1;
-            if (self.sweepPaceCounter >= self.sweepPace) {
-                self.sweepPaceCounter = 0;
-                if (self.envDir == 0) {
-                    self.currentEnvelope -|= 1;
-                } else {
-                    self.currentEnvelope +|= 1;
-                }
+            if (self.divtick_counter == 0) {
+                self.volume.tick();
             }
         }
 
         fn trigger(self: *This) void {
-            self.active = true;
-            if (self.lengthTimer == 0) {
-                self.lengthTimer = self.initialLengthTimer;
+            self.control.active = true;
+            if (self.length.counter == 0) {
+                self.length.reset();
             }
-            self.periodCounter = self.period;
-            self.sweepPaceCounter = 0;
-            self.currentEnvelope = self.initialVolume;
-            if (channel_number == 1) {
-                self.periodSweepShadowRegister = self.period;
-                self.periodSweepTimer = 0;
-                self.periodSweepEnabled = self.periodSweepPace != 0 or self.periodSweepIndividualStep != 0;
-
-                // Pan Docs says: If the individual step is non-zero, frequency calculation and overflow check are performed immediately.
-                if (self.periodSweepIndividualStep != 0) {
-                    const new_frequency = self.periodSweepFrequencyCalculation();
-                    self.periodSweepOverflowCheck(new_frequency);
-                }
-            }
+            self.period.reset();
+            self.volume.reset();
+            if (number == 1) self.period_sweep.reset(&self.period, &self.control);
         }
 
-        pub fn peek(self: *This, addr: u16) u8 {
+        fn peek(self: *This, addr: u16) u8 {
             switch (addr) {
                 0 => {
-                    if (channel_number == 1) {
+                    if (number == 1) {
                         var ret: u8 = 0;
                         ret |= 1;
                         ret <<= 3;
-                        ret |= self.periodSweepPace;
+                        ret |= self.period_sweep.pace;
                         ret <<= 1;
-                        ret |= self.periodSweepDirection;
+                        ret |= self.period_sweep.direction;
                         ret <<= 3;
-                        ret |= self.periodSweepIndividualStep;
+                        ret |= self.period_sweep.individual_step;
                         return ret;
                     }
                     return 0xFF;
                 },
                 1 => {
                     var ret: u8 = 0;
-                    ret |= self.waveDuty;
+                    ret |= self.square.duty;
                     ret <<= 6;
-                    ret |= self.initialLengthTimer;
+                    ret |= self.length.initialCounter;
                     return ret;
                 },
                 2 => {
                     var ret: u8 = 0;
-                    ret |= self.initialVolume;
+                    ret |= self.volume.initial_volume;
                     ret <<= 1;
-                    ret |= self.envDir;
+                    ret |= self.volume.direction;
                     ret <<= 3;
-                    ret |= self.sweepPace;
+                    ret |= self.volume.pace;
                     return ret;
                 },
-                3 => return @intCast(self.period & 0xFF),
+                3 => return @intCast(self.period.period & 0xFF),
                 4 => {
                     var ret: u8 = 0;
                     ret |= 1;
                     ret <<= 1;
-                    ret |= self.lengthEnable;
+                    ret |= self.length.enable;
                     ret <<= 3;
                     ret |= 0b111;
                     ret <<= 3;
-                    ret |= @intCast(self.period & 0x700);
+                    ret |= @intCast(self.period.period & 0x700);
                     return ret;
                 },
                 else => unreachable,
@@ -280,54 +374,54 @@ pub fn Channel(channel_number: comptime_int) type {
         }
 
         pub fn poke(self: *This, addr: u16, val: u8) void {
-            if (self.poweredOff and addr != 1) { // DMG ONLY -- Length timers are unaffected by power off only on monochrome models
+            if (self.powered_off and addr != 1) { // DMG ONLY -- Length timers are unaffected by power off only on monochrome models
                 return;
             }
 
             switch (addr) {
                 0 => {
-                    if (channel_number == 1) {
-                        self.periodSweepPace = @intCast((val & 0b0111_0000) >> 4);
-                        self.periodSweepDirection = @intCast((val & 0b0000_1000) >> 3);
-                        self.periodSweepIndividualStep = @intCast(val & 0b0000_0111);
+                    if (number == 1) {
+                        self.period_sweep.pace = @intCast((val & 0b0111_0000) >> 4);
+                        self.period_sweep.direction = @intCast((val & 0b0000_1000) >> 3);
+                        self.period_sweep.individual_step = @intCast(val & 0b0000_0111);
                     }
                 },
                 1 => {
-                    self.waveDuty = @intCast((val & 0b11_000000) >> 6);
-                    self.initialLengthTimer = @intCast(val & 0b00_111111);
+                    self.square.duty = @intCast((val & 0b11_000000) >> 6);
+                    self.length.initialCounter = @intCast(val & 0b00_111111);
                 },
                 2 => {
-                    self.initialVolume = @intCast((val & 0xF0) >> 4);
-                    self.envDir = @intCast((val & 0b0000_1000) >> 3);
-                    self.sweepPace = @intCast(val & 0b0000_0111);
+                    self.volume.initial_volume = @intCast((val & 0xF0) >> 4);
+                    self.volume.direction = @intCast((val & 0b0000_1000) >> 3);
+                    self.volume.pace = @intCast(val & 0b0000_0111);
                 },
-                3 => self.period = (self.period & 0x700) | val,
+                3 => self.period.period = (self.period.period & 0x700) | val,
                 4 => {
-                    self.lengthEnable = @intCast((val & 0b0100_0000) >> 6);
-                    self.period = (self.period & 0x0FF) | (@as(u11, @intCast(val & 0b0000_0111)) << 8);
+                    self.length.enable = @intCast((val & 0b0100_0000) >> 6);
+                    self.period.period = (self.period.period & 0x0FF) | (@as(u11, @intCast(val & 0b0000_0111)) << 8);
                 },
                 else => unreachable,
             }
         }
 
         pub fn read(self: *This, addr: u16) struct { MemoryFlag, u8 } {
-            if (addr == 0 and channel_number != 1) {
+            if (addr == 0 and number != 1) {
                 return .{ .{ .illegal = true }, self.peek(addr) };
             }
             return .{ .{}, self.peek(addr) };
         }
 
         pub fn write(self: *This, addr: u16, val: u8) MemoryFlag {
-            if (addr == 0 and channel_number != 1) {
+            if (addr == 0 and number != 1) {
                 return .{ .illegal = true };
             }
             self.poke(addr, val);
-            if (self.envDir == 0 and self.initialVolume == 0) {
-                self.dacEnabled = false;
+            if (self.volume.direction == 0 and self.volume.initial_volume == 0) {
+                self.control.dacEnabled = false;
             } else {
-                self.dacEnabled = true;
+                self.control.dacEnabled = true;
             }
-            if (!self.poweredOff and addr == 4 and val & 0b1000_0000 != 0) {
+            if (!self.powered_off and addr == 4 and val & 0b1000_0000 != 0) {
                 self.trigger();
             }
             return .{};
@@ -350,38 +444,38 @@ test "init starts inert and inactive" {
     var ch = Channel(2).init();
 
     try std.testing.expect(!ch.isActive());
-    try std.testing.expect(!ch.poweredOff);
-    try std.testing.expect(!ch.dacEnabled);
-    try std.testing.expectEqual(@as(u11, 0), ch.periodCounter);
-    try std.testing.expectEqual(@as(u3, 0), ch.dutyCounter);
-    try std.testing.expectEqual(@as(f32, 0.0), ch.dacHold);
-    try std.testing.expectEqual(@as(u4, 0), ch.currentEnvelope);
+    try std.testing.expect(!ch.powered_off);
+    try std.testing.expect(!ch.control.dacEnabled);
+    try std.testing.expectEqual(@as(u11, 0), ch.period.counter);
+    try std.testing.expectEqual(@as(u3, 0), ch.square.duty);
+    try std.testing.expectEqual(@as(f32, 0.0), ch.current);
+    try std.testing.expectEqual(@as(u4, 0), ch.volume.volume);
 }
 
-test "write(2) enables/disables DAC according to initialVolume/envDir" {
+test "write(2) enables/disables DAC according to initial_volume/direction" {
     var ch = Channel(2).init();
 
-    // volume=0, envDir=0 -> DAC disabled
+    // volume=0, direction=0 -> DAC disabled
     _ = ch.write(2, 0x00);
-    try std.testing.expect(!ch.dacEnabled);
+    try std.testing.expect(!ch.control.dacEnabled);
 
     // volume>0 -> DAC enabled
-    _ = ch.write(2, 0x10); // initialVolume=1
-    try std.testing.expect(ch.dacEnabled);
+    _ = ch.write(2, 0x10); // initial_volume=1
+    try std.testing.expect(ch.control.dacEnabled);
 
-    // volume=0 but envDir=1 -> DAC enabled
-    _ = ch.write(2, 0x08); // envDir=1
-    try std.testing.expect(ch.dacEnabled);
+    // volume=0 but direction=1 -> DAC enabled
+    _ = ch.write(2, 0x08); // direction=1
+    try std.testing.expect(ch.control.dacEnabled);
 
-    // volume=0 and envDir=0 -> DAC disabled again
+    // volume=0 and direction=0 -> DAC disabled again
     _ = ch.write(2, 0x00);
-    try std.testing.expect(!ch.dacEnabled);
+    try std.testing.expect(!ch.control.dacEnabled);
 }
 
 test "poke/peek round-trips for NR21 (addr 1) and NR23 (addr 3)" {
     var ch = Channel(2).init();
 
-    // NR21: waveDuty in bits 7..6, length in bits 5..0
+    // NR21: duty in bits 7..6, length in bits 5..0
     const wd: u2 = 0b10;
     const len: u6 = 0b10_0000;
     _ = ch.write(1, (@as(u8, wd) << 6) | len);
@@ -392,28 +486,28 @@ test "poke/peek round-trips for NR21 (addr 1) and NR23 (addr 3)" {
     try std.testing.expectEqual(@as(u8, 0x34), ch.peek(3));
 }
 
-test "trigger sets active, length, envelope and period counters" {
+test "trigger sets active, length, volume envelope and period counters" {
     var ch = Channel(2).init();
 
-    // Set NR21 (wave duty + length)
-    const wave_duty: u2 = 0b01;
+    // Set NR21 (duty + length)
+    const duty: u2 = 0b01;
     const init_len: u6 = 10;
-    _ = ch.write(1, (@as(u8, wave_duty) << 6) | init_len);
+    _ = ch.write(1, (@as(u8, duty) << 6) | init_len);
 
-    // Set NR22 (volume/env)
+    // Set NR22 (volume envelope)
     const init_vol: u4 = 0x0F;
-    _ = ch.write(2, (@as(u8, init_vol) << 4) | 0b000); // envDir=0, pace=0
+    _ = ch.write(2, (@as(u8, init_vol) << 4) | 0b000); // direction=0, pace=0
 
     // Set period to 0x7FF so the very first tick wraps and samples immediately
     _ = ch.write(3, 0xFF);
     _ = ch.write(4, 0x87); // trigger=1, lengthEnable=0, upper period=0b111
 
-    try std.testing.expect(ch.active);
-    try std.testing.expectEqual(init_len, ch.lengthTimer);
-    try std.testing.expectEqual(@as(u11, 0x7FF), ch.period);
-    try std.testing.expectEqual(@as(u11, 0x7FF), ch.periodCounter);
-    try std.testing.expectEqual(init_vol, ch.currentEnvelope);
-    try std.testing.expectEqual(@as(u3, 0), ch.sweepPaceCounter);
+    try std.testing.expect(ch.control.active);
+    try std.testing.expectEqual(init_len, ch.length.counter);
+    try std.testing.expectEqual(@as(u11, 0x7FF), ch.period.period);
+    try std.testing.expectEqual(@as(u11, 0x7FF), ch.period.counter);
+    try std.testing.expectEqual(init_vol, ch.volume.volume);
+    try std.testing.expectEqual(@as(u3, 0), ch.volume.pace);
 }
 
 test "tick() obeys dacEnabled and active; waveform progression matches table" {
@@ -428,13 +522,13 @@ test "tick() obeys dacEnabled and active; waveform progression matches table" {
     _ = ch.write(2, 0x10); // volume=1 enables DAC
     try std.testing.expectApproxEqAbs(@as(f32, 1.0), ch.tick(), eps);
 
-    // 3) Now set up a predictable run: waveDuty=0, volume=15, period=0x7FF, trigger
-    _ = ch.write(1, (0b00 << 6) | 0); // waveDuty=0, length=0
-    _ = ch.write(2, (0x0F << 4) | 0b000); // vol=15, envDir=0, pace=0
+    // 3) Predictable run: duty=0, volume=15, period=0x7FF, trigger
+    _ = ch.write(1, (0b00 << 6) | 0); // duty=0, length=0
+    _ = ch.write(2, (0x0F << 4) | 0b000); // vol=15, direction=0, pace=0
     _ = ch.write(3, 0xFF);
     _ = ch.write(4, 0x87); // trigger, upper period=0b111
 
-    // With waveDuty=0, the first 7 samples are 0xF (high), then 0x0.
+    // With duty=0, the first 7 samples are 0xF (high), then 0x0.
     try std.testing.expectApproxEqAbs(-1.0, ch.tick(), eps);
 
     // Next 6 ticks: still 'high' (same value)
@@ -450,33 +544,33 @@ test "length timer disables channel when enabled and wraps" {
     var ch = Channel(2).init();
 
     // Prepare: length=63 so one length tick wraps to 0 and disables.
-    _ = ch.write(1, (0b01 << 6) | 63); // any wave duty, length=63
+    _ = ch.write(1, (0b01 << 6) | 63); // any duty, length=63
     _ = ch.write(2, 0x10); // enable DAC
     _ = ch.write(4, 0xC0); // trigger + lengthEnable=1 (upper period=0)
 
-    try std.testing.expect(ch.active);
+    try std.testing.expect(ch.control.active);
 
-    // divtick: length ticks on every even divtickdiv value after increment.
-    ch.divtick(); // divtickdiv=1 -> no length tick
-    ch.divtick(); // divtickdiv=2 -> lengthTimer increments 63 -> 0, active=false
+    // divtick: length ticks on every even divtick value after increment.
+    ch.divtick(); // 1 -> no length tick
+    ch.divtick(); // 2 -> length counter increments 63 -> 0, active=false
 
-    try std.testing.expect(!ch.active);
+    try std.testing.expect(!ch.control.active);
 }
 
-test "envelope sweep pacing increases/decreases volume as configured" {
+test "volume envelope pace increases/decreases volume as configured" {
     var ch = Channel(2).init();
 
-    // initialVolume=4, envDir=1 (increase), sweepPace=2
+    // initial_volume=4, direction=1 (increase), pace=2
     _ = ch.write(2, (@as(u8, 4) << 4) | (1 << 3) | 2);
-    _ = ch.write(4, 0x80); // trigger to load currentEnvelope and reset pace counter
+    _ = ch.write(4, 0x80); // trigger to load envelope and reset pace counter
 
-    try std.testing.expectEqual(@as(u4, 4), ch.currentEnvelope);
+    try std.testing.expectEqual(@as(u4, 4), ch.volume.volume);
 
-    // envelopeSweepTick runs when divtickdiv wraps to 0 (every 8 divticks).
-    // With sweepPace=2, need two such moments -> 16 divticks to bump envelope by +1.
+    // VolumeUnit.tick runs when divtick wraps to 0 (every 8 divticks).
+    // With pace=2, need two such moments -> 16 divticks to bump by +1.
     inline for (0..16) |_| ch.divtick();
 
-    try std.testing.expectEqual(@as(u4, 5), ch.currentEnvelope);
+    try std.testing.expectEqual(@as(u4, 5), ch.volume.volume);
 }
 
 test "poweroff blocks writes (except NR21 on DMG) and prevents trigger" {
@@ -486,11 +580,11 @@ test "poweroff blocks writes (except NR21 on DMG) and prevents trigger" {
 
     // Attempt to trigger while powered off -> must not activate
     _ = ch.write(4, 0x80);
-    try std.testing.expect(!ch.active);
+    try std.testing.expect(!ch.control.active);
 
     // Write to NR23 while powered off should be ignored
     _ = ch.write(3, 0xAA);
-    try std.testing.expectEqual(@as(u11, 0), ch.period & 0xFF);
+    try std.testing.expectEqual(@as(u11, 0), ch.period.period & 0xFF);
 
     // NR21 is still writable on power-off (DMG quirk in this implementation)
     _ = ch.write(1, (0b11 << 6) | 17);
@@ -519,7 +613,7 @@ test "isActive only true when both active and DAC enabled" {
 test "NR10 (addr 0) poke/peek round-trip for Channel(1)" {
     var ch = Channel(1).init();
 
-    // NR10 format: 1 | sweep_pace(3) | dir(1) | step(3)
+    // NR10 format: 1 | pace(3) | direction(1) | step(3)
     const pace: u3 = 0b101;
     const dir: u1 = 0b1; // subtract
     const step: u3 = 0b011;
@@ -531,52 +625,52 @@ test "NR10 (addr 0) poke/peek round-trip for Channel(1)" {
     try std.testing.expectEqual(expected, ch.peek(0));
 }
 
-test "Channel(1) trigger with sweep step adds immediately for overflow check and can disable on overflow" {
+test "Channel(1) trigger with sweep step add checks overflow immediately and can disable on overflow" {
     var ch = Channel(1).init();
 
     // Enable DAC so channel can become active
-    _ = ch.write(2, 0x10); // initialVolume=1
+    _ = ch.write(2, 0x10); // initial_volume=1
 
     // Set period to maximum 0x7FF so that an immediate + (>>1) overflows
     _ = ch.write(3, 0xFF);
     _ = ch.write(4, 0x07); // upper 3 bits of period = 0b111 (no trigger yet)
 
-    // NR10: pace=1 (non-zero), dir=0 (add), step=1 -> overflow expected on immediate calc at trigger
+    // NR10: pace=1 (non-zero), direction=0 (add), step=1 -> overflow expected on immediate calc at trigger
     _ = ch.write(0, (1 << 4) | (0 << 3) | 1);
 
     // Trigger
     _ = ch.write(4, 0x80 | 0x07); // trigger=1, lengthEnable=0, keep upper period
 
     // Immediate overflow check should have disabled the channel and sweep
-    try std.testing.expect(!ch.active);
-    try std.testing.expect(!ch.periodSweepEnabled);
+    try std.testing.expect(!ch.control.active);
+    try std.testing.expect(!ch.period_sweep.enabled);
 }
 
 test "Channel(1) period sweep subtract updates period on schedule (pace=2 -> 1 update after 8 divticks)" {
     var ch = Channel(1).init();
 
     // Enable DAC and set a known period
-    _ = ch.write(2, 0x10); // initialVolume=1 enables DAC
+    _ = ch.write(2, 0x10); // initial_volume=1 enables DAC
     // Set period to 0x400
     _ = ch.write(3, 0x00);
     _ = ch.write(4, 0x84); // trigger=0, lengthEnable=0, upper bits=0b100 -> 0x400
 
-    // NR10: pace=2, dir=1 (subtract), step=1
+    // NR10: pace=2, direction=1 (subtract), step=1
     _ = ch.write(0, (2 << 4) | (1 << 3) | 1);
 
     // Trigger loads shadow and arms sweep
     _ = ch.write(4, 0x80 | 0x04);
 
-    try std.testing.expect(ch.active);
-    try std.testing.expect(ch.periodSweepEnabled);
-    try std.testing.expectEqual(@as(u11, 0x400), ch.period);
+    try std.testing.expect(ch.control.active);
+    try std.testing.expect(ch.period_sweep.enabled);
+    try std.testing.expectEqual(@as(u11, 0x400), ch.period.period);
 
     // Sweep ticks every 4 divticks; with pace=2 we need 2 sweep ticks -> 8 divticks total
     inline for (0..8) |_| ch.divtick();
 
     // New period = P - (P >> 1) = 0x400 - 0x200 = 0x200
-    try std.testing.expectEqual(@as(u11, 0x200), ch.period);
-    try std.testing.expect(ch.active); // still active, no overflow
+    try std.testing.expectEqual(@as(u11, 0x200), ch.period.period);
+    try std.testing.expect(ch.control.active); // still active, no overflow
 }
 
 test "Channel(1) paced increment may overflow on a subsequent step (pace=1)" {
@@ -584,25 +678,25 @@ test "Channel(1) paced increment may overflow on a subsequent step (pace=1)" {
 
     // Enable DAC and set period to a value that won't overflow on the first calc,
     // but will overflow on the second calc.
-    _ = ch.write(2, 0x10); // initialVolume=1
+    _ = ch.write(2, 0x10); // initial_volume=1
     // period = 0x500
     _ = ch.write(3, 0x00);
     _ = ch.write(4, 0x85); // upper bits=0b101 -> 0x500 (no trigger)
 
-    // NR10: pace=1, dir=0 (add), step=1
+    // NR10: pace=1, direction=0 (add), step=1
     _ = ch.write(0, (1 << 4) | (0 << 3) | 1);
 
     // Trigger
     _ = ch.write(4, 0x80 | 0x05);
 
-    try std.testing.expect(ch.active);
-    try std.testing.expect(ch.periodSweepEnabled);
-    try std.testing.expectEqual(@as(u11, 0x500), ch.period);
+    try std.testing.expect(ch.control.active);
+    try std.testing.expect(ch.period_sweep.enabled);
+    try std.testing.expectEqual(@as(u11, 0x500), ch.period.period);
 
     // One sweep step after 4 divticks (pace=1)
     inline for (0..4) |_| ch.divtick();
     // First update: 0x500 + (0x500 >> 1) = 0x500 + 0x280 = 0x780 (no overflow)
-    try std.testing.expectEqual(@as(u11, 0x780), ch.period);
-    // However, the overflow check takes place early, so we are alaready disabled here
-    try std.testing.expect(!ch.active);
+    try std.testing.expectEqual(@as(u11, 0x780), ch.period.period);
+    // However, the overflow check takes place early, so the channel is already disabled here
+    try std.testing.expect(!ch.control.active);
 }
