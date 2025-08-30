@@ -1,17 +1,17 @@
 const std = @import("std");
 
-pub const RegisterFlags = packed struct {
+pub const Flags = packed struct {
     z: u1,
     n: u1,
     h: u1,
     c: u1,
     rest: u4,
 
-    pub fn all(reg: *const RegisterFlags) u8 {
+    pub fn all(reg: *const Flags) u8 {
         return (@as(u8, reg.z) << 7) | (@as(u8, reg.n) << 6) | (@as(u8, reg.h) << 5) | (@as(u8, reg.c) << 4) | reg.rest;
     }
 
-    pub fn setAll(reg: *RegisterFlags, val: u8) void {
+    pub fn setAll(reg: *Flags, val: u8) void {
         reg.z = @intCast((val & 0b1000_0000) >> 7);
         reg.n = @intCast((val & 0b0100_0000) >> 6);
         reg.h = @intCast((val & 0b0010_0000) >> 5);
@@ -21,7 +21,7 @@ pub const RegisterFlags = packed struct {
 };
 
 test "register flags" {
-    var reg: RegisterFlags = undefined;
+    var reg: Flags = undefined;
 
     reg.setAll(0xAA);
     try std.testing.expectEqual(1, reg.z);
@@ -38,32 +38,32 @@ test "register flags" {
     try std.testing.expectEqual(0x55, reg.all());
 }
 
-pub const RegisterWithHalves = packed struct {
+pub const Wide = packed struct {
     hi: u8,
     lo: u8,
 
-    pub fn all(reg: *const RegisterWithHalves) u16 {
+    pub fn all(reg: *const Wide) u16 {
         return (@as(u16, reg.hi) << 8) | reg.lo;
     }
 
-    pub fn setAll(reg: *RegisterWithHalves, val: u16) void {
+    pub fn setAll(reg: *Wide, val: u16) void {
         reg.hi = @intCast((val & 0xFF00) >> 8);
         reg.lo = @intCast(val & 0x00FF);
     }
 
-    pub fn inc(reg: *RegisterWithHalves) void {
+    pub fn inc(reg: *Wide) void {
         reg.lo, const carry = @addWithOverflow(reg.lo, 1);
         reg.hi, _ = @addWithOverflow(reg.hi, carry);
     }
 
-    pub fn dec(reg: *RegisterWithHalves) void {
+    pub fn dec(reg: *Wide) void {
         reg.lo, const carry = @subWithOverflow(reg.lo, 1);
         reg.hi, _ = @subWithOverflow(reg.hi, carry);
     }
 };
 
 test "register with halves" {
-    var reg: RegisterWithHalves = undefined;
+    var reg: Wide = undefined;
 
     reg.setAll(0xABCD);
     try std.testing.expectEqual(0xAB, reg.hi);
@@ -74,15 +74,15 @@ test "register with halves" {
     try std.testing.expectEqual(0x1234, reg.all());
 }
 
-pub const AluRegister = packed struct {
+pub const General = packed struct {
     hi: u8,
-    lo: RegisterFlags,
+    lo: Flags,
 
-    pub fn all(reg: *const AluRegister) u16 {
+    pub fn all(reg: *const General) u16 {
         return (@as(u16, reg.hi) << 8) | reg.lo.all();
     }
 
-    pub fn setAll(reg: *AluRegister, val: u16) void {
+    pub fn setAll(reg: *General, val: u16) void {
         reg.hi = @intCast((val & 0xFF00) >> 8);
         reg.lo.setAll(@intCast(val & 0x00FF));
     }
@@ -94,7 +94,7 @@ pub const AluRegister = packed struct {
         return .{ result, carry_out };
     }
 
-    fn addValues(self: *AluRegister, val1: u8, val2: u8, with_carry: u1) u8 {
+    fn addValues(self: *General, val1: u8, val2: u8, with_carry: u1) u8 {
         const val1_lo: u4 = @intCast(val1 & 0x0F);
         const val2_lo: u4 = @intCast(val2 & 0x0F);
 
@@ -103,8 +103,8 @@ pub const AluRegister = packed struct {
 
         const carry_in = self.lo.c & with_carry;
 
-        const res_lo, const halfcarry_out = AluRegister.adderU4(val1_lo, val2_lo, carry_in);
-        const res_hi, const carry_out = AluRegister.adderU4(val1_hi, val2_hi, halfcarry_out);
+        const res_lo, const halfcarry_out = General.adderU4(val1_lo, val2_lo, carry_in);
+        const res_hi, const carry_out = General.adderU4(val1_hi, val2_hi, halfcarry_out);
 
         const result: u8 = (@as(u8, res_hi) << 4) | res_lo;
         const zero = @intFromBool(result == 0);
@@ -116,11 +116,11 @@ pub const AluRegister = packed struct {
         return result;
     }
 
-    pub fn add(self: *AluRegister, summand: u8, with_carry: u1) void {
+    pub fn add(self: *General, summand: u8, with_carry: u1) void {
         self.hi = self.addValues(self.hi, summand, with_carry);
     }
 
-    pub fn sub(self: *AluRegister, subtrahend: u8, with_carry: u1) void {
+    pub fn sub(self: *General, subtrahend: u8, with_carry: u1) void {
         self.lo.c = ~(with_carry & self.lo.c);
         self.hi = self.addValues(self.hi, ~subtrahend, 1);
         self.lo.n = 1;
@@ -128,7 +128,7 @@ pub const AluRegister = packed struct {
         self.lo.h = ~self.lo.h;
     }
 
-    pub fn inc(self: *AluRegister, val: u8) u8 {
+    pub fn inc(self: *General, val: u8) u8 {
         var tmp = self.*;
         tmp.hi = val;
         tmp.add(1, 0);
@@ -140,7 +140,7 @@ pub const AluRegister = packed struct {
         return tmp.hi;
     }
 
-    pub fn dec(self: *AluRegister, val: u8) u8 {
+    pub fn dec(self: *General, val: u8) u8 {
         var tmp = self.*;
         tmp.hi = val;
         tmp.sub(1, 0);
@@ -152,7 +152,7 @@ pub const AluRegister = packed struct {
         return tmp.hi;
     }
 
-    pub fn and_(self: *AluRegister, arg: u8) void {
+    pub fn and_(self: *General, arg: u8) void {
         self.hi &= arg;
         self.lo.z = @intFromBool(self.hi == 0);
         self.lo.n = 0;
@@ -160,7 +160,7 @@ pub const AluRegister = packed struct {
         self.lo.h = 1;
     }
 
-    pub fn or_(self: *AluRegister, arg: u8) void {
+    pub fn or_(self: *General, arg: u8) void {
         self.hi |= arg;
         self.lo.z = @intFromBool(self.hi == 0);
         self.lo.n = 0;
@@ -168,7 +168,7 @@ pub const AluRegister = packed struct {
         self.lo.h = 0;
     }
 
-    pub fn xor(self: *AluRegister, arg: u8) void {
+    pub fn xor(self: *General, arg: u8) void {
         self.hi ^= arg;
         self.lo.z = @intFromBool(self.hi == 0);
         self.lo.n = 0;
@@ -176,25 +176,25 @@ pub const AluRegister = packed struct {
         self.lo.h = 0;
     }
 
-    pub fn ccf(self: *AluRegister) void {
+    pub fn ccf(self: *General) void {
         self.lo.c = ~self.lo.c;
         self.lo.n = 0;
         self.lo.h = 0;
     }
 
-    pub fn scf(self: *AluRegister) void {
+    pub fn scf(self: *General) void {
         self.lo.c = 1;
         self.lo.n = 0;
         self.lo.h = 0;
     }
 
-    pub fn cpl(self: *AluRegister) void {
+    pub fn cpl(self: *General) void {
         self.hi = ~self.hi;
         self.lo.n = 1;
         self.lo.h = 1;
     }
 
-    pub fn daa(self: *AluRegister) void {
+    pub fn daa(self: *General) void {
         var adj: u8 = 0;
         var carry: u1 = 0;
         if ((self.lo.n == 0 and self.hi & 0x0F > 0x09) or self.lo.h == 1) {
@@ -215,20 +215,20 @@ pub const AluRegister = packed struct {
         self.lo.h = 0;
     }
 
-    pub fn addReturn(self: *AluRegister, op1: u8, op2: u8, with_carry: u1, z: u1) u8 {
+    pub fn addReturn(self: *General, op1: u8, op2: u8, with_carry: u1, z: u1) u8 {
         const result = self.addValues(op1, op2, with_carry);
         self.lo.z = z;
         return result;
     }
 
-    pub fn addAdj(self: *const AluRegister, op: u8, prev: u8) u8 {
+    pub fn addAdj(self: *const General, op: u8, prev: u8) u8 {
         const adj: u8 = if ((prev & 0b1000_0000) >> 7 == 1) 0xFF else 0x00;
         const tmp, _ = @addWithOverflow(op, adj);
         const result, _ = @addWithOverflow(tmp, self.lo.c);
         return result;
     }
 
-    fn shift(self: *AluRegister, val: u8, shift_in: u1, comptime right: bool) u8 {
+    fn shift(self: *General, val: u8, shift_in: u1, comptime right: bool) u8 {
         const carry: u1 = if (right)
             @intCast(val & 0x01)
         else
@@ -247,35 +247,35 @@ pub const AluRegister = packed struct {
         return result;
     }
 
-    pub fn rlc(self: *AluRegister, val: u8) u8 {
+    pub fn rlc(self: *General, val: u8) u8 {
         return self.shift(val, @intCast((val & 0x80) >> 7), false);
     }
 
-    pub fn rrc(self: *AluRegister, val: u8) u8 {
+    pub fn rrc(self: *General, val: u8) u8 {
         return self.shift(val, @intCast(val & 0x01), true);
     }
 
-    pub fn rl(self: *AluRegister, val: u8) u8 {
+    pub fn rl(self: *General, val: u8) u8 {
         return self.shift(val, self.lo.c, false);
     }
 
-    pub fn rr(self: *AluRegister, val: u8) u8 {
+    pub fn rr(self: *General, val: u8) u8 {
         return self.shift(val, self.lo.c, true);
     }
 
-    pub fn sla(self: *AluRegister, val: u8) u8 {
+    pub fn sla(self: *General, val: u8) u8 {
         return self.shift(val, 0, false);
     }
 
-    pub fn sra(self: *AluRegister, val: u8) u8 {
+    pub fn sra(self: *General, val: u8) u8 {
         return self.shift(val, @intCast((val & 0x80) >> 7), true);
     }
 
-    pub fn srl(self: *AluRegister, val: u8) u8 {
+    pub fn srl(self: *General, val: u8) u8 {
         return self.shift(val, 0, true);
     }
 
-    pub fn swap(self: *AluRegister, val: u8) u8 {
+    pub fn swap(self: *General, val: u8) u8 {
         self.lo.z = @intFromBool(val == 0);
         self.lo.c = 0;
         self.lo.h = 0;
@@ -287,21 +287,21 @@ pub const AluRegister = packed struct {
         return @as(u8, 1) << idx;
     }
 
-    pub fn bit(self: *AluRegister, val: u8, idx: u3) void {
-        self.lo.z = @intCast((val & AluRegister.mask(idx)) >> idx);
+    pub fn bit(self: *General, val: u8, idx: u3) void {
+        self.lo.z = @intCast((val & General.mask(idx)) >> idx);
         self.lo.n = 0;
         self.lo.h = 1;
     }
 
     pub fn res(val: u8, idx: u3) u8 {
-        return val & ~AluRegister.mask(idx);
+        return val & ~General.mask(idx);
     }
 
     pub fn set(val: u8, idx: u3) u8 {
-        return val | AluRegister.mask(idx);
+        return val | General.mask(idx);
     }
 
-    pub fn cond(self: *const AluRegister, which: u2) bool {
+    pub fn cond(self: *const General, which: u2) bool {
         return switch (which) {
             0b00 => self.lo.z == 0,
             0b01 => self.lo.z == 1,
@@ -328,9 +328,9 @@ pub const AluRegister = packed struct {
 test "0b00000001 + 0b00000001" {
     const use_carry: u1 = 0;
     const operand: u8 = 0b00000001;
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0b00000001,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -338,9 +338,9 @@ test "0b00000001 + 0b00000001" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0b00000010,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -357,9 +357,9 @@ test "0b00000001 + 0b00000001" {
 test "0b00000001 + 0b00000001 + carry-in 1" {
     const use_carry: u1 = 1;
     const operand: u8 = 0b00000001;
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0b00000001,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 1,
             .h = 0,
             .n = 0,
@@ -367,9 +367,9 @@ test "0b00000001 + 0b00000001 + carry-in 1" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0b00000011,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -386,9 +386,9 @@ test "0b00000001 + 0b00000001 + carry-in 1" {
 test "0b11111111 + 0b00000001 (Zero flag case)" {
     const use_carry: u1 = 0;
     const operand: u8 = 0b00000001;
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0b11111111,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -396,9 +396,9 @@ test "0b11111111 + 0b00000001 (Zero flag case)" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0b00000000,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 1,
             .h = 1,
             .n = 0,
@@ -415,9 +415,9 @@ test "0b11111111 + 0b00000001 (Zero flag case)" {
 test "0b10000000 + 0b10000000 (Carry-out from MSB)" {
     const use_carry: u1 = 0;
     const operand: u8 = 0b10000000;
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0b10000000,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -425,9 +425,9 @@ test "0b10000000 + 0b10000000 (Carry-out from MSB)" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0b00000000,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 1,
             .h = 0,
             .n = 0,
@@ -444,9 +444,9 @@ test "0b10000000 + 0b10000000 (Carry-out from MSB)" {
 test "0b11111111 + 0b11111111 + carry-in 1 (Full overflow)" {
     const use_carry: u1 = 1;
     const operand: u8 = 0b11111111;
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0b11111111,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 1,
             .h = 0,
             .n = 0,
@@ -454,9 +454,9 @@ test "0b11111111 + 0b11111111 + carry-in 1 (Full overflow)" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0b11111111,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 1,
             .h = 1,
             .n = 0,
@@ -473,9 +473,9 @@ test "0b11111111 + 0b11111111 + carry-in 1 (Full overflow)" {
 test "0b00001111 + 0b00000001 (Half-carry set)" {
     const use_carry: u1 = 0;
     const operand: u8 = 0b00000001;
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0b00001111,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -483,9 +483,9 @@ test "0b00001111 + 0b00000001 (Half-carry set)" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0b00010000,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 1,
             .n = 0,
@@ -502,9 +502,9 @@ test "0b00001111 + 0b00000001 (Half-carry set)" {
 test "0b00000010 - 0b00000001" {
     const use_carry: u1 = 0;
     const operand: u8 = 0b00000001;
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0b00000010,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 1,
@@ -512,9 +512,9 @@ test "0b00000010 - 0b00000001" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0b00000001,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 1,
@@ -531,9 +531,9 @@ test "0b00000010 - 0b00000001" {
 test "0b00000001 - 0b00000001" {
     const use_carry: u1 = 0;
     const operand: u8 = 0b00000001;
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0b00000001,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 1,
@@ -541,9 +541,9 @@ test "0b00000001 - 0b00000001" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0b00000000,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 1,
@@ -559,9 +559,9 @@ test "0b00000001 - 0b00000001" {
 
 test "0b11110000 & 0b11001100" {
     const operand: u8 = 0b11001100;
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0b11110000,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -569,9 +569,9 @@ test "0b11110000 & 0b11001100" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0b11000000,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 1,
             .n = 0,
@@ -587,9 +587,9 @@ test "0b11110000 & 0b11001100" {
 
 test "0b11110000 | 0b11001100" {
     const operand: u8 = 0b11001100;
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0b11110000,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -597,9 +597,9 @@ test "0b11110000 | 0b11001100" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0b11111100,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -615,9 +615,9 @@ test "0b11110000 | 0b11001100" {
 
 test "0b11110000 ^ 0b11001100" {
     const operand: u8 = 0b11001100;
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0b11110000,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -625,9 +625,9 @@ test "0b11110000 ^ 0b11001100" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0b00111100,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -642,9 +642,9 @@ test "0b11110000 ^ 0b11001100" {
 }
 
 test "CCF (Complement Carry Flag)" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0b00000000,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 1,
             .h = 1,
             .n = 1,
@@ -652,9 +652,9 @@ test "CCF (Complement Carry Flag)" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0b00000000,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -669,9 +669,9 @@ test "CCF (Complement Carry Flag)" {
 }
 
 test "SCF (Set Carry Flag)" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0b00000000,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 1,
             .n = 1,
@@ -679,9 +679,9 @@ test "SCF (Set Carry Flag)" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0b00000000,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 1,
             .h = 0,
             .n = 0,
@@ -696,9 +696,9 @@ test "SCF (Set Carry Flag)" {
 }
 
 test "CPL (Complement Accumulator)" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0b10101010,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -706,9 +706,9 @@ test "CPL (Complement Accumulator)" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0b01010101,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 1,
             .n = 1,
@@ -723,9 +723,9 @@ test "CPL (Complement Accumulator)" {
 }
 
 test "DAA a=0x00 n=0 h=0 c=0" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0x00,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -733,9 +733,9 @@ test "DAA a=0x00 n=0 h=0 c=0" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0x00,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -750,9 +750,9 @@ test "DAA a=0x00 n=0 h=0 c=0" {
 }
 
 test "DAA a=0x09, n=0, h=0, c=0" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0x09,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -760,9 +760,9 @@ test "DAA a=0x09, n=0, h=0, c=0" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0x09,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -777,9 +777,9 @@ test "DAA a=0x09, n=0, h=0, c=0" {
 }
 
 test "DAA a=0x0A, n=0, h=0, c=0" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0x0A,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -787,9 +787,9 @@ test "DAA a=0x0A, n=0, h=0, c=0" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0x10,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -804,9 +804,9 @@ test "DAA a=0x0A, n=0, h=0, c=0" {
 }
 
 test "DAA a=0x19, n=0, h=0, c=0" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0x19,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -814,9 +814,9 @@ test "DAA a=0x19, n=0, h=0, c=0" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0x19,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -831,9 +831,9 @@ test "DAA a=0x19, n=0, h=0, c=0" {
 }
 
 test "DAA a=0x1A, n=0, h=0, c=0" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0x1A,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -841,9 +841,9 @@ test "DAA a=0x1A, n=0, h=0, c=0" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0x20,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -858,9 +858,9 @@ test "DAA a=0x1A, n=0, h=0, c=0" {
 }
 
 test "DAA a=0x29, n=0, h=0, c=0" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0x29,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -868,9 +868,9 @@ test "DAA a=0x29, n=0, h=0, c=0" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0x29,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -885,9 +885,9 @@ test "DAA a=0x29, n=0, h=0, c=0" {
 }
 
 test "DAA a=0x2A, n=0, h=0, c=0" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0x2A,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -895,9 +895,9 @@ test "DAA a=0x2A, n=0, h=0, c=0" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0x30,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -912,9 +912,9 @@ test "DAA a=0x2A, n=0, h=0, c=0" {
 }
 
 test "DAA a=0x39, n=0, h=0, c=0" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0x39,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -922,9 +922,9 @@ test "DAA a=0x39, n=0, h=0, c=0" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0x39,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -939,9 +939,9 @@ test "DAA a=0x39, n=0, h=0, c=0" {
 }
 
 test "DAA a=0x3A, n=0, h=0, c=0" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0x3A,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -949,9 +949,9 @@ test "DAA a=0x3A, n=0, h=0, c=0" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0x40,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -966,9 +966,9 @@ test "DAA a=0x3A, n=0, h=0, c=0" {
 }
 
 test "DAA a=0x40, n=0, h=0, c=0" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0x40,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -976,9 +976,9 @@ test "DAA a=0x40, n=0, h=0, c=0" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0x40,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -993,9 +993,9 @@ test "DAA a=0x40, n=0, h=0, c=0" {
 }
 
 test "DAA a=0x45, n=0, h=0, c=0" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0x45,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -1003,9 +1003,9 @@ test "DAA a=0x45, n=0, h=0, c=0" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0x45,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -1020,9 +1020,9 @@ test "DAA a=0x45, n=0, h=0, c=0" {
 }
 
 test "DAA a=0x99, n=0, h=0, c=0" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0x99,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -1030,9 +1030,9 @@ test "DAA a=0x99, n=0, h=0, c=0" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0x99,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -1047,9 +1047,9 @@ test "DAA a=0x99, n=0, h=0, c=0" {
 }
 
 test "DAA a=0x9A, n=0, h=0, c=0" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0x9A,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -1057,9 +1057,9 @@ test "DAA a=0x9A, n=0, h=0, c=0" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0x00,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 1,
             .h = 0,
             .n = 0,
@@ -1074,9 +1074,9 @@ test "DAA a=0x9A, n=0, h=0, c=0" {
 }
 
 test "DAA a=0xA0, n=0, h=0, c=0" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0xA0,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -1084,9 +1084,9 @@ test "DAA a=0xA0, n=0, h=0, c=0" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0x00,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 1,
             .h = 0,
             .n = 0,
@@ -1101,9 +1101,9 @@ test "DAA a=0xA0, n=0, h=0, c=0" {
 }
 
 test "DAA a=0xA5, n=0, h=0, c=0" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0xA5,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -1111,9 +1111,9 @@ test "DAA a=0xA5, n=0, h=0, c=0" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0x05,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 1,
             .h = 0,
             .n = 0,
@@ -1128,9 +1128,9 @@ test "DAA a=0xA5, n=0, h=0, c=0" {
 }
 
 test "DAA a=0xFF, n=0, h=0, c=0" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0xFF,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -1138,9 +1138,9 @@ test "DAA a=0xFF, n=0, h=0, c=0" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0x65,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 1,
             .h = 0,
             .n = 0,
@@ -1155,9 +1155,9 @@ test "DAA a=0xFF, n=0, h=0, c=0" {
 }
 
 test "DAA a=0x05, n=0, h=1, c=0" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0x05,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 1,
             .n = 0,
@@ -1165,9 +1165,9 @@ test "DAA a=0x05, n=0, h=1, c=0" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0x0B,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -1182,9 +1182,9 @@ test "DAA a=0x05, n=0, h=1, c=0" {
 }
 
 test "DAA a=0x15, n=0, h=1, c=0" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0x15,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 1,
             .n = 0,
@@ -1192,9 +1192,9 @@ test "DAA a=0x15, n=0, h=1, c=0" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0x1B,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -1209,9 +1209,9 @@ test "DAA a=0x15, n=0, h=1, c=0" {
 }
 
 test "DAA a=0x25, n=0, h=1, c=0" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0x25,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 1,
             .n = 0,
@@ -1219,9 +1219,9 @@ test "DAA a=0x25, n=0, h=1, c=0" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0x2B,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -1236,9 +1236,9 @@ test "DAA a=0x25, n=0, h=1, c=0" {
 }
 
 test "DAA a=0x35, n=0, h=1, c=0" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0x35,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 1,
             .n = 0,
@@ -1246,9 +1246,9 @@ test "DAA a=0x35, n=0, h=1, c=0" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0x3B,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -1263,9 +1263,9 @@ test "DAA a=0x35, n=0, h=1, c=0" {
 }
 
 test "DAA a=0x3F, n=0, h=1, c=0" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0x3F,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 1,
             .n = 0,
@@ -1273,9 +1273,9 @@ test "DAA a=0x3F, n=0, h=1, c=0" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0x45,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -1290,9 +1290,9 @@ test "DAA a=0x3F, n=0, h=1, c=0" {
 }
 
 test "DAA a=0x9A, n=0, h=1, c=0" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0x9A,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 1,
             .n = 0,
@@ -1300,9 +1300,9 @@ test "DAA a=0x9A, n=0, h=1, c=0" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0x00,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 1,
             .h = 0,
             .n = 0,
@@ -1317,9 +1317,9 @@ test "DAA a=0x9A, n=0, h=1, c=0" {
 }
 
 test "DAA a=0x2F, n=1, h=1, c=0" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0x2F,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 1,
             .n = 1,
@@ -1327,9 +1327,9 @@ test "DAA a=0x2F, n=1, h=1, c=0" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0x29,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 1,
@@ -1344,9 +1344,9 @@ test "DAA a=0x2F, n=1, h=1, c=0" {
 }
 
 test "DAA a=0x42, n=1, h=1, c=0" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0x42,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 1,
             .n = 1,
@@ -1354,9 +1354,9 @@ test "DAA a=0x42, n=1, h=1, c=0" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0x3C,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 1,
@@ -1371,9 +1371,9 @@ test "DAA a=0x42, n=1, h=1, c=0" {
 }
 
 test "DAA a=0x9A, n=1, h=1, c=0" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0x9A,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 1,
             .n = 1,
@@ -1381,9 +1381,9 @@ test "DAA a=0x9A, n=1, h=1, c=0" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0x94,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 1,
@@ -1398,9 +1398,9 @@ test "DAA a=0x9A, n=1, h=1, c=0" {
 }
 
 test "DAA a=0x99, n=1, h=1, c=1" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0x99,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 1,
             .h = 1,
             .n = 1,
@@ -1408,9 +1408,9 @@ test "DAA a=0x99, n=1, h=1, c=1" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0x33,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 1,
             .h = 0,
             .n = 1,
@@ -1425,9 +1425,9 @@ test "DAA a=0x99, n=1, h=1, c=1" {
 }
 
 test "DAA a=0xFF, n=1, h=1, c=1" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0xFF,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 1,
             .h = 1,
             .n = 1,
@@ -1435,9 +1435,9 @@ test "DAA a=0xFF, n=1, h=1, c=1" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0x99,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 1,
             .h = 0,
             .n = 1,
@@ -1452,9 +1452,9 @@ test "DAA a=0xFF, n=1, h=1, c=1" {
 }
 
 test "add return" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0x00,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 1,
@@ -1462,9 +1462,9 @@ test "add return" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0x00,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 1,
             .h = 1,
             .n = 0,
@@ -1483,9 +1483,9 @@ test "add return" {
 }
 
 test "add_adj" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0x00,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -1514,9 +1514,9 @@ test "add_adj" {
 }
 
 test "rlc" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 1,
             .z = 1,
@@ -1524,9 +1524,9 @@ test "rlc" {
             .rest = 0,
         },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 1,
             .h = 0,
             .z = 0,
@@ -1544,13 +1544,13 @@ test "rlc" {
 }
 
 test "rrc" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0,
-        .lo = RegisterFlags{ .c = 0, .h = 1, .z = 1, .n = 1, .rest = 0 },
+        .lo = Flags{ .c = 0, .h = 1, .z = 1, .n = 1, .rest = 0 },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0,
-        .lo = RegisterFlags{ .c = 1, .h = 0, .z = 0, .n = 0, .rest = 0 },
+        .lo = Flags{ .c = 1, .h = 0, .z = 0, .n = 0, .rest = 0 },
     };
     const input = 0b00000001;
     const expected = 0b10000000;
@@ -1562,13 +1562,13 @@ test "rrc" {
 }
 
 test "rl with carry = 0" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0,
-        .lo = RegisterFlags{ .c = 0, .h = 1, .z = 0, .n = 1, .rest = 0 },
+        .lo = Flags{ .c = 0, .h = 1, .z = 0, .n = 1, .rest = 0 },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0,
-        .lo = RegisterFlags{ .c = 1, .h = 0, .z = 1, .n = 0, .rest = 0 },
+        .lo = Flags{ .c = 1, .h = 0, .z = 1, .n = 0, .rest = 0 },
     };
     const input = 0b10000000;
     const expected = 0b00000000;
@@ -1580,13 +1580,13 @@ test "rl with carry = 0" {
 }
 
 test "rl with carry = 1" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0,
-        .lo = RegisterFlags{ .c = 1, .h = 0, .z = 0, .n = 0, .rest = 0 },
+        .lo = Flags{ .c = 1, .h = 0, .z = 0, .n = 0, .rest = 0 },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0,
-        .lo = RegisterFlags{ .c = 1, .h = 0, .z = 0, .n = 0, .rest = 0 },
+        .lo = Flags{ .c = 1, .h = 0, .z = 0, .n = 0, .rest = 0 },
     };
     const input = 0b10000000;
     const expected = 0b00000001;
@@ -1598,13 +1598,13 @@ test "rl with carry = 1" {
 }
 
 test "rr with carry = 0" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0,
-        .lo = RegisterFlags{ .c = 0, .h = 1, .z = 0, .n = 1, .rest = 0 },
+        .lo = Flags{ .c = 0, .h = 1, .z = 0, .n = 1, .rest = 0 },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0,
-        .lo = RegisterFlags{ .c = 1, .h = 0, .z = 1, .n = 0, .rest = 0 },
+        .lo = Flags{ .c = 1, .h = 0, .z = 1, .n = 0, .rest = 0 },
     };
     const input = 0b00000001;
     const expected = 0b00000000;
@@ -1616,13 +1616,13 @@ test "rr with carry = 0" {
 }
 
 test "rr with carry = 1" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0,
-        .lo = RegisterFlags{ .c = 1, .h = 0, .z = 0, .n = 0, .rest = 0 },
+        .lo = Flags{ .c = 1, .h = 0, .z = 0, .n = 0, .rest = 0 },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0,
-        .lo = RegisterFlags{ .c = 1, .h = 0, .z = 0, .n = 0, .rest = 0 },
+        .lo = Flags{ .c = 1, .h = 0, .z = 0, .n = 0, .rest = 0 },
     };
     const input = 0b00000001;
     const expected = 0b10000000;
@@ -1634,13 +1634,13 @@ test "rr with carry = 1" {
 }
 
 test "sla" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0,
-        .lo = RegisterFlags{ .c = 0, .h = 1, .z = 1, .n = 1, .rest = 0 },
+        .lo = Flags{ .c = 0, .h = 1, .z = 1, .n = 1, .rest = 0 },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0,
-        .lo = RegisterFlags{ .c = 1, .h = 0, .z = 0, .n = 0, .rest = 0 },
+        .lo = Flags{ .c = 1, .h = 0, .z = 0, .n = 0, .rest = 0 },
     };
     const input = 0b10000001;
     const expected = 0b00000010;
@@ -1652,13 +1652,13 @@ test "sla" {
 }
 
 test "sra" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0,
-        .lo = RegisterFlags{ .c = 0, .h = 1, .z = 0, .n = 1, .rest = 0 },
+        .lo = Flags{ .c = 0, .h = 1, .z = 0, .n = 1, .rest = 0 },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0,
-        .lo = RegisterFlags{ .c = 1, .h = 0, .z = 1, .n = 0, .rest = 0 },
+        .lo = Flags{ .c = 1, .h = 0, .z = 1, .n = 0, .rest = 0 },
     };
     const input = 0b00000001;
     const expected = 0b00000000;
@@ -1670,13 +1670,13 @@ test "sra" {
 }
 
 test "srl" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0,
-        .lo = RegisterFlags{ .c = 0, .h = 1, .z = 0, .n = 1, .rest = 0 },
+        .lo = Flags{ .c = 0, .h = 1, .z = 0, .n = 1, .rest = 0 },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0,
-        .lo = RegisterFlags{ .c = 1, .h = 0, .z = 1, .n = 0, .rest = 0 },
+        .lo = Flags{ .c = 1, .h = 0, .z = 1, .n = 0, .rest = 0 },
     };
     const input = 0b00000001;
     const expected = 0b00000000;
@@ -1688,13 +1688,13 @@ test "srl" {
 }
 
 test "swap" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0,
-        .lo = RegisterFlags{ .c = 1, .h = 1, .z = 1, .n = 1, .rest = 0 },
+        .lo = Flags{ .c = 1, .h = 1, .z = 1, .n = 1, .rest = 0 },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0,
-        .lo = RegisterFlags{ .c = 0, .h = 0, .z = 0, .n = 0, .rest = 0 },
+        .lo = Flags{ .c = 0, .h = 0, .z = 0, .n = 0, .rest = 0 },
     };
     const input = 0xAB;
     const expected = 0xBA;
@@ -1706,13 +1706,13 @@ test "swap" {
 }
 
 test "bit" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0,
-        .lo = RegisterFlags{ .c = 1, .h = 0, .z = 1, .n = 1, .rest = 0 },
+        .lo = Flags{ .c = 1, .h = 0, .z = 1, .n = 1, .rest = 0 },
     };
-    const expected_reg = AluRegister{
+    const expected_reg = General{
         .hi = 0,
-        .lo = RegisterFlags{ .c = 1, .h = 1, .z = 0, .n = 0, .rest = 0 },
+        .lo = Flags{ .c = 1, .h = 1, .z = 0, .n = 0, .rest = 0 },
     };
     const input = 0b00000000;
     const bit_index = 3;
@@ -1727,7 +1727,7 @@ test "res" {
     const bit_index = 3;
     const expected = 0b11110111;
 
-    const actual = AluRegister.res(input, bit_index);
+    const actual = General.res(input, bit_index);
 
     try std.testing.expectEqual(expected, actual);
 }
@@ -1737,15 +1737,15 @@ test "set" {
     const bit_index = 3;
     const expected = 0b00001000;
 
-    const actual = AluRegister.set(input, bit_index);
+    const actual = General.set(input, bit_index);
 
     try std.testing.expectEqual(expected, actual);
 }
 
 test "cond Z=0 C=0" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0x00,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -1761,9 +1761,9 @@ test "cond Z=0 C=0" {
 }
 
 test "cond Z=0 C=1" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0x00,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 1,
             .h = 0,
             .n = 0,
@@ -1779,9 +1779,9 @@ test "cond Z=0 C=1" {
 }
 
 test "cond Z=1 C=0" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0x00,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -1797,9 +1797,9 @@ test "cond Z=1 C=0" {
 }
 
 test "cond Z=1 C=1" {
-    var reg = AluRegister{
+    var reg = General{
         .hi = 0x00,
-        .lo = RegisterFlags{
+        .lo = Flags{
             .c = 1,
             .h = 0,
             .n = 0,
@@ -1815,10 +1815,10 @@ test "cond Z=1 C=1" {
 }
 
 test "add interpret signed no flags" {
-    try std.testing.expectEqual(0xFFFF, AluRegister.addInterpretSignedNoFlags(0x0000, 0xFF));
-    try std.testing.expectEqual(0x0001, AluRegister.addInterpretSignedNoFlags(0x0000, 0x01));
-    try std.testing.expectEqual(0x0000, AluRegister.addInterpretSignedNoFlags(0x0000, 0x00));
-    try std.testing.expectEqual(0xFFFE, AluRegister.addInterpretSignedNoFlags(0xFFFF, 0xFF));
-    try std.testing.expectEqual(0x0000, AluRegister.addInterpretSignedNoFlags(0xFFFF, 0x01));
-    try std.testing.expectEqual(0xFFFF, AluRegister.addInterpretSignedNoFlags(0xFFFF, 0x00));
+    try std.testing.expectEqual(0xFFFF, General.addInterpretSignedNoFlags(0x0000, 0xFF));
+    try std.testing.expectEqual(0x0001, General.addInterpretSignedNoFlags(0x0000, 0x01));
+    try std.testing.expectEqual(0x0000, General.addInterpretSignedNoFlags(0x0000, 0x00));
+    try std.testing.expectEqual(0xFFFE, General.addInterpretSignedNoFlags(0xFFFF, 0xFF));
+    try std.testing.expectEqual(0x0000, General.addInterpretSignedNoFlags(0xFFFF, 0x01));
+    try std.testing.expectEqual(0xFFFF, General.addInterpretSignedNoFlags(0xFFFF, 0x00));
 }

@@ -1,106 +1,106 @@
 const std = @import("std");
 
-const alu = @import("alu.zig");
-const AluRegister = alu.AluRegister;
-const RegisterWithHalves = alu.RegisterWithHalves;
-const RegisterFlags = alu.RegisterFlags;
+const register = @import("register.zig");
+const GeneralRegister = register.General;
+const WideRegister = register.Wide;
+const FlagsRegister = register.Flags;
 const InterruptKind = @import("interrupt_kind.zig").InterruptKind;
 
 const MemoryReferenceFn = @import("reference.zig").MemoryReference;
 
 const logger = std.log.scoped(.cpu);
 
-// The reason for this union is that we implement BC, DE, HL as RegisterWithHalves but AF as AluRegister so this union
+// The reason for this union is that we implement BC, DE, HL as WideRegister but AF as GeneralRegister so this union
 // allows us to use them indistinctively.
 const StackRegister = union(enum) {
-    AluRegister: *AluRegister,
-    RegisterWithHalves: *RegisterWithHalves,
+    GeneralRegister: *GeneralRegister,
+    WideRegister: *WideRegister,
 
     fn all(reg: StackRegister) u16 {
         return switch (reg) {
-            .AluRegister => |r| r.all(),
-            .RegisterWithHalves => |r| r.all(),
+            .GeneralRegister => |r| r.all(),
+            .WideRegister => |r| r.all(),
         };
     }
 
     fn setAll(reg: StackRegister, val: u16) void {
         return switch (reg) {
-            .AluRegister => |r| r.setAll(val),
-            .RegisterWithHalves => |r| r.setAll(val),
+            .GeneralRegister => |r| r.setAll(val),
+            .WideRegister => |r| r.setAll(val),
         };
     }
 
     fn hi(reg: StackRegister) u8 {
         return switch (reg) {
-            .AluRegister => |r| r.hi,
-            .RegisterWithHalves => |r| r.hi,
+            .GeneralRegister => |r| r.hi,
+            .WideRegister => |r| r.hi,
         };
     }
 
     fn lo(reg: StackRegister) u8 {
         return switch (reg) {
-            .AluRegister => |r| r.lo.all(),
-            .RegisterWithHalves => |r| r.lo,
+            .GeneralRegister => |r| r.lo.all(),
+            .WideRegister => |r| r.lo,
         };
     }
 };
 
-test "StackRegister: all and setAll for AluRegister" {
-    var alu_reg = AluRegister{
+test "StackRegister: all and setAll for GeneralRegister" {
+    var alu_reg = GeneralRegister{
         .hi = 0,
-        .lo = RegisterFlags{ .z = 0, .n = 0, .h = 0, .c = 0, .rest = 0 },
+        .lo = FlagsRegister{ .z = 0, .n = 0, .h = 0, .c = 0, .rest = 0 },
     };
 
-    StackRegister.setAll(StackRegister{ .AluRegister = &alu_reg }, 0xABCD);
-    const result = StackRegister.all(StackRegister{ .AluRegister = &alu_reg });
+    StackRegister.setAll(StackRegister{ .GeneralRegister = &alu_reg }, 0xABCD);
+    const result = StackRegister.all(StackRegister{ .GeneralRegister = &alu_reg });
     try std.testing.expectEqual(@as(u16, 0xABCD), result);
 }
 
-test "StackRegister: all and setAll for RegisterWithHalves" {
-    var reg_wh = RegisterWithHalves{
+test "StackRegister: all and setAll for WideRegister" {
+    var reg_wh = WideRegister{
         .hi = 0,
         .lo = 0,
     };
 
-    StackRegister.setAll(StackRegister{ .RegisterWithHalves = &reg_wh }, 0x1234);
-    const result = StackRegister.all(StackRegister{ .RegisterWithHalves = &reg_wh });
+    StackRegister.setAll(StackRegister{ .WideRegister = &reg_wh }, 0x1234);
+    const result = StackRegister.all(StackRegister{ .WideRegister = &reg_wh });
     try std.testing.expectEqual(@as(u16, 0x1234), result);
 }
 
-test "StackRegister: hi and lo for AluRegister" {
-    var alu_reg = AluRegister{
+test "StackRegister: hi and lo for GeneralRegister" {
+    var alu_reg = GeneralRegister{
         .hi = 0xA1,
-        .lo = RegisterFlags{ .z = 0, .n = 0, .h = 0, .c = 0, .rest = 0xB2 >> 4 },
+        .lo = FlagsRegister{ .z = 0, .n = 0, .h = 0, .c = 0, .rest = 0xB2 >> 4 },
     };
     // Assume .Lo.all() gives full byte from bitfields — if not, adjust accordingly.
-    StackRegister.setAll(StackRegister{ .AluRegister = &alu_reg }, 0xA1B2);
-    const stack_reg = StackRegister{ .AluRegister = &alu_reg };
+    StackRegister.setAll(StackRegister{ .GeneralRegister = &alu_reg }, 0xA1B2);
+    const stack_reg = StackRegister{ .GeneralRegister = &alu_reg };
     try std.testing.expectEqual(@as(u8, 0xA1), StackRegister.hi(stack_reg));
     try std.testing.expectEqual(@as(u8, 0xB2), StackRegister.lo(stack_reg));
 }
 
-test "StackRegister: hi and lo for RegisterWithHalves" {
-    var reg_wh = RegisterWithHalves{
+test "StackRegister: hi and lo for WideRegister" {
+    var reg_wh = WideRegister{
         .hi = 0xC3,
         .lo = 0xD4,
     };
-    const stack_reg = StackRegister{ .RegisterWithHalves = &reg_wh };
+    const stack_reg = StackRegister{ .WideRegister = &reg_wh };
     try std.testing.expectEqual(@as(u8, 0xC3), StackRegister.hi(stack_reg));
     try std.testing.expectEqual(@as(u8, 0xD4), StackRegister.lo(stack_reg));
 }
 
 const RegisterBank = struct {
-    af: AluRegister,
-    bc: RegisterWithHalves,
-    de: RegisterWithHalves,
+    af: GeneralRegister,
+    bc: WideRegister,
+    de: WideRegister,
 
-    hl: RegisterWithHalves,
+    hl: WideRegister,
 
-    sp: RegisterWithHalves,
+    sp: WideRegister,
     pc: u16,
 
     ir: u8,
-    wz: RegisterWithHalves,
+    wz: WideRegister,
 
     ime: u1,
 };
@@ -118,12 +118,12 @@ pub fn Cpu(Mmu: type, Interrupt: type) type {
 
     const CpuOp1Union = union {
         aux_intermediate: u8,
-        next_alu_op: *const fn (*AluRegister, u8) u8,
+        next_alu_op: *const fn (*GeneralRegister, u8) u8,
         next_alu_op_bit: *const fn (u8, u3) u8,
-        next_alu_op_bit_test: *const fn (*AluRegister, u8, u3) void,
+        next_alu_op_bit_test: *const fn (*GeneralRegister, u8, u3) void,
         to_8bit: MemoryReference,
         ptr_reg_stack: StackRegister,
-        ptr_reg_16bit: *RegisterWithHalves,
+        ptr_reg_16bit: *WideRegister,
         pending_interrupt: InterruptKind,
     };
 
@@ -737,7 +737,7 @@ pub fn Cpu(Mmu: type, Interrupt: type) type {
         }
 
         fn executeJumpToRelative(self: *This) SelfRefCpuMethod {
-            const res = AluRegister.addInterpretSignedNoFlags(self.reg.pc, self.reg.wz.lo);
+            const res = GeneralRegister.addInterpretSignedNoFlags(self.reg.pc, self.reg.wz.lo);
             self.reg.wz.setAll(res);
             return SelfRefCpuMethod.init(This.loadTempRegisterToProgramCounterAndFetch);
         }
@@ -817,14 +817,14 @@ pub fn Cpu(Mmu: type, Interrupt: type) type {
             switch (op1) {
                 0b00 => { // shift/rotate/swap
                     self.next_op_1 = CpuOp1Union{ .next_alu_op = switch (op2) {
-                        0b000 => AluRegister.rlc,
-                        0b001 => AluRegister.rrc,
-                        0b010 => AluRegister.rl,
-                        0b011 => AluRegister.rr,
-                        0b100 => AluRegister.sla,
-                        0b101 => AluRegister.sra,
-                        0b110 => AluRegister.swap,
-                        0b111 => AluRegister.srl,
+                        0b000 => GeneralRegister.rlc,
+                        0b001 => GeneralRegister.rrc,
+                        0b010 => GeneralRegister.rl,
+                        0b011 => GeneralRegister.rr,
+                        0b100 => GeneralRegister.sla,
+                        0b101 => GeneralRegister.sra,
+                        0b110 => GeneralRegister.swap,
+                        0b111 => GeneralRegister.srl,
                     } };
                     if (ref == .mem_ref) {
                         return SelfRefCpuMethod.init(This.extendedAluOpOnMemory);
@@ -833,7 +833,7 @@ pub fn Cpu(Mmu: type, Interrupt: type) type {
                     return self.fetchOpcode();
                 },
                 0b01 => { // bit test
-                    self.next_op_1 = CpuOp1Union{ .next_alu_op_bit_test = AluRegister.bit };
+                    self.next_op_1 = CpuOp1Union{ .next_alu_op_bit_test = GeneralRegister.bit };
                     if (ref == .mem_ref) {
                         self.next_op_2 = CpuOp2Union{ .bit_idx = op2 };
                         return SelfRefCpuMethod.init(This.extendedAluOpOnMemoryBitsTest);
@@ -843,8 +843,8 @@ pub fn Cpu(Mmu: type, Interrupt: type) type {
                 },
                 else => { // bit set/reset
                     self.next_op_1 = CpuOp1Union{ .next_alu_op_bit = switch (op1) {
-                        0b10 => AluRegister.res,
-                        0b11 => AluRegister.set,
+                        0b10 => GeneralRegister.res,
+                        0b11 => GeneralRegister.set,
                         else => unreachable,
                     } };
                     if (ref == .mem_ref) {
@@ -1046,7 +1046,7 @@ pub fn Cpu(Mmu: type, Interrupt: type) type {
         }
 
         fn jumpRelativeConditionalDoRelative(self: *This) SelfRefCpuMethod {
-            const res = AluRegister.addInterpretSignedNoFlags(self.reg.pc, self.reg.wz.lo);
+            const res = GeneralRegister.addInterpretSignedNoFlags(self.reg.pc, self.reg.wz.lo);
             self.reg.wz.setAll(res);
             self.next_op_1 = CpuOp1Union{ .ptr_reg_16bit = &self.reg.wz };
             return SelfRefCpuMethod.init(This.jumpToRegister);
@@ -1152,7 +1152,7 @@ pub fn Cpu(Mmu: type, Interrupt: type) type {
             };
         }
 
-        fn ptrReg16Bit(self: *This, idx: u2) *RegisterWithHalves {
+        fn ptrReg16Bit(self: *This, idx: u2) *WideRegister {
             return switch (idx) {
                 0b00 => &self.reg.bc,
                 0b01 => &self.reg.de,
@@ -1163,10 +1163,10 @@ pub fn Cpu(Mmu: type, Interrupt: type) type {
 
         fn ptrRegStack(self: *This, idx: u2) StackRegister {
             return switch (idx) {
-                0b00 => StackRegister{ .RegisterWithHalves = &self.reg.bc },
-                0b01 => StackRegister{ .RegisterWithHalves = &self.reg.de },
-                0b10 => StackRegister{ .RegisterWithHalves = &self.reg.hl },
-                0b11 => StackRegister{ .AluRegister = &self.reg.af },
+                0b00 => StackRegister{ .WideRegister = &self.reg.bc },
+                0b01 => StackRegister{ .WideRegister = &self.reg.de },
+                0b10 => StackRegister{ .WideRegister = &self.reg.hl },
+                0b11 => StackRegister{ .GeneralRegister = &self.reg.af },
             };
         }
     };

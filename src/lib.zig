@@ -1,6 +1,6 @@
 pub const cpu = @import("cpu.zig");
 pub const mmu = @import("mmu.zig");
-pub const alu = @import("alu.zig");
+pub const register = @import("register.zig");
 pub const assembler = @import("assembler.zig");
 pub const reference = @import("reference.zig");
 pub const emulator = @import("emulator.zig");
