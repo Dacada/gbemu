@@ -33,13 +33,13 @@ test "Load register (register)" {
                     .reg(@intCast(from), test_value),
                 &[_]*TestCpuState{
                     TestCpuState.init() // read nop(PC) from ram
-                        .rPC(0x0001)
+                        .rPc(0x0001)
                         .reg(@intCast(from), test_value),
                     TestCpuState.init() // execute nop | load iut(PC) from ram
-                        .rPC(0x0002)
+                        .rPc(0x0002)
                         .reg(@intCast(from), test_value),
                     TestCpuState.init() // execute iut | read (PC) from ram
-                        .rPC(0x0003)
+                        .rPc(0x0003)
                         .reg(@intCast(from), test_value)
                         .reg(@intCast(to), test_value),
                 },
@@ -71,13 +71,13 @@ test "Load register (immediate)" {
             TestCpuState.init(),
             &[_]*TestCpuState{
                 TestCpuState.init() // read nop(PC) from ram
-                    .rPC(0x0001),
+                    .rPc(0x0001),
                 TestCpuState.init() // execute nop | read iut(PC) from ram
-                    .rPC(0x0002),
+                    .rPc(0x0002),
                 TestCpuState.init() // execute iut: read immediate(PC) from ram
-                    .rPC(0x0003),
+                    .rPc(0x0003),
                 TestCpuState.init() // read (PC) from ram | write immediate to reg
-                    .rPC(0x0004)
+                    .rPc(0x0004)
                     .reg(@intCast(to), test_value),
             },
         );
@@ -109,19 +109,19 @@ test "Load register (indirect HL)" {
                 .ram(test_addr, test_value),
             &[_]*TestCpuState{
                 TestCpuState.init() // read nop(PC) from ram
-                    .rPC(0x0001)
+                    .rPc(0x0001)
                     .rHL(test_addr)
                     .ram(test_addr, test_value),
                 TestCpuState.init() // execute nop | read iut(PC) from ram
-                    .rPC(0x0002)
+                    .rPc(0x0002)
                     .rHL(test_addr)
                     .ram(test_addr, test_value),
                 TestCpuState.init() // execute iut: read data(HL) from ram
-                    .rPC(0x0002)
+                    .rPc(0x0002)
                     .rHL(test_addr)
                     .ram(test_addr, test_value),
                 TestCpuState.init() // read (PC) from ram | write data to reg
-                    .rPC(0x0003)
+                    .rPc(0x0003)
                     .rHL(test_addr)
                     .reg(@intCast(to), test_value)
                     .ram(test_addr, test_value),
@@ -155,20 +155,20 @@ test "Load from register (indirect HL)" {
                 .reg(@intCast(from), test_value),
             &[_]*TestCpuState{
                 TestCpuState.init() // read nop(PC) from ram
-                    .rPC(0x0001)
+                    .rPc(0x0001)
                     .rHL(test_addr)
                     .reg(@intCast(from), test_value),
                 TestCpuState.init() // execute nop | read iut(PC) from ram
-                    .rPC(0x0002)
+                    .rPc(0x0002)
                     .rHL(test_addr)
                     .reg(@intCast(from), test_value),
                 TestCpuState.init() // execute iut: write reg(HL) to ram
-                    .rPC(0x0002)
+                    .rPc(0x0002)
                     .rHL(test_addr)
                     .ram(test_addr, test_value)
                     .reg(@intCast(from), test_value),
                 TestCpuState.init() // read (PC) from ram
-                    .rPC(0x0003)
+                    .rPc(0x0003)
                     .rHL(test_addr)
                     .ram(test_addr, test_value)
                     .reg(@intCast(from), test_value),
@@ -195,20 +195,20 @@ test "Load from immediate data (indirect HL)" {
             .rHL(test_addr),
         &[_]*TestCpuState{
             TestCpuState.init() // read nop(PC) from ram
-                .rPC(0x0001)
+                .rPc(0x0001)
                 .rHL(test_addr),
             TestCpuState.init() // execute nop | read iut(PC) from ram
-                .rPC(0x0002)
+                .rPc(0x0002)
                 .rHL(test_addr),
             TestCpuState.init() // execute iut: read immediate(PC) from ram
-                .rPC(0x0003)
+                .rPc(0x0003)
                 .rHL(test_addr),
             TestCpuState.init() // execute iut: write immediate(HL) to ram
-                .rPC(0x0003)
+                .rPc(0x0003)
                 .rHL(test_addr)
                 .ram(test_addr, test_value),
             TestCpuState.init() // read (PC) from ram
-                .rPC(0x0004)
+                .rPc(0x0004)
                 .rHL(test_addr)
                 .ram(test_addr, test_value),
         },
@@ -236,19 +236,19 @@ test "Load accumulator (indirect)" {
                 .ram(test_addr, test_value),
             &[_]*TestCpuState{
                 TestCpuState.init() // read nop(PC) from ram
-                    .rPC(0x0001)
+                    .rPc(0x0001)
                     .reg16(@intCast(from), test_addr)
                     .ram(test_addr, test_value),
                 TestCpuState.init() // execute nop | read iut(PC) from ram
-                    .rPC(0x0002)
+                    .rPc(0x0002)
                     .reg16(@intCast(from), test_addr)
                     .ram(test_addr, test_value),
                 TestCpuState.init() // execute iut: read data(reg) from ram
-                    .rPC(0x0002)
+                    .rPc(0x0002)
                     .reg16(@intCast(from), test_addr)
                     .ram(test_addr, test_value),
                 TestCpuState.init() // read (PC) from ram | write data to A
-                    .rPC(0x0003)
+                    .rPc(0x0003)
                     .reg16(@intCast(from), test_addr)
                     .rA(test_value)
                     .ram(test_addr, test_value),
@@ -278,20 +278,20 @@ test "Load from accumulator (indirect)" {
                 .rA(test_value),
             &[_]*TestCpuState{
                 TestCpuState.init() // read nop(PC) from ram
-                    .rPC(0x0001)
+                    .rPc(0x0001)
                     .reg16(@intCast(from), test_addr)
                     .rA(test_value),
                 TestCpuState.init() // execute nop | read iut(PC) from ram
-                    .rPC(0x0002)
+                    .rPc(0x0002)
                     .reg16(@intCast(from), test_addr)
                     .rA(test_value),
                 TestCpuState.init() // execute iut: write A(reg) to ram
-                    .rPC(0x0002)
+                    .rPc(0x0002)
                     .reg16(@intCast(from), test_addr)
                     .rA(test_value)
                     .ram(test_addr, test_value),
                 TestCpuState.init() // read (PC) from ram
-                    .rPC(0x0003)
+                    .rPc(0x0003)
                     .reg16(@intCast(from), test_addr)
                     .rA(test_value)
                     .ram(test_addr, test_value),
@@ -319,22 +319,22 @@ test "Load accumulator (direct)" {
             .ram(test_addr, test_value),
         &[_]*TestCpuState{
             TestCpuState.init() // read nop(PC) from ram
-                .rPC(0x0001)
+                .rPc(0x0001)
                 .ram(test_addr, test_value),
             TestCpuState.init() // execute nop | read iut(PC) from ram
-                .rPC(0x0002)
+                .rPc(0x0002)
                 .ram(test_addr, test_value),
             TestCpuState.init() // execute iut: read address_lsb(PC) from ram
-                .rPC(0x0003)
+                .rPc(0x0003)
                 .ram(test_addr, test_value),
             TestCpuState.init() // execute iut: read address_msb(PC) from ram
-                .rPC(0x0004)
+                .rPc(0x0004)
                 .ram(test_addr, test_value),
             TestCpuState.init() // execute iut: read data(address) from ram
-                .rPC(0x0004)
+                .rPc(0x0004)
                 .ram(test_addr, test_value),
             TestCpuState.init() // read (PC) from ram | write data to A
-                .rPC(0x0005)
+                .rPc(0x0005)
                 .rA(test_value)
                 .ram(test_addr, test_value),
         },
@@ -360,23 +360,23 @@ test "Load from accumulator (direct)" {
             .rA(test_value),
         &[_]*TestCpuState{
             TestCpuState.init() // read nop(PC) from ram
-                .rPC(0x0001)
+                .rPc(0x0001)
                 .rA(test_value),
             TestCpuState.init() // execute nop | read iut(PC) from ram
-                .rPC(0x0002)
+                .rPc(0x0002)
                 .rA(test_value),
             TestCpuState.init() // execute iut: read address_lsb(PC) from ram
-                .rPC(0x0003)
+                .rPc(0x0003)
                 .rA(test_value),
             TestCpuState.init() // execute iut: read address_msb(PC) from ram
-                .rPC(0x0004)
+                .rPc(0x0004)
                 .rA(test_value),
             TestCpuState.init() // execute iut: write A(address) to ram
-                .rPC(0x0004)
+                .rPc(0x0004)
                 .rA(test_value)
                 .ram(test_addr, test_value),
             TestCpuState.init() // read (PC) from ram
-                .rPC(0x0005)
+                .rPc(0x0005)
                 .rA(test_value)
                 .ram(test_addr, test_value),
         },
@@ -401,19 +401,19 @@ test "Load accumulator (indirect 0xFF00 + C)" {
             .ram(test_addr, test_value),
         &[_]*TestCpuState{
             TestCpuState.init() // read nop(PC) from ram
-                .rPC(0x0001)
+                .rPc(0x0001)
                 .rC(test_addr & 0xFF)
                 .ram(test_addr, test_value),
             TestCpuState.init() // execute nop | read iut(PC) from ram
-                .rPC(0x0002)
+                .rPc(0x0002)
                 .rC(test_addr & 0xFF)
                 .ram(test_addr, test_value),
             TestCpuState.init() // execute iut: read data(0xFF00+C) from ram
-                .rPC(0x0002)
+                .rPc(0x0002)
                 .rC(test_addr & 0xFF)
                 .ram(test_addr, test_value),
             TestCpuState.init() // read (PC) from ram | write data to A
-                .rPC(0x0003)
+                .rPc(0x0003)
                 .rC(test_addr & 0xFF)
                 .rA(test_value)
                 .ram(test_addr, test_value),
@@ -439,20 +439,20 @@ test "Load from accumulator (indirect 0xFF00 + C)" {
             .rA(test_value),
         &[_]*TestCpuState{
             TestCpuState.init() // read nop(PC) from ram
-                .rPC(0x0001)
+                .rPc(0x0001)
                 .rC(test_addr & 0xFF)
                 .rA(test_value),
             TestCpuState.init() // execute nop | read iut(PC) from ram
-                .rPC(0x0002)
+                .rPc(0x0002)
                 .rC(test_addr & 0xFF)
                 .rA(test_value),
             TestCpuState.init() // execute iut: write A(0xFF00+C) to ram
-                .rPC(0x0002)
+                .rPc(0x0002)
                 .rC(test_addr & 0xFF)
                 .rA(test_value)
                 .ram(test_addr, test_value),
             TestCpuState.init() // read (PC) from ram
-                .rPC(0x0003)
+                .rPc(0x0003)
                 .rC(test_addr & 0xFF)
                 .rA(test_value)
                 .ram(test_addr, test_value),
@@ -478,19 +478,19 @@ test "Load accumulator (direct 0xFF00 + n)" {
             .ram(test_addr, test_value),
         &[_]*TestCpuState{
             TestCpuState.init() // read nop(PC) from ram
-                .rPC(0x0001)
+                .rPc(0x0001)
                 .ram(test_addr, test_value),
             TestCpuState.init() // execute nop | read iut(PC) from ram
-                .rPC(0x0002)
+                .rPc(0x0002)
                 .ram(test_addr, test_value),
             TestCpuState.init() // execute iut: read immediate(PC) from ram
-                .rPC(0x0003)
+                .rPc(0x0003)
                 .ram(test_addr, test_value),
             TestCpuState.init() // execute iut: read data(0xFF00+immediate) from ram
-                .rPC(0x0003)
+                .rPc(0x0003)
                 .ram(test_addr, test_value),
             TestCpuState.init() // read (PC) from ram
-                .rPC(0x0004)
+                .rPc(0x0004)
                 .rA(test_value)
                 .ram(test_addr, test_value),
         },
@@ -515,20 +515,20 @@ test "Load from accumulator (direct 0xFF00 + n)" {
             .rA(test_value),
         &[_]*TestCpuState{
             TestCpuState.init() // read nop(PC) from ram
-                .rPC(0x0001)
+                .rPc(0x0001)
                 .rA(test_value),
             TestCpuState.init() // execute nop | read iut(PC) from ram
-                .rPC(0x0002)
+                .rPc(0x0002)
                 .rA(test_value),
             TestCpuState.init() // execute iut: read immediate(PC) from ram
-                .rPC(0x0003)
+                .rPc(0x0003)
                 .rA(test_value),
             TestCpuState.init() // execute iut: write A(0xFF00+immediate) to ram
-                .rPC(0x0003)
+                .rPc(0x0003)
                 .rA(test_value)
                 .ram(test_addr, test_value),
             TestCpuState.init() // read (PC) from ram
-                .rPC(0x0004)
+                .rPc(0x0004)
                 .rA(test_value)
                 .ram(test_addr, test_value),
         },
@@ -561,19 +561,19 @@ test "Load accumulator (indirect HL)" {
                 .ram(test_addr, test_value),
             &[_]*TestCpuState{
                 TestCpuState.init() // read nop(PC) from ram
-                    .rPC(0x0001)
+                    .rPc(0x0001)
                     .rHL(test_addr)
                     .ram(test_addr, test_value),
                 TestCpuState.init() // execute nop | load iut(PC) from ram
-                    .rPC(0x0002)
+                    .rPc(0x0002)
                     .rHL(test_addr)
                     .ram(test_addr, test_value),
                 TestCpuState.init() // execute iut: read data(HL) from ram | inc/dec HL
-                    .rPC(0x0002)
+                    .rPc(0x0002)
                     .rHL(test_addr_next)
                     .ram(test_addr, test_value),
                 TestCpuState.init() // read (PC) from ram | write data to A
-                    .rPC(0x0003)
+                    .rPc(0x0003)
                     .rHL(test_addr_next)
                     .rA(test_value)
                     .ram(test_addr, test_value),
@@ -608,20 +608,20 @@ test "Load from accumulator (indirect HL)" {
                 .rA(test_value),
             &[_]*TestCpuState{
                 TestCpuState.init() // read nop(PC) from ram
-                    .rPC(0x0001)
+                    .rPc(0x0001)
                     .rHL(test_addr)
                     .rA(test_value),
                 TestCpuState.init() // execute nop | read iut(PC) from ram
-                    .rPC(0x0002)
+                    .rPc(0x0002)
                     .rHL(test_addr)
                     .rA(test_value),
                 TestCpuState.init() // execute iut: write A(HL) to ram
-                    .rPC(0x0002)
+                    .rPc(0x0002)
                     .rHL(test_addr_next)
                     .rA(test_value)
                     .ram(test_addr, test_value),
                 TestCpuState.init() // read (PC) from ram
-                    .rPC(0x0003)
+                    .rPc(0x0003)
                     .rHL(test_addr_next)
                     .rA(test_value)
                     .ram(test_addr, test_value),
@@ -650,15 +650,15 @@ test "Load 16-bit register" {
             TestCpuState.init(),
             &[_]*TestCpuState{
                 TestCpuState.init() // read nop(PC) from ram
-                    .rPC(0x0001),
+                    .rPc(0x0001),
                 TestCpuState.init() // execute nop | read iut(PC) from ram
-                    .rPC(0x0002),
+                    .rPc(0x0002),
                 TestCpuState.init() // execute iut: read data_lsb(PC) from ram
-                    .rPC(0x0003),
+                    .rPc(0x0003),
                 TestCpuState.init() // execute iut: read data_msb(PC) from ram
-                    .rPC(0x0004),
+                    .rPc(0x0004),
                 TestCpuState.init() // read (PC) | write data to reg
-                    .rPC(0x0005)
+                    .rPc(0x0005)
                     .reg16(reg, test_value),
             },
         );
@@ -681,32 +681,32 @@ test "Load from stack pointer (direct)" {
             0xFD,
         },
         TestCpuState.init()
-            .rSP(test_value),
+            .rSp(test_value),
         &[_]*TestCpuState{
             TestCpuState.init() // read nop(PC) from ram
-                .rPC(0x0001)
-                .rSP(test_value),
+                .rPc(0x0001)
+                .rSp(test_value),
             TestCpuState.init() // execute nop | read iut(PC) from ram
-                .rPC(0x0002)
-                .rSP(test_value),
+                .rPc(0x0002)
+                .rSp(test_value),
             TestCpuState.init() // execute iut: read address_lsb(PC) from ram
-                .rPC(0x0003)
-                .rSP(test_value),
+                .rPc(0x0003)
+                .rSp(test_value),
             TestCpuState.init() // execute iut: read address_msb(PC) from ram
-                .rPC(0x0004)
-                .rSP(test_value),
+                .rPc(0x0004)
+                .rSp(test_value),
             TestCpuState.init() // execute iut: write SP_lsb(address) to ram
-                .rPC(0x0004)
-                .rSP(test_value)
+                .rPc(0x0004)
+                .rSp(test_value)
                 .ram(test_addr, test_value & 0xFF),
             TestCpuState.init() // execute iut: write SP_msb(address) to ram
-                .rPC(0x0004)
-                .rSP(test_value)
+                .rPc(0x0004)
+                .rSp(test_value)
                 .ram(test_addr, test_value & 0xFF)
                 .ram(test_addr + 1, (test_value & 0xFF00) >> 8),
             TestCpuState.init() // read (PC) from ram
-                .rPC(0x0005)
-                .rSP(test_value)
+                .rPc(0x0005)
+                .rSp(test_value)
                 .ram(test_addr, test_value & 0xFF)
                 .ram(test_addr + 1, (test_value & 0xFF00) >> 8),
         },
@@ -729,19 +729,19 @@ test "Load stack pointer from HL" {
             .rHL(test_value),
         &[_]*TestCpuState{
             TestCpuState.init() // read nop(PC) from ram
-                .rPC(0x0001)
+                .rPc(0x0001)
                 .rHL(test_value),
             TestCpuState.init() // execute nop | read iut(PC) from ram
-                .rPC(0x0002)
+                .rPc(0x0002)
                 .rHL(test_value),
             TestCpuState.init() // execute iut: write HL to SP
-                .rPC(0x0002)
+                .rPc(0x0002)
                 .rHL(test_value)
-                .rSP(test_value),
+                .rSp(test_value),
             TestCpuState.init() // read (PC) from ram
-                .rPC(0x0003)
+                .rPc(0x0003)
                 .rHL(test_value)
-                .rSP(test_value),
+                .rSp(test_value),
         },
     );
 }
@@ -763,35 +763,35 @@ test "Push to stack" {
                 0xFD,
             },
             TestCpuState.init()
-                .rSP(test_addr)
+                .rSp(test_addr)
                 .reg16p(reg, test_value),
             &[_]*TestCpuState{
                 TestCpuState.init() // read nop(PC) from ram
-                    .rPC(0x0001)
-                    .rSP(test_addr)
+                    .rPc(0x0001)
+                    .rSp(test_addr)
                     .reg16p(reg, test_value),
                 TestCpuState.init() // execute nop | read iut(PC) from ram
-                    .rPC(0x0002)
-                    .rSP(test_addr)
+                    .rPc(0x0002)
+                    .rSp(test_addr)
                     .reg16p(reg, test_value),
                 TestCpuState.init() // execute iut: decrease SP
-                    .rPC(0x0002)
-                    .rSP(test_addr - 1)
+                    .rPc(0x0002)
+                    .rSp(test_addr - 1)
                     .reg16p(reg, test_value),
                 TestCpuState.init() // execute iut: write reg_msb[SP] to ram | decrease SP
-                    .rPC(0x0002)
-                    .rSP(test_addr - 2)
+                    .rPc(0x0002)
+                    .rSp(test_addr - 2)
                     .reg16p(reg, test_value)
                     .ram(test_addr - 1, (test_value & 0xFF00) >> 8),
                 TestCpuState.init() // execute iut: write reg_lsb[SP] to ram
-                    .rPC(0x0002)
-                    .rSP(test_addr - 2)
+                    .rPc(0x0002)
+                    .rSp(test_addr - 2)
                     .reg16p(reg, test_value)
                     .ram(test_addr - 1, (test_value & 0xFF00) >> 8)
                     .ram(test_addr - 2, (test_value & 0xFF)),
                 TestCpuState.init() // read (PC)
-                    .rPC(0x0003)
-                    .rSP(test_addr - 2)
+                    .rPc(0x0003)
+                    .rSp(test_addr - 2)
                     .reg16p(reg, test_value)
                     .ram(test_addr - 1, (test_value & 0xFF00) >> 8)
                     .ram(test_addr - 2, (test_value & 0xFF)),
@@ -817,33 +817,33 @@ test "Pop from stack" {
                 0xFD,
             },
             TestCpuState.init()
-                .rSP(test_addr)
+                .rSp(test_addr)
                 .ram(test_addr, test_value & 0xFF)
                 .ram(test_addr + 1, (test_value & 0xFF00) >> 8),
             &[_]*TestCpuState{
                 TestCpuState.init() // read nop(PC) from ram
-                    .rPC(0x0001)
-                    .rSP(test_addr)
+                    .rPc(0x0001)
+                    .rSp(test_addr)
                     .ram(test_addr, test_value & 0xFF)
                     .ram(test_addr + 1, (test_value & 0xFF00) >> 8),
                 TestCpuState.init() // execute nop | read iut(PC) from ram
-                    .rPC(0x0002)
-                    .rSP(test_addr)
+                    .rPc(0x0002)
+                    .rSp(test_addr)
                     .ram(test_addr, test_value & 0xFF)
                     .ram(test_addr + 1, (test_value & 0xFF00) >> 8),
                 TestCpuState.init() // execute iut: read data_lsb[SP] | increase SP
-                    .rPC(0x0002)
-                    .rSP(test_addr + 1)
+                    .rPc(0x0002)
+                    .rSp(test_addr + 1)
                     .ram(test_addr, test_value & 0xFF)
                     .ram(test_addr + 1, (test_value & 0xFF00) >> 8),
                 TestCpuState.init() // execute iut: read data_msb[SP] | increase SP
-                    .rPC(0x0002)
-                    .rSP(test_addr + 2)
+                    .rPc(0x0002)
+                    .rSp(test_addr + 2)
                     .ram(test_addr, test_value & 0xFF)
                     .ram(test_addr + 1, (test_value & 0xFF00) >> 8),
                 TestCpuState.init() // read (PC) | write data to reg
-                    .rPC(0x0003)
-                    .rSP(test_addr + 2)
+                    .rPc(0x0003)
+                    .rSp(test_addr + 2)
                     .reg16p(reg, test_value)
                     .ram(test_addr, test_value & 0xFF)
                     .ram(test_addr + 1, (test_value & 0xFF00) >> 8),
@@ -861,17 +861,17 @@ test "Load HL from adjusted SP" {
         const unsigned_e: u8 = @intCast(e);
 
         var reg = alu.AluRegister{
-            .Hi = 0x00,
-            .Lo = alu.RegisterFlags{
-                .C = 0,
-                .H = 0,
-                .N = 0,
-                .Z = 0,
+            .hi = 0x00,
+            .lo = alu.RegisterFlags{
+                .c = 0,
+                .h = 0,
+                .n = 0,
+                .z = 0,
                 .rest = 0,
             },
         };
-        const expected_lo = reg.add_return(@intCast(test_value & 0xFF), unsigned_e, 0, 0);
-        const expected_hi = reg.add_adj(@intCast((test_value & 0xFF00) >> 8), unsigned_e);
+        const expected_lo = reg.addReturn(@intCast(test_value & 0xFF), unsigned_e, 0, 0);
+        const expected_hi = reg.addAdj(@intCast((test_value & 0xFF00) >> 8), unsigned_e);
         const expected = (@as(u16, expected_hi) << 8) | expected_lo;
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "Load HL from adjusted SP (e={d})", .{e});
@@ -885,28 +885,28 @@ test "Load HL from adjusted SP" {
                 0xFD,
             },
             TestCpuState.init()
-                .rSP(test_value),
+                .rSp(test_value),
             &[_]*TestCpuState{
                 TestCpuState.init() // read nop(PC) from ram
-                    .rPC(0x0001)
-                    .rSP(test_value),
+                    .rPc(0x0001)
+                    .rSp(test_value),
                 TestCpuState.init() // execute nop | read iut(PC) from ram
-                    .rPC(0x0002)
-                    .rSP(test_value),
+                    .rPc(0x0002)
+                    .rSp(test_value),
                 TestCpuState.init() // execute iut: read e(PC) from ram
-                    .rPC(0x0003)
-                    .rSP(test_value),
+                    .rPc(0x0003)
+                    .rSp(test_value),
                 TestCpuState.init() // execute iut: add e to SP_lsb
-                    .rPC(0x0003)
-                    .fC(reg.Lo.C)
-                    .fH(reg.Lo.H)
-                    .rSP(test_value)
+                    .rPc(0x0003)
+                    .fC(reg.lo.c)
+                    .fH(reg.lo.h)
+                    .rSp(test_value)
                     .rL(expected_lo),
                 TestCpuState.init() // read (PC) | execute iut: add carry to SP_msb
-                    .rPC(0x0004)
-                    .fC(reg.Lo.C)
-                    .fH(reg.Lo.H)
-                    .rSP(test_value)
+                    .rPc(0x0004)
+                    .fC(reg.lo.c)
+                    .fH(reg.lo.h)
+                    .rSp(test_value)
                     .rHL(expected),
             },
         );
@@ -933,12 +933,12 @@ test "Add (register)" {
                 const test_val: u8 = 0xBB;
 
                 var res = alu.AluRegister{
-                    .Hi = test_val,
-                    .Lo = alu.RegisterFlags{
-                        .C = carry_flag,
-                        .H = 0,
-                        .N = 0,
-                        .Z = 0,
+                    .hi = test_val,
+                    .lo = alu.RegisterFlags{
+                        .c = carry_flag,
+                        .h = 0,
+                        .n = 0,
+                        .z = 0,
                         .rest = 0,
                     },
                 };
@@ -959,19 +959,19 @@ test "Add (register)" {
                         .reg(reg_u3, val_u8),
                     &[_]*TestCpuState{
                         TestCpuState.init() // read nop(PC) from ram
-                            .rPC(0x0001)
+                            .rPc(0x0001)
                             .rA(test_val)
                             .fC(carry_flag)
                             .reg(reg_u3, val_u8),
                         TestCpuState.init() // execute nop | read iut(PC) from ram
-                            .rPC(0x0002)
+                            .rPc(0x0002)
                             .rA(test_val)
                             .fC(carry_flag)
                             .reg(reg_u3, val_u8),
                         TestCpuState.init() // execute iut: add reg to a | read (PC)
-                            .rPC(0x0003)
+                            .rPc(0x0003)
                             .reg(reg_u3, val_u8)
-                            .rAF(res.all()),
+                            .rAf(res.all()),
                     },
                 );
             }
@@ -991,12 +991,12 @@ test "Add (register A)" {
             const instr: u8 = 0b10000111 | (@as(u8, carry_instr) << 3);
 
             var res = alu.AluRegister{
-                .Hi = val_u8,
-                .Lo = alu.RegisterFlags{
-                    .C = carry_flag,
-                    .H = 0,
-                    .N = 0,
-                    .Z = 0,
+                .hi = val_u8,
+                .lo = alu.RegisterFlags{
+                    .c = carry_flag,
+                    .h = 0,
+                    .n = 0,
+                    .z = 0,
                     .rest = 0,
                 },
             };
@@ -1016,16 +1016,16 @@ test "Add (register A)" {
                     .fC(carry_flag),
                 &[_]*TestCpuState{
                     TestCpuState.init() // read nop(PC) from ram
-                        .rPC(0x0001)
+                        .rPc(0x0001)
                         .rA(val_u8)
                         .fC(carry_flag),
                     TestCpuState.init() // execute nop | read iut(PC) from ram
-                        .rPC(0x0002)
+                        .rPc(0x0002)
                         .rA(val_u8)
                         .fC(carry_flag),
                     TestCpuState.init() // execute iut: add A to itself | read (PC)
-                        .rPC(0x0003)
-                        .rAF(res.all()),
+                        .rPc(0x0003)
+                        .rAf(res.all()),
                 },
             );
         }
@@ -1046,12 +1046,12 @@ test "Add (indirect HL)" {
             const instr: u8 = 0b10000110 | (@as(u8, carry_instr) << 3);
 
             var res = alu.AluRegister{
-                .Hi = test_val,
-                .Lo = alu.RegisterFlags{
-                    .C = carry_flag,
-                    .H = 0,
-                    .N = 0,
-                    .Z = 0,
+                .hi = test_val,
+                .lo = alu.RegisterFlags{
+                    .c = carry_flag,
+                    .h = 0,
+                    .n = 0,
+                    .z = 0,
                     .rest = 0,
                 },
             };
@@ -1073,28 +1073,28 @@ test "Add (indirect HL)" {
                     .rHL(test_addr),
                 &[_]*TestCpuState{
                     TestCpuState.init() // read nop(PC) from ram
-                        .rPC(0x0001)
+                        .rPc(0x0001)
                         .rA(test_val)
                         .fC(carry_flag)
                         .ram(test_addr, val_u8)
                         .rHL(test_addr),
                     TestCpuState.init() // execute nop | read iut(PC) from ram
-                        .rPC(0x0002)
+                        .rPc(0x0002)
                         .rA(test_val)
                         .fC(carry_flag)
                         .ram(test_addr, val_u8)
                         .rHL(test_addr),
                     TestCpuState.init() // execute iut: read val(HL) from ram
-                        .rPC(0x0002)
+                        .rPc(0x0002)
                         .rA(test_val)
                         .fC(carry_flag)
                         .ram(test_addr, val_u8)
                         .rHL(test_addr),
                     TestCpuState.init() // execute iut: add val to A | read (PC)
-                        .rPC(0x0003)
+                        .rPc(0x0003)
                         .ram(test_addr, val_u8)
                         .rHL(test_addr)
-                        .rAF(res.all()),
+                        .rAf(res.all()),
                 },
             );
         }
@@ -1114,12 +1114,12 @@ test "Add (immediate)" {
             const instr: u8 = 0b11000110 | (@as(u8, carry_instr) << 3);
 
             var res = alu.AluRegister{
-                .Hi = test_val,
-                .Lo = alu.RegisterFlags{
-                    .C = carry_flag,
-                    .H = 0,
-                    .N = 0,
-                    .Z = 0,
+                .hi = test_val,
+                .lo = alu.RegisterFlags{
+                    .c = carry_flag,
+                    .h = 0,
+                    .n = 0,
+                    .z = 0,
                     .rest = 0,
                 },
             };
@@ -1140,20 +1140,20 @@ test "Add (immediate)" {
                     .fC(carry_flag),
                 &[_]*TestCpuState{
                     TestCpuState.init() // read nop(PC) from ram
-                        .rPC(0x0001)
+                        .rPc(0x0001)
                         .rA(test_val)
                         .fC(carry_flag),
                     TestCpuState.init() // execute nop | read iut(PC) from ram
-                        .rPC(0x0002)
+                        .rPc(0x0002)
                         .rA(test_val)
                         .fC(carry_flag),
                     TestCpuState.init() // execute iut: read val(PC) from ram
-                        .rPC(0x0003)
+                        .rPc(0x0003)
                         .rA(test_val)
                         .fC(carry_flag),
                     TestCpuState.init() // execute iut: add val to A | read (PC)
-                        .rPC(0x0004)
-                        .rAF(res.all()),
+                        .rPc(0x0004)
+                        .rAf(res.all()),
                 },
             );
         }
@@ -1180,12 +1180,12 @@ test "Sub (register)" {
                 const test_val: u8 = 0xBB;
 
                 var res = alu.AluRegister{
-                    .Hi = test_val,
-                    .Lo = alu.RegisterFlags{
-                        .C = carry_flag,
-                        .H = 0,
-                        .N = 0,
-                        .Z = 0,
+                    .hi = test_val,
+                    .lo = alu.RegisterFlags{
+                        .c = carry_flag,
+                        .h = 0,
+                        .n = 0,
+                        .z = 0,
                         .rest = 0,
                     },
                 };
@@ -1206,19 +1206,19 @@ test "Sub (register)" {
                         .reg(reg_u3, val_u8),
                     &[_]*TestCpuState{
                         TestCpuState.init() // read nop(PC) from ram
-                            .rPC(0x0001)
+                            .rPc(0x0001)
                             .rA(test_val)
                             .fC(carry_flag)
                             .reg(reg_u3, val_u8),
                         TestCpuState.init() // execute nop | read iut(PC) from ram
-                            .rPC(0x0002)
+                            .rPc(0x0002)
                             .rA(test_val)
                             .fC(carry_flag)
                             .reg(reg_u3, val_u8),
                         TestCpuState.init() // execute iut: sub reg from a | read (PC)
-                            .rPC(0x0003)
+                            .rPc(0x0003)
                             .reg(reg_u3, val_u8)
-                            .rAF(res.all()),
+                            .rAf(res.all()),
                     },
                 );
             }
@@ -1238,12 +1238,12 @@ test "Sub (register A)" {
             const instr: u8 = 0b10010111 | (@as(u8, carry_instr) << 3);
 
             var res = alu.AluRegister{
-                .Hi = val_u8,
-                .Lo = alu.RegisterFlags{
-                    .C = carry_flag,
-                    .H = 0,
-                    .N = 0,
-                    .Z = 0,
+                .hi = val_u8,
+                .lo = alu.RegisterFlags{
+                    .c = carry_flag,
+                    .h = 0,
+                    .n = 0,
+                    .z = 0,
                     .rest = 0,
                 },
             };
@@ -1263,16 +1263,16 @@ test "Sub (register A)" {
                     .fC(carry_flag),
                 &[_]*TestCpuState{
                     TestCpuState.init() // read nop(PC) from ram
-                        .rPC(0x0001)
+                        .rPc(0x0001)
                         .rA(val_u8)
                         .fC(carry_flag),
                     TestCpuState.init() // execute nop | read iut(PC) from ram
-                        .rPC(0x0002)
+                        .rPc(0x0002)
                         .rA(val_u8)
                         .fC(carry_flag),
                     TestCpuState.init() // execute iut: sub A from itself | read (PC)
-                        .rPC(0x0003)
-                        .rAF(res.all()),
+                        .rPc(0x0003)
+                        .rAf(res.all()),
                 },
             );
         }
@@ -1293,12 +1293,12 @@ test "Sub (indirect HL)" {
             const instr: u8 = 0b10010110 | (@as(u8, carry_instr) << 3);
 
             var res = alu.AluRegister{
-                .Hi = test_val,
-                .Lo = alu.RegisterFlags{
-                    .C = carry_flag,
-                    .H = 0,
-                    .N = 0,
-                    .Z = 0,
+                .hi = test_val,
+                .lo = alu.RegisterFlags{
+                    .c = carry_flag,
+                    .h = 0,
+                    .n = 0,
+                    .z = 0,
                     .rest = 0,
                 },
             };
@@ -1320,28 +1320,28 @@ test "Sub (indirect HL)" {
                     .rHL(test_addr),
                 &[_]*TestCpuState{
                     TestCpuState.init() // read nop(PC) from ram
-                        .rPC(0x0001)
+                        .rPc(0x0001)
                         .rA(test_val)
                         .fC(carry_flag)
                         .ram(test_addr, val_u8)
                         .rHL(test_addr),
                     TestCpuState.init() // execute nop | read iut(PC) from ram
-                        .rPC(0x0002)
+                        .rPc(0x0002)
                         .rA(test_val)
                         .fC(carry_flag)
                         .ram(test_addr, val_u8)
                         .rHL(test_addr),
                     TestCpuState.init() // execute iut: read val(HL) from ram
-                        .rPC(0x0002)
+                        .rPc(0x0002)
                         .rA(test_val)
                         .fC(carry_flag)
                         .ram(test_addr, val_u8)
                         .rHL(test_addr),
                     TestCpuState.init() // execute iut: sub val from A | read (PC)
-                        .rPC(0x0003)
+                        .rPc(0x0003)
                         .ram(test_addr, val_u8)
                         .rHL(test_addr)
-                        .rAF(res.all()),
+                        .rAf(res.all()),
                 },
             );
         }
@@ -1361,12 +1361,12 @@ test "Sub (immediate)" {
             const instr: u8 = 0b11010110 | (@as(u8, carry_instr) << 3);
 
             var res = alu.AluRegister{
-                .Hi = test_val,
-                .Lo = alu.RegisterFlags{
-                    .C = carry_flag,
-                    .H = 0,
-                    .N = 0,
-                    .Z = 0,
+                .hi = test_val,
+                .lo = alu.RegisterFlags{
+                    .c = carry_flag,
+                    .h = 0,
+                    .n = 0,
+                    .z = 0,
                     .rest = 0,
                 },
             };
@@ -1387,20 +1387,20 @@ test "Sub (immediate)" {
                     .fC(carry_flag),
                 &[_]*TestCpuState{
                     TestCpuState.init() // read nop(PC) from ram
-                        .rPC(0x0001)
+                        .rPc(0x0001)
                         .rA(test_val)
                         .fC(carry_flag),
                     TestCpuState.init() // execute nop | read iut(PC) from ram
-                        .rPC(0x0002)
+                        .rPc(0x0002)
                         .rA(test_val)
                         .fC(carry_flag),
                     TestCpuState.init() // execute iut: read val(PC) from ram
-                        .rPC(0x0003)
+                        .rPc(0x0003)
                         .rA(test_val)
                         .fC(carry_flag),
                     TestCpuState.init() // execute iut: sub val from A | read (PC)
-                        .rPC(0x0004)
-                        .rAF(res.all()),
+                        .rPc(0x0004)
+                        .rAf(res.all()),
                 },
             );
         }
@@ -1423,12 +1423,12 @@ test "CP (register)" {
             const test_val: u8 = 0xBB;
 
             var res = alu.AluRegister{
-                .Hi = test_val,
-                .Lo = alu.RegisterFlags{
-                    .C = 0,
-                    .H = 0,
-                    .N = 0,
-                    .Z = 0,
+                .hi = test_val,
+                .lo = alu.RegisterFlags{
+                    .c = 0,
+                    .h = 0,
+                    .n = 0,
+                    .z = 0,
                     .rest = 0,
                 },
             };
@@ -1448,18 +1448,18 @@ test "CP (register)" {
                     .reg(reg_u3, val_u8),
                 &[_]*TestCpuState{
                     TestCpuState.init() // read nop(PC) from ram
-                        .rPC(0x0001)
+                        .rPc(0x0001)
                         .rA(test_val)
                         .reg(reg_u3, val_u8),
                     TestCpuState.init() // execute nop | read iut(PC) from ram
-                        .rPC(0x0002)
+                        .rPc(0x0002)
                         .rA(test_val)
                         .reg(reg_u3, val_u8),
                     TestCpuState.init() // execute iut: sub reg from a, store flags only | read (PC)
-                        .rPC(0x0003)
+                        .rPc(0x0003)
                         .reg(reg_u3, val_u8)
                         .rA(test_val)
-                        .rF(res.Lo.all()),
+                        .rF(res.lo.all()),
                 },
             );
         }
@@ -1474,12 +1474,12 @@ test "CP (register A)" {
         const instr: u8 = 0b10111111;
 
         var res = alu.AluRegister{
-            .Hi = val_u8,
-            .Lo = alu.RegisterFlags{
-                .C = 0,
-                .H = 0,
-                .N = 0,
-                .Z = 0,
+            .hi = val_u8,
+            .lo = alu.RegisterFlags{
+                .c = 0,
+                .h = 0,
+                .n = 0,
+                .z = 0,
                 .rest = 0,
             },
         };
@@ -1498,15 +1498,15 @@ test "CP (register A)" {
                 .rA(val_u8),
             &[_]*TestCpuState{
                 TestCpuState.init() // read nop(PC) from ram
-                    .rPC(0x0001)
+                    .rPc(0x0001)
                     .rA(val_u8),
                 TestCpuState.init() // execute nop | read iut(PC) from ram
-                    .rPC(0x0002)
+                    .rPc(0x0002)
                     .rA(val_u8),
                 TestCpuState.init() // execute iut: sub A from itself, store flags only | read (PC)
-                    .rPC(0x0003)
+                    .rPc(0x0003)
                     .rA(val_u8)
-                    .rF(res.Lo.all()),
+                    .rF(res.lo.all()),
             },
         );
     }
@@ -1522,12 +1522,12 @@ test "CP (indirect HL)" {
         const instr: u8 = 0b10111110;
 
         var res = alu.AluRegister{
-            .Hi = test_val,
-            .Lo = alu.RegisterFlags{
-                .C = 0,
-                .H = 0,
-                .N = 0,
-                .Z = 0,
+            .hi = test_val,
+            .lo = alu.RegisterFlags{
+                .c = 0,
+                .h = 0,
+                .n = 0,
+                .z = 0,
                 .rest = 0,
             },
         };
@@ -1550,26 +1550,26 @@ test "CP (indirect HL)" {
                 .rHL(test_addr),
             &[_]*TestCpuState{
                 TestCpuState.init() // read nop(PC) from ram
-                    .rPC(0x0001)
+                    .rPc(0x0001)
                     .rA(test_val)
                     .ram(test_addr, val_u8)
                     .rHL(test_addr),
                 TestCpuState.init() // execute nop | read iut(PC) from ram
-                    .rPC(0x0002)
+                    .rPc(0x0002)
                     .rA(test_val)
                     .ram(test_addr, val_u8)
                     .rHL(test_addr),
                 TestCpuState.init() // execute iut: read val(HL) from ram
-                    .rPC(0x0002)
+                    .rPc(0x0002)
                     .rA(test_val)
                     .ram(test_addr, val_u8)
                     .rHL(test_addr),
                 TestCpuState.init() // execute iut: sub val from A, store flags only | read (PC)
-                    .rPC(0x0003)
+                    .rPc(0x0003)
                     .ram(test_addr, val_u8)
                     .rHL(test_addr)
                     .rA(test_val)
-                    .rF(res.Lo.all()),
+                    .rF(res.lo.all()),
             },
         );
     }
@@ -1584,12 +1584,12 @@ test "CP (immediate)" {
         const instr: u8 = 0b11111110;
 
         var res = alu.AluRegister{
-            .Hi = test_val,
-            .Lo = alu.RegisterFlags{
-                .C = 0,
-                .H = 0,
-                .N = 0,
-                .Z = 0,
+            .hi = test_val,
+            .lo = alu.RegisterFlags{
+                .c = 0,
+                .h = 0,
+                .n = 0,
+                .z = 0,
                 .rest = 0,
             },
         };
@@ -1609,18 +1609,18 @@ test "CP (immediate)" {
                 .rA(test_val),
             &[_]*TestCpuState{
                 TestCpuState.init() // read nop(PC) from ram
-                    .rPC(0x0001)
+                    .rPc(0x0001)
                     .rA(test_val),
                 TestCpuState.init() // execute nop | read iut(PC) from ram
-                    .rPC(0x0002)
+                    .rPc(0x0002)
                     .rA(test_val),
                 TestCpuState.init() // execute iut: read val(PC) from ram
-                    .rPC(0x0003)
+                    .rPc(0x0003)
                     .rA(test_val),
                 TestCpuState.init() // execute iut: sub val from A, store flags only | read (PC)
-                    .rPC(0x0004)
+                    .rPc(0x0004)
                     .rA(test_val)
-                    .rF(res.Lo.all()),
+                    .rF(res.lo.all()),
             },
         );
     }
@@ -1638,12 +1638,12 @@ test "INC/DEC Register" {
                 const instr: u8 = 0b00_000_10_0 | (reg << 3) | incdec;
 
                 var rreg = alu.AluRegister{
-                    .Hi = test_val,
-                    .Lo = alu.RegisterFlags{
-                        .C = 0,
-                        .H = 0,
-                        .N = 0,
-                        .Z = 0,
+                    .hi = test_val,
+                    .lo = alu.RegisterFlags{
+                        .c = 0,
+                        .h = 0,
+                        .n = 0,
+                        .z = 0,
                         .rest = 0,
                     },
                 };
@@ -1665,15 +1665,15 @@ test "INC/DEC Register" {
                         .reg(reg, test_val),
                     &[_]*TestCpuState{
                         TestCpuState.init() // read nop(PC) from ram
-                            .rPC(0x0001)
+                            .rPc(0x0001)
                             .reg(reg, test_val),
                         TestCpuState.init() // execute nop | read iut(PC) from ram
-                            .rPC(0x0002)
+                            .rPc(0x0002)
                             .reg(reg, test_val),
                         TestCpuState.init() // execute iut: inc/dec reg | read (PC)
-                            .rPC(0x0003)
+                            .rPc(0x0003)
                             .reg(reg, res)
-                            .rF(rreg.Lo.all()),
+                            .rF(rreg.lo.all()),
                     },
                 );
             }
@@ -1689,12 +1689,12 @@ test "INC/DEC Indirect" {
             const test_addr = 0xD00D;
 
             var reg = alu.AluRegister{
-                .Hi = test_val,
-                .Lo = alu.RegisterFlags{
-                    .C = 0,
-                    .H = 0,
-                    .N = 0,
-                    .Z = 0,
+                .hi = test_val,
+                .lo = alu.RegisterFlags{
+                    .c = 0,
+                    .h = 0,
+                    .n = 0,
+                    .z = 0,
                     .rest = 0,
                 },
             };
@@ -1717,27 +1717,27 @@ test "INC/DEC Indirect" {
                     .ram(test_addr, test_val),
                 &[_]*TestCpuState{
                     TestCpuState.init() // read nop(PC) from ram
-                        .rPC(0x0001)
+                        .rPc(0x0001)
                         .rHL(test_addr)
                         .ram(test_addr, test_val),
                     TestCpuState.init() // execute nop | read iut(PC) from ram
-                        .rPC(0x0002)
+                        .rPc(0x0002)
                         .rHL(test_addr)
                         .ram(test_addr, test_val),
                     TestCpuState.init() // execute iut: read val(HL) from ram
-                        .rPC(0x0002)
+                        .rPc(0x0002)
                         .rHL(test_addr)
                         .ram(test_addr, test_val),
                     TestCpuState.init() // execute iut: inc/dec val | write val(HL) to ram
-                        .rPC(0x0002)
+                        .rPc(0x0002)
                         .rHL(test_addr)
                         .ram(test_addr, res)
-                        .rF(reg.Lo.all()),
+                        .rF(reg.lo.all()),
                     TestCpuState.init() // read (PC)
-                        .rPC(0x0003)
+                        .rPc(0x0003)
                         .rHL(test_addr)
                         .ram(test_addr, res)
-                        .rF(reg.Lo.all()),
+                        .rF(reg.lo.all()),
                 },
             );
         }
@@ -1755,12 +1755,12 @@ test "AND register" {
 
             const reg_val = 0xAA;
             var res = alu.AluRegister{
-                .Hi = reg_val,
-                .Lo = alu.RegisterFlags{
-                    .C = 0,
-                    .H = 0,
-                    .N = 0,
-                    .Z = 0,
+                .hi = reg_val,
+                .lo = alu.RegisterFlags{
+                    .c = 0,
+                    .h = 0,
+                    .n = 0,
+                    .z = 0,
                     .rest = 0,
                 },
             };
@@ -1780,17 +1780,17 @@ test "AND register" {
                     .rA(test_val),
                 &[_]*TestCpuState{
                     TestCpuState.init() // read nop(PC) from ram
-                        .rPC(0x0001)
+                        .rPc(0x0001)
                         .reg(reg, reg_val)
                         .rA(test_val),
                     TestCpuState.init() // execute nop | read iut(PC) from ram
-                        .rPC(0x0002)
+                        .rPc(0x0002)
                         .reg(reg, reg_val)
                         .rA(test_val),
                     TestCpuState.init() // execute iut: and reg to A | read (PC) from ram
-                        .rPC(0x0003)
+                        .rPc(0x0003)
                         .reg(reg, reg_val)
-                        .rAF(res.all()),
+                        .rAf(res.all()),
                 },
             );
         }
@@ -1803,12 +1803,12 @@ test "AND register A" {
         const instr: u8 = 0b10100_111;
 
         var res = alu.AluRegister{
-            .Hi = test_val,
-            .Lo = alu.RegisterFlags{
-                .C = 0,
-                .H = 0,
-                .N = 0,
-                .Z = 0,
+            .hi = test_val,
+            .lo = alu.RegisterFlags{
+                .c = 0,
+                .h = 0,
+                .n = 0,
+                .z = 0,
                 .rest = 0,
             },
         };
@@ -1827,14 +1827,14 @@ test "AND register A" {
                 .rA(test_val),
             &[_]*TestCpuState{
                 TestCpuState.init() // read nop(PC) from ram
-                    .rPC(0x0001)
+                    .rPc(0x0001)
                     .rA(test_val),
                 TestCpuState.init() // execute nop | read iut(PC) from ram
-                    .rPC(0x0002)
+                    .rPc(0x0002)
                     .rA(test_val),
                 TestCpuState.init() // execute iut: and reg to A | read (PC) from ram
-                    .rPC(0x0003)
-                    .rAF(res.all()),
+                    .rPc(0x0003)
+                    .rAf(res.all()),
             },
         );
     }
@@ -1848,12 +1848,12 @@ test "AND indirect HL" {
         const test_addr = 0xD00D;
         const reg_val = 0xAA;
         var res = alu.AluRegister{
-            .Hi = reg_val,
-            .Lo = alu.RegisterFlags{
-                .C = 0,
-                .H = 0,
-                .N = 0,
-                .Z = 0,
+            .hi = reg_val,
+            .lo = alu.RegisterFlags{
+                .c = 0,
+                .h = 0,
+                .n = 0,
+                .z = 0,
                 .rest = 0,
             },
         };
@@ -1874,23 +1874,23 @@ test "AND indirect HL" {
                 .ram(test_addr, test_val),
             &[_]*TestCpuState{
                 TestCpuState.init() // read nop(PC) from ram
-                    .rPC(0x0001)
+                    .rPc(0x0001)
                     .rA(reg_val)
                     .rHL(test_addr)
                     .ram(test_addr, test_val),
                 TestCpuState.init() // execute nop | read iut(PC) from ram
-                    .rPC(0x0002)
+                    .rPc(0x0002)
                     .rA(reg_val)
                     .rHL(test_addr)
                     .ram(test_addr, test_val),
                 TestCpuState.init() // execute iut: read val from ram(HL)
-                    .rPC(0x0002)
+                    .rPc(0x0002)
                     .rA(reg_val)
                     .rHL(test_addr)
                     .ram(test_addr, test_val),
                 TestCpuState.init() // execute iut: and val to A | read (PC) from ram
-                    .rPC(0x0003)
-                    .rAF(res.all())
+                    .rPc(0x0003)
+                    .rAf(res.all())
                     .rHL(test_addr)
                     .ram(test_addr, test_val),
             },
@@ -1905,12 +1905,12 @@ test "AND immediate" {
 
         const reg_val = 0xAA;
         var res = alu.AluRegister{
-            .Hi = reg_val,
-            .Lo = alu.RegisterFlags{
-                .C = 0,
-                .H = 0,
-                .N = 0,
-                .Z = 0,
+            .hi = reg_val,
+            .lo = alu.RegisterFlags{
+                .c = 0,
+                .h = 0,
+                .n = 0,
+                .z = 0,
                 .rest = 0,
             },
         };
@@ -1930,17 +1930,17 @@ test "AND immediate" {
                 .rA(reg_val),
             &[_]*TestCpuState{
                 TestCpuState.init() // read nop(PC) from ram
-                    .rPC(0x0001)
+                    .rPc(0x0001)
                     .rA(reg_val),
                 TestCpuState.init() // execute nop | read iut(PC) from ram
-                    .rPC(0x0002)
+                    .rPc(0x0002)
                     .rA(reg_val),
                 TestCpuState.init() // execute iut: read val from ram(PC)
-                    .rPC(0x0003)
+                    .rPc(0x0003)
                     .rA(reg_val),
                 TestCpuState.init() // execute iut: and val to A | read (PC) from ram
-                    .rPC(0x0004)
-                    .rAF(res.all()),
+                    .rPc(0x0004)
+                    .rAf(res.all()),
             },
         );
     }
@@ -1957,12 +1957,12 @@ test "OR register" {
 
             const reg_val = 0xAA;
             var res = alu.AluRegister{
-                .Hi = reg_val,
-                .Lo = alu.RegisterFlags{
-                    .C = 0,
-                    .H = 0,
-                    .N = 0,
-                    .Z = 0,
+                .hi = reg_val,
+                .lo = alu.RegisterFlags{
+                    .c = 0,
+                    .h = 0,
+                    .n = 0,
+                    .z = 0,
                     .rest = 0,
                 },
             };
@@ -1982,17 +1982,17 @@ test "OR register" {
                     .rA(test_val),
                 &[_]*TestCpuState{
                     TestCpuState.init() // read nop(PC) from ram
-                        .rPC(0x0001)
+                        .rPc(0x0001)
                         .reg(reg, reg_val)
                         .rA(test_val),
                     TestCpuState.init() // execute nop | read iut(PC) from ram
-                        .rPC(0x0002)
+                        .rPc(0x0002)
                         .reg(reg, reg_val)
                         .rA(test_val),
                     TestCpuState.init() // execute iut: or reg to A | read (PC) from ram
-                        .rPC(0x0003)
+                        .rPc(0x0003)
                         .reg(reg, reg_val)
-                        .rAF(res.all()),
+                        .rAf(res.all()),
                 },
             );
         }
@@ -2005,12 +2005,12 @@ test "OR register A" {
         const instr: u8 = 0b10110_111;
 
         var res = alu.AluRegister{
-            .Hi = test_val,
-            .Lo = alu.RegisterFlags{
-                .C = 0,
-                .H = 0,
-                .N = 0,
-                .Z = 0,
+            .hi = test_val,
+            .lo = alu.RegisterFlags{
+                .c = 0,
+                .h = 0,
+                .n = 0,
+                .z = 0,
                 .rest = 0,
             },
         };
@@ -2029,14 +2029,14 @@ test "OR register A" {
                 .rA(test_val),
             &[_]*TestCpuState{
                 TestCpuState.init() // read nop(PC) from ram
-                    .rPC(0x0001)
+                    .rPc(0x0001)
                     .rA(test_val),
                 TestCpuState.init() // execute nop | read iut(PC) from ram
-                    .rPC(0x0002)
+                    .rPc(0x0002)
                     .rA(test_val),
                 TestCpuState.init() // execute iut: or reg to A | read (PC) from ram
-                    .rPC(0x0003)
-                    .rAF(res.all()),
+                    .rPc(0x0003)
+                    .rAf(res.all()),
             },
         );
     }
@@ -2050,12 +2050,12 @@ test "OR indirect HL" {
         const test_addr = 0xD00D;
         const reg_val = 0xAA;
         var res = alu.AluRegister{
-            .Hi = reg_val,
-            .Lo = alu.RegisterFlags{
-                .C = 0,
-                .H = 0,
-                .N = 0,
-                .Z = 0,
+            .hi = reg_val,
+            .lo = alu.RegisterFlags{
+                .c = 0,
+                .h = 0,
+                .n = 0,
+                .z = 0,
                 .rest = 0,
             },
         };
@@ -2076,23 +2076,23 @@ test "OR indirect HL" {
                 .ram(test_addr, test_val),
             &[_]*TestCpuState{
                 TestCpuState.init() // read nop(PC) from ram
-                    .rPC(0x0001)
+                    .rPc(0x0001)
                     .rA(reg_val)
                     .rHL(test_addr)
                     .ram(test_addr, test_val),
                 TestCpuState.init() // execute nop | read iut(PC) from ram
-                    .rPC(0x0002)
+                    .rPc(0x0002)
                     .rA(reg_val)
                     .rHL(test_addr)
                     .ram(test_addr, test_val),
                 TestCpuState.init() // execute iut: read val from ram(HL)
-                    .rPC(0x0002)
+                    .rPc(0x0002)
                     .rA(reg_val)
                     .rHL(test_addr)
                     .ram(test_addr, test_val),
                 TestCpuState.init() // execute iut: or val to A | read (PC) from ram
-                    .rPC(0x0003)
-                    .rAF(res.all())
+                    .rPc(0x0003)
+                    .rAf(res.all())
                     .rHL(test_addr)
                     .ram(test_addr, test_val),
             },
@@ -2107,12 +2107,12 @@ test "OR immediate" {
 
         const reg_val = 0xAA;
         var res = alu.AluRegister{
-            .Hi = reg_val,
-            .Lo = alu.RegisterFlags{
-                .C = 0,
-                .H = 0,
-                .N = 0,
-                .Z = 0,
+            .hi = reg_val,
+            .lo = alu.RegisterFlags{
+                .c = 0,
+                .h = 0,
+                .n = 0,
+                .z = 0,
                 .rest = 0,
             },
         };
@@ -2132,17 +2132,17 @@ test "OR immediate" {
                 .rA(reg_val),
             &[_]*TestCpuState{
                 TestCpuState.init() // read nop(PC) from ram
-                    .rPC(0x0001)
+                    .rPc(0x0001)
                     .rA(reg_val),
                 TestCpuState.init() // execute nop | read iut(PC) from ram
-                    .rPC(0x0002)
+                    .rPc(0x0002)
                     .rA(reg_val),
                 TestCpuState.init() // execute iut: read val from ram(PC)
-                    .rPC(0x0003)
+                    .rPc(0x0003)
                     .rA(reg_val),
                 TestCpuState.init() // execute iut: or val to A | read (PC) from ram
-                    .rPC(0x0004)
-                    .rAF(res.all()),
+                    .rPc(0x0004)
+                    .rAf(res.all()),
             },
         );
     }
@@ -2159,12 +2159,12 @@ test "XOR register" {
 
             const reg_val = 0xAA;
             var res = alu.AluRegister{
-                .Hi = reg_val,
-                .Lo = alu.RegisterFlags{
-                    .C = 0,
-                    .H = 0,
-                    .N = 0,
-                    .Z = 0,
+                .hi = reg_val,
+                .lo = alu.RegisterFlags{
+                    .c = 0,
+                    .h = 0,
+                    .n = 0,
+                    .z = 0,
                     .rest = 0,
                 },
             };
@@ -2184,17 +2184,17 @@ test "XOR register" {
                     .rA(test_val),
                 &[_]*TestCpuState{
                     TestCpuState.init() // read nop(PC) from ram
-                        .rPC(0x0001)
+                        .rPc(0x0001)
                         .reg(reg, reg_val)
                         .rA(test_val),
                     TestCpuState.init() // execute nop | read iut(PC) from ram
-                        .rPC(0x0002)
+                        .rPc(0x0002)
                         .reg(reg, reg_val)
                         .rA(test_val),
                     TestCpuState.init() // execute iut: xor reg to A | read (PC) from ram
-                        .rPC(0x0003)
+                        .rPc(0x0003)
                         .reg(reg, reg_val)
-                        .rAF(res.all()),
+                        .rAf(res.all()),
                 },
             );
         }
@@ -2207,12 +2207,12 @@ test "XOR register A" {
         const instr: u8 = 0b10101_111;
 
         var res = alu.AluRegister{
-            .Hi = test_val,
-            .Lo = alu.RegisterFlags{
-                .C = 0,
-                .H = 0,
-                .N = 0,
-                .Z = 0,
+            .hi = test_val,
+            .lo = alu.RegisterFlags{
+                .c = 0,
+                .h = 0,
+                .n = 0,
+                .z = 0,
                 .rest = 0,
             },
         };
@@ -2231,14 +2231,14 @@ test "XOR register A" {
                 .rA(test_val),
             &[_]*TestCpuState{
                 TestCpuState.init() // read nop(PC) from ram
-                    .rPC(0x0001)
+                    .rPc(0x0001)
                     .rA(test_val),
                 TestCpuState.init() // execute nop | read iut(PC) from ram
-                    .rPC(0x0002)
+                    .rPc(0x0002)
                     .rA(test_val),
                 TestCpuState.init() // execute iut: xor reg to A | read (PC) from ram
-                    .rPC(0x0003)
-                    .rAF(res.all()),
+                    .rPc(0x0003)
+                    .rAf(res.all()),
             },
         );
     }
@@ -2252,12 +2252,12 @@ test "XOR indirect HL" {
         const test_addr = 0xD00D;
         const reg_val = 0xAA;
         var res = alu.AluRegister{
-            .Hi = reg_val,
-            .Lo = alu.RegisterFlags{
-                .C = 0,
-                .H = 0,
-                .N = 0,
-                .Z = 0,
+            .hi = reg_val,
+            .lo = alu.RegisterFlags{
+                .c = 0,
+                .h = 0,
+                .n = 0,
+                .z = 0,
                 .rest = 0,
             },
         };
@@ -2278,23 +2278,23 @@ test "XOR indirect HL" {
                 .ram(test_addr, test_val),
             &[_]*TestCpuState{
                 TestCpuState.init() // read nop(PC) from ram
-                    .rPC(0x0001)
+                    .rPc(0x0001)
                     .rA(reg_val)
                     .rHL(test_addr)
                     .ram(test_addr, test_val),
                 TestCpuState.init() // execute nop | read iut(PC) from ram
-                    .rPC(0x0002)
+                    .rPc(0x0002)
                     .rA(reg_val)
                     .rHL(test_addr)
                     .ram(test_addr, test_val),
                 TestCpuState.init() // execute iut: read val from ram(HL)
-                    .rPC(0x0002)
+                    .rPc(0x0002)
                     .rA(reg_val)
                     .rHL(test_addr)
                     .ram(test_addr, test_val),
                 TestCpuState.init() // execute iut: xor val to A | read (PC) from ram
-                    .rPC(0x0003)
-                    .rAF(res.all())
+                    .rPc(0x0003)
+                    .rAf(res.all())
                     .rHL(test_addr)
                     .ram(test_addr, test_val),
             },
@@ -2309,12 +2309,12 @@ test "XOR immediate" {
 
         const reg_val = 0xAA;
         var res = alu.AluRegister{
-            .Hi = reg_val,
-            .Lo = alu.RegisterFlags{
-                .C = 0,
-                .H = 0,
-                .N = 0,
-                .Z = 0,
+            .hi = reg_val,
+            .lo = alu.RegisterFlags{
+                .c = 0,
+                .h = 0,
+                .n = 0,
+                .z = 0,
                 .rest = 0,
             },
         };
@@ -2334,17 +2334,17 @@ test "XOR immediate" {
                 .rA(reg_val),
             &[_]*TestCpuState{
                 TestCpuState.init() // read nop(PC) from ram
-                    .rPC(0x0001)
+                    .rPc(0x0001)
                     .rA(reg_val),
                 TestCpuState.init() // execute nop | read iut(PC) from ram
-                    .rPC(0x0002)
+                    .rPc(0x0002)
                     .rA(reg_val),
                 TestCpuState.init() // execute iut: read val from ram(PC)
-                    .rPC(0x0003)
+                    .rPc(0x0003)
                     .rA(reg_val),
                 TestCpuState.init() // execute iut: xor val to A | read (PC) from ram
-                    .rPC(0x0004)
-                    .rAF(res.all()),
+                    .rPc(0x0004)
+                    .rAf(res.all()),
             },
         );
     }
@@ -2374,19 +2374,19 @@ test "Complement carry flag" {
                             .fZ(zero),
                         &[_]*TestCpuState{
                             TestCpuState.init() // read nop(PC) from ram
-                                .rPC(0x0001)
+                                .rPc(0x0001)
                                 .fC(carry)
                                 .fH(halfcarry)
                                 .fN(subtract)
                                 .fZ(zero),
                             TestCpuState.init() // execute nop | read iut(PC) from ram
-                                .rPC(0x0002)
+                                .rPc(0x0002)
                                 .fC(carry)
                                 .fH(halfcarry)
                                 .fN(subtract)
                                 .fZ(zero),
                             TestCpuState.init() // execute iut: set flags | read (PC) from ram
-                                .rPC(0x0003)
+                                .rPc(0x0003)
                                 .fC(~@as(u1, carry))
                                 .fH(0)
                                 .fN(0)
@@ -2423,19 +2423,19 @@ test "Set carry flag" {
                             .fZ(zero),
                         &[_]*TestCpuState{
                             TestCpuState.init() // read nop(PC) from ram
-                                .rPC(0x0001)
+                                .rPc(0x0001)
                                 .fC(carry)
                                 .fH(halfcarry)
                                 .fN(subtract)
                                 .fZ(zero),
                             TestCpuState.init() // execute nop | read iut(PC) from ram
-                                .rPC(0x0002)
+                                .rPc(0x0002)
                                 .fC(carry)
                                 .fH(halfcarry)
                                 .fN(subtract)
                                 .fZ(zero),
                             TestCpuState.init() // execute iut: set flags | read (PC) from ram
-                                .rPC(0x0003)
+                                .rPc(0x0003)
                                 .fC(1)
                                 .fH(0)
                                 .fN(0)
@@ -2458,12 +2458,12 @@ test "Decimal adjust accumulator" {
     const test_subtraction: u1 = 1;
 
     var res = alu.AluRegister{
-        .Hi = test_value,
-        .Lo = alu.RegisterFlags{
-            .C = test_carry,
-            .H = test_halfcarry,
-            .N = test_subtraction,
-            .Z = 0,
+        .hi = test_value,
+        .lo = alu.RegisterFlags{
+            .c = test_carry,
+            .h = test_halfcarry,
+            .n = test_subtraction,
+            .z = 0,
             .rest = 0,
         },
     };
@@ -2483,20 +2483,20 @@ test "Decimal adjust accumulator" {
             .fN(test_subtraction),
         &[_]*TestCpuState{
             TestCpuState.init() // read nop(PC) from ram
-                .rPC(0x0001)
+                .rPc(0x0001)
                 .rA(test_value)
                 .fC(test_carry)
                 .fH(test_halfcarry)
                 .fN(test_subtraction),
             TestCpuState.init() // execute nop | read iut(PC) from ram
-                .rPC(0x0002)
+                .rPc(0x0002)
                 .rA(test_value)
                 .fC(test_carry)
                 .fH(test_halfcarry)
                 .fN(test_subtraction),
             TestCpuState.init() // execute iut: set flags | read (PC) from ram
-                .rPC(0x0003)
-                .rAF(res.all()),
+                .rPc(0x0003)
+                .rAf(res.all()),
         },
     );
 }
@@ -2507,12 +2507,12 @@ test "Complement accumulator" {
     const test_value = 0xAA;
 
     var res = alu.AluRegister{
-        .Hi = test_value,
-        .Lo = alu.RegisterFlags{
-            .C = 0,
-            .H = 0,
-            .N = 0,
-            .Z = 0,
+        .hi = test_value,
+        .lo = alu.RegisterFlags{
+            .c = 0,
+            .h = 0,
+            .n = 0,
+            .z = 0,
             .rest = 0,
         },
     };
@@ -2529,14 +2529,14 @@ test "Complement accumulator" {
             .rA(test_value),
         &[_]*TestCpuState{
             TestCpuState.init() // read nop(PC) from ram
-                .rPC(0x0001)
+                .rPc(0x0001)
                 .rA(test_value),
             TestCpuState.init() // execute nop | read iut(PC) from ram
-                .rPC(0x0002)
+                .rPc(0x0002)
                 .rA(test_value),
             TestCpuState.init() // execute iut: complement A | read (PC) from ram
-                .rPC(0x0003)
-                .rAF(res.all()),
+                .rPc(0x0003)
+                .rAf(res.all()),
         },
     );
 }
@@ -2567,16 +2567,16 @@ test "Inc/Dec register 16" {
                         .reg16(@intCast(reg), value),
                     &[_]*TestCpuState{
                         TestCpuState.init() // read nop(PC) from ram
-                            .rPC(0x0001)
+                            .rPc(0x0001)
                             .reg16(@intCast(reg), value),
                         TestCpuState.init() // execute nop | read iut(PC) from ram
-                            .rPC(0x0002)
+                            .rPc(0x0002)
                             .reg16(@intCast(reg), value),
                         TestCpuState.init() // execute iut: inc/dec register
-                            .rPC(0x0002)
+                            .rPc(0x0002)
                             .reg16(@intCast(reg), expected),
                         TestCpuState.init() // read (PC) from ram
-                            .rPC(0x0003)
+                            .rPc(0x0003)
                             .reg16(@intCast(reg), expected),
                     },
                 );
@@ -2607,18 +2607,18 @@ test "Add register 16" {
                             const value_hi: u8 = @intCast((value & 0xFF00) >> 8);
 
                             var res_1 = alu.AluRegister{
-                                .Hi = 0,
-                                .Lo = alu.RegisterFlags{
-                                    .C = carry,
-                                    .H = halfcarry,
-                                    .N = subtract,
-                                    .Z = zero,
+                                .hi = 0,
+                                .lo = alu.RegisterFlags{
+                                    .c = carry,
+                                    .h = halfcarry,
+                                    .n = subtract,
+                                    .z = zero,
                                     .rest = 0,
                                 },
                             };
-                            const expected_lo = res_1.add_return(base_lo, value_lo, 0, zero);
+                            const expected_lo = res_1.addReturn(base_lo, value_lo, 0, zero);
                             var res_2 = res_1;
-                            const expected_hi = res_2.add_return(base_hi, value_hi, 1, zero);
+                            const expected_hi = res_2.addReturn(base_hi, value_hi, 1, zero);
 
                             const expected: u16 = (@as(u16, expected_hi) << 8) | expected_lo;
 
@@ -2640,7 +2640,7 @@ test "Add register 16" {
                                     .reg16(@intCast(reg), value),
                                 &[_]*TestCpuState{
                                     TestCpuState.init() // read nop(PC) from ram
-                                        .rPC(0x0001)
+                                        .rPc(0x0001)
                                         .fC(carry)
                                         .fH(halfcarry)
                                         .fN(subtract)
@@ -2648,7 +2648,7 @@ test "Add register 16" {
                                         .rHL(base)
                                         .reg16(@intCast(reg), value),
                                     TestCpuState.init() // execute nop | read iut(PC) from ram
-                                        .rPC(0x0002)
+                                        .rPc(0x0002)
                                         .fC(carry)
                                         .fH(halfcarry)
                                         .fN(subtract)
@@ -2656,20 +2656,20 @@ test "Add register 16" {
                                         .rHL(base)
                                         .reg16(@intCast(reg), value),
                                     TestCpuState.init() // execute iut: add lsb
-                                        .rPC(0x0002)
-                                        .fC(res_1.Lo.C)
-                                        .fH(res_1.Lo.H)
-                                        .fN(res_1.Lo.N)
-                                        .fZ(res_1.Lo.Z)
+                                        .rPc(0x0002)
+                                        .fC(res_1.lo.c)
+                                        .fH(res_1.lo.h)
+                                        .fN(res_1.lo.n)
+                                        .fZ(res_1.lo.z)
                                         .rH(base_hi)
                                         .rL(expected_lo)
                                         .reg16(@intCast(reg), value),
                                     TestCpuState.init() // execute iut: add msb | read (PC) from ram
-                                        .rPC(0x0003)
-                                        .fC(res_2.Lo.C)
-                                        .fH(res_2.Lo.H)
-                                        .fN(res_2.Lo.N)
-                                        .fZ(res_2.Lo.Z)
+                                        .rPc(0x0003)
+                                        .fC(res_2.lo.c)
+                                        .fH(res_2.lo.h)
+                                        .fN(res_2.lo.n)
+                                        .fZ(res_2.lo.z)
                                         .rHL(expected)
                                         .reg16(@intCast(reg), value),
                                 },
@@ -2697,18 +2697,18 @@ test "Add register HL" {
                         const value_hi: u8 = @intCast((value & 0xFF00) >> 8);
 
                         var res_1 = alu.AluRegister{
-                            .Hi = 0,
-                            .Lo = alu.RegisterFlags{
-                                .C = carry,
-                                .H = halfcarry,
-                                .N = subtract,
-                                .Z = zero,
+                            .hi = 0,
+                            .lo = alu.RegisterFlags{
+                                .c = carry,
+                                .h = halfcarry,
+                                .n = subtract,
+                                .z = zero,
                                 .rest = 0,
                             },
                         };
-                        const expected_lo = res_1.add_return(value_lo, value_lo, 0, zero);
+                        const expected_lo = res_1.addReturn(value_lo, value_lo, 0, zero);
                         var res_2 = res_1;
-                        const expected_hi = res_2.add_return(value_hi, value_hi, 1, zero);
+                        const expected_hi = res_2.addReturn(value_hi, value_hi, 1, zero);
 
                         const expected: u16 = (@as(u16, expected_hi) << 8) | expected_lo;
 
@@ -2729,33 +2729,33 @@ test "Add register HL" {
                                 .rHL(value),
                             &[_]*TestCpuState{
                                 TestCpuState.init() // read nop(PC) from ram
-                                    .rPC(0x0001)
+                                    .rPc(0x0001)
                                     .fC(carry)
                                     .fH(halfcarry)
                                     .fN(subtract)
                                     .fZ(zero)
                                     .rHL(value),
                                 TestCpuState.init() // execute nop | read iut(PC) from ram
-                                    .rPC(0x0002)
+                                    .rPc(0x0002)
                                     .fC(carry)
                                     .fH(halfcarry)
                                     .fN(subtract)
                                     .fZ(zero)
                                     .rHL(value),
                                 TestCpuState.init() // execute iut: add lsb
-                                    .rPC(0x0002)
-                                    .fC(res_1.Lo.C)
-                                    .fH(res_1.Lo.H)
-                                    .fN(res_1.Lo.N)
-                                    .fZ(res_1.Lo.Z)
+                                    .rPc(0x0002)
+                                    .fC(res_1.lo.c)
+                                    .fH(res_1.lo.h)
+                                    .fN(res_1.lo.n)
+                                    .fZ(res_1.lo.z)
                                     .rH(value_hi)
                                     .rL(expected_lo),
                                 TestCpuState.init() // execute iut: add msb | read (PC) from ram
-                                    .rPC(0x0003)
-                                    .fC(res_2.Lo.C)
-                                    .fH(res_2.Lo.H)
-                                    .fN(res_2.Lo.N)
-                                    .fZ(res_2.Lo.Z)
+                                    .rPc(0x0003)
+                                    .fC(res_2.lo.c)
+                                    .fH(res_2.lo.h)
+                                    .fN(res_2.lo.n)
+                                    .fZ(res_2.lo.z)
                                     .rHL(expected),
                             },
                         );
@@ -2775,17 +2775,17 @@ test "Add SP relative" {
         const unsigned_e: u8 = @intCast(e);
 
         var reg = alu.AluRegister{
-            .Hi = 0x00,
-            .Lo = alu.RegisterFlags{
-                .C = 0,
-                .H = 0,
-                .N = 0,
-                .Z = 0,
+            .hi = 0x00,
+            .lo = alu.RegisterFlags{
+                .c = 0,
+                .h = 0,
+                .n = 0,
+                .z = 0,
                 .rest = 0,
             },
         };
-        const expected_lo = reg.add_return(@intCast(test_value & 0xFF), unsigned_e, 0, 0);
-        const expected_hi = reg.add_adj(@intCast((test_value & 0xFF00) >> 8), unsigned_e);
+        const expected_lo = reg.addReturn(@intCast(test_value & 0xFF), unsigned_e, 0, 0);
+        const expected_hi = reg.addAdj(@intCast((test_value & 0xFF00) >> 8), unsigned_e);
         const expected = (@as(u16, expected_hi) << 8) | expected_lo;
 
         const name = try std.fmt.allocPrint(std.testing.allocator, "Add SP relative (e={d})", .{e});
@@ -2799,32 +2799,32 @@ test "Add SP relative" {
                 0xFD,
             },
             TestCpuState.init()
-                .rSP(test_value),
+                .rSp(test_value),
             &[_]*TestCpuState{
                 TestCpuState.init() // read nop(PC) from ram
-                    .rPC(0x0001)
-                    .rSP(test_value),
+                    .rPc(0x0001)
+                    .rSp(test_value),
                 TestCpuState.init() // execute nop | read iut(PC) from ram
-                    .rPC(0x0002)
-                    .rSP(test_value),
+                    .rPc(0x0002)
+                    .rSp(test_value),
                 TestCpuState.init() // execute iut: read e(PC) from ram
-                    .rPC(0x0003)
-                    .rSP(test_value),
+                    .rPc(0x0003)
+                    .rSp(test_value),
                 TestCpuState.init() // execute iut: add e to SP_lsb
-                    .rPC(0x0003)
-                    .fC(reg.Lo.C)
-                    .fH(reg.Lo.H)
-                    .rSP(test_value),
+                    .rPc(0x0003)
+                    .fC(reg.lo.c)
+                    .fH(reg.lo.h)
+                    .rSp(test_value),
                 TestCpuState.init() // execute iut: add carry/adj to SP_msb
-                    .rPC(0x0003)
-                    .fC(reg.Lo.C)
-                    .fH(reg.Lo.H)
-                    .rSP(test_value),
+                    .rPc(0x0003)
+                    .fC(reg.lo.c)
+                    .fH(reg.lo.h)
+                    .rSp(test_value),
                 TestCpuState.init() // execute iut: assign WZ to SP | read (PC) from ram
-                    .rPC(0x0004)
-                    .fC(reg.Lo.C)
-                    .fH(reg.Lo.H)
-                    .rSP(expected),
+                    .rPc(0x0004)
+                    .fC(reg.lo.c)
+                    .fH(reg.lo.h)
+                    .rSp(expected),
             },
         );
     }
@@ -2843,17 +2843,17 @@ test "rotate accumulator" {
             const instr = 0b000_00_111 | (@as(u8, op) << 3);
 
             var reg = alu.AluRegister{
-                .Hi = 0,
-                .Lo = alu.RegisterFlags{
-                    .C = 0,
-                    .H = 0,
-                    .N = 0,
-                    .Z = 0,
+                .hi = 0,
+                .lo = alu.RegisterFlags{
+                    .c = 0,
+                    .h = 0,
+                    .n = 0,
+                    .z = 0,
                     .rest = 0,
                 },
             };
             const res = aluop(&reg, val);
-            reg.Lo.Z = 0;
+            reg.lo.z = 0;
 
             const name = try std.fmt.allocPrint(std.testing.allocator, "rotate accumulator ({d}) (op={b})", .{ val, op });
             defer std.testing.allocator.free(name);
@@ -2868,18 +2868,18 @@ test "rotate accumulator" {
                     .rA(val),
                 &[_]*TestCpuState{
                     TestCpuState.init() // read nop(PC) from ram
-                        .rPC(0x0001)
+                        .rPc(0x0001)
                         .rA(val),
                     TestCpuState.init() // execute nop | read iut(PC) from ram
-                        .rPC(0x0002)
+                        .rPc(0x0002)
                         .rA(val),
                     TestCpuState.init() // execute iut: operate on reg | read (PC) from ram
-                        .rPC(0x0003)
+                        .rPc(0x0003)
                         .rA(res)
-                        .fC(reg.Lo.C)
-                        .fH(reg.Lo.H)
-                        .fN(reg.Lo.N)
-                        .fZ(reg.Lo.Z),
+                        .fC(reg.lo.c)
+                        .fH(reg.lo.h)
+                        .fN(reg.lo.n)
+                        .fZ(reg.lo.z),
                 },
             );
         }
@@ -2904,12 +2904,12 @@ test "rotate/swap register" {
                 const instr = 0b00_000_000 | (@as(u8, op) << 3) | regIdx;
 
                 var reg = alu.AluRegister{
-                    .Hi = 0,
-                    .Lo = alu.RegisterFlags{
-                        .C = 0,
-                        .H = 0,
-                        .N = 0,
-                        .Z = 0,
+                    .hi = 0,
+                    .lo = alu.RegisterFlags{
+                        .c = 0,
+                        .h = 0,
+                        .n = 0,
+                        .z = 0,
                         .rest = 0,
                     },
                 };
@@ -2929,21 +2929,21 @@ test "rotate/swap register" {
                         .reg(regIdx, val),
                     &[_]*TestCpuState{
                         TestCpuState.init() // read nop(PC) from ram
-                            .rPC(0x0001)
+                            .rPc(0x0001)
                             .reg(regIdx, val),
                         TestCpuState.init() // execute nop | read prefix(PC) from ram
-                            .rPC(0x0002)
+                            .rPc(0x0002)
                             .reg(regIdx, val),
                         TestCpuState.init() // read iut(PC) from ram
-                            .rPC(0x0003)
+                            .rPc(0x0003)
                             .reg(regIdx, val),
                         TestCpuState.init() // execute iut: operate on reg | read (PC) from ram
-                            .rPC(0x0004)
+                            .rPc(0x0004)
                             .reg(regIdx, res)
-                            .fC(reg.Lo.C)
-                            .fH(reg.Lo.H)
-                            .fN(reg.Lo.N)
-                            .fZ(reg.Lo.Z),
+                            .fC(reg.lo.c)
+                            .fH(reg.lo.h)
+                            .fN(reg.lo.n)
+                            .fZ(reg.lo.z),
                     },
                 );
             }
@@ -2969,12 +2969,12 @@ test "rotate/swap HL indirect" {
             const instr = 0b00_000_110 | (@as(u8, op) << 3);
 
             var reg = alu.AluRegister{
-                .Hi = 0,
-                .Lo = alu.RegisterFlags{
-                    .C = 0,
-                    .H = 0,
-                    .N = 0,
-                    .Z = 0,
+                .hi = 0,
+                .lo = alu.RegisterFlags{
+                    .c = 0,
+                    .h = 0,
+                    .n = 0,
+                    .z = 0,
                     .rest = 0,
                 },
             };
@@ -2995,37 +2995,37 @@ test "rotate/swap HL indirect" {
                     .ram(addr, val),
                 &[_]*TestCpuState{
                     TestCpuState.init() // read nop(PC) from ram
-                        .rPC(0x0001)
+                        .rPc(0x0001)
                         .rHL(addr)
                         .ram(addr, val),
                     TestCpuState.init() // execute nop | read prefix(PC) from ram
-                        .rPC(0x0002)
+                        .rPc(0x0002)
                         .rHL(addr)
                         .ram(addr, val),
                     TestCpuState.init() // read iut(PC) from ram
-                        .rPC(0x0003)
+                        .rPc(0x0003)
                         .rHL(addr)
                         .ram(addr, val),
                     TestCpuState.init() // execute iut: read val(HL) from ram
-                        .rPC(0x0003)
+                        .rPc(0x0003)
                         .rHL(addr)
                         .ram(addr, val),
                     TestCpuState.init() // execute iut: operate on val | write val to ram
-                        .rPC(0x0003)
+                        .rPc(0x0003)
                         .rHL(addr)
                         .ram(addr, res)
-                        .fC(reg.Lo.C)
-                        .fH(reg.Lo.H)
-                        .fN(reg.Lo.N)
-                        .fZ(reg.Lo.Z),
+                        .fC(reg.lo.c)
+                        .fH(reg.lo.h)
+                        .fN(reg.lo.n)
+                        .fZ(reg.lo.z),
                     TestCpuState.init() // execute iut: read (PC)
-                        .rPC(0x0004)
+                        .rPc(0x0004)
                         .rHL(addr)
                         .ram(addr, res)
-                        .fC(reg.Lo.C)
-                        .fH(reg.Lo.H)
-                        .fN(reg.Lo.N)
-                        .fZ(reg.Lo.Z),
+                        .fC(reg.lo.c)
+                        .fH(reg.lo.h)
+                        .fN(reg.lo.n)
+                        .fZ(reg.lo.z),
                 },
             );
         }
@@ -3044,12 +3044,12 @@ test "test bit register" {
                 const instr = 0b01_000_000 | (@as(u8, bitIdx) << 3) | regIdx;
 
                 var reg = alu.AluRegister{
-                    .Hi = 0,
-                    .Lo = alu.RegisterFlags{
-                        .C = 0,
-                        .H = 0,
-                        .N = 0,
-                        .Z = 0,
+                    .hi = 0,
+                    .lo = alu.RegisterFlags{
+                        .c = 0,
+                        .h = 0,
+                        .n = 0,
+                        .z = 0,
                         .rest = 0,
                     },
                 };
@@ -3069,21 +3069,21 @@ test "test bit register" {
                         .reg(regIdx, val),
                     &[_]*TestCpuState{
                         TestCpuState.init() // read nop(PC) from ram
-                            .rPC(0x0001)
+                            .rPc(0x0001)
                             .reg(regIdx, val),
                         TestCpuState.init() // execute nop | read prefix(PC) from ram
-                            .rPC(0x0002)
+                            .rPc(0x0002)
                             .reg(regIdx, val),
                         TestCpuState.init() // read iut(PC) from ram
-                            .rPC(0x0003)
+                            .rPc(0x0003)
                             .reg(regIdx, val),
                         TestCpuState.init() // execute iut: operate on reg | read (PC) from ram
-                            .rPC(0x0004)
+                            .rPc(0x0004)
                             .reg(regIdx, val)
-                            .fC(reg.Lo.C)
-                            .fH(reg.Lo.H)
-                            .fN(reg.Lo.N)
-                            .fZ(reg.Lo.Z),
+                            .fC(reg.lo.c)
+                            .fH(reg.lo.h)
+                            .fN(reg.lo.n)
+                            .fZ(reg.lo.z),
                     },
                 );
             }
@@ -3102,12 +3102,12 @@ test "test bit HL" {
             const instr = 0b01_000_110 | (@as(u8, bitIdx) << 3);
 
             var reg = alu.AluRegister{
-                .Hi = 0,
-                .Lo = alu.RegisterFlags{
-                    .C = 0,
-                    .H = 0,
-                    .N = 0,
-                    .Z = 0,
+                .hi = 0,
+                .lo = alu.RegisterFlags{
+                    .c = 0,
+                    .h = 0,
+                    .n = 0,
+                    .z = 0,
                     .rest = 0,
                 },
             };
@@ -3128,29 +3128,29 @@ test "test bit HL" {
                     .ram(addr, val),
                 &[_]*TestCpuState{
                     TestCpuState.init() // read nop(PC) from ram
-                        .rPC(0x0001)
+                        .rPc(0x0001)
                         .rHL(addr)
                         .ram(addr, val),
                     TestCpuState.init() // execute nop | read prefix(PC) from ram
-                        .rPC(0x0002)
+                        .rPc(0x0002)
                         .rHL(addr)
                         .ram(addr, val),
                     TestCpuState.init() // read iut(PC) from ram
-                        .rPC(0x0003)
+                        .rPc(0x0003)
                         .rHL(addr)
                         .ram(addr, val),
                     TestCpuState.init() // execute iut: read val(HL) from ram
-                        .rPC(0x0003)
+                        .rPc(0x0003)
                         .rHL(addr)
                         .ram(addr, val),
                     TestCpuState.init() // execute iut: operate on val | read(PC)
-                        .rPC(0x0004)
+                        .rPc(0x0004)
                         .rHL(addr)
                         .ram(addr, val)
-                        .fC(reg.Lo.C)
-                        .fH(reg.Lo.H)
-                        .fN(reg.Lo.N)
-                        .fZ(reg.Lo.Z),
+                        .fC(reg.lo.c)
+                        .fH(reg.lo.h)
+                        .fN(reg.lo.n)
+                        .fZ(reg.lo.z),
                 },
             );
         }
@@ -3189,16 +3189,16 @@ test "set/reset bit register" {
                             .reg(regIdx, val),
                         &[_]*TestCpuState{
                             TestCpuState.init() // read nop(PC) from ram
-                                .rPC(0x0001)
+                                .rPc(0x0001)
                                 .reg(regIdx, val),
                             TestCpuState.init() // execute nop | read prefix(PC) from ram
-                                .rPC(0x0002)
+                                .rPc(0x0002)
                                 .reg(regIdx, val),
                             TestCpuState.init() // read iut(PC) from ram
-                                .rPC(0x0003)
+                                .rPc(0x0003)
                                 .reg(regIdx, val),
                             TestCpuState.init() // execute iut: operate on reg | read (PC) from ram
-                                .rPC(0x0004)
+                                .rPc(0x0004)
                                 .reg(regIdx, res),
                         },
                     );
@@ -3237,27 +3237,27 @@ test "set/reset bit HL" {
                         .ram(addr, val),
                     &[_]*TestCpuState{
                         TestCpuState.init() // read nop(PC) from ram
-                            .rPC(0x0001)
+                            .rPc(0x0001)
                             .rHL(addr)
                             .ram(addr, val),
                         TestCpuState.init() // execute nop | read prefix(PC) from ram
-                            .rPC(0x0002)
+                            .rPc(0x0002)
                             .rHL(addr)
                             .ram(addr, val),
                         TestCpuState.init() // read iut(PC) from ram
-                            .rPC(0x0003)
+                            .rPc(0x0003)
                             .rHL(addr)
                             .ram(addr, val),
                         TestCpuState.init() // execute iut: read val(HL) from ram
-                            .rPC(0x0003)
+                            .rPc(0x0003)
                             .rHL(addr)
                             .ram(addr, val),
                         TestCpuState.init() // execute iut: operate on val | write val(HL) to ram
-                            .rPC(0x0003)
+                            .rPc(0x0003)
                             .rHL(addr)
                             .ram(addr, res),
                         TestCpuState.init() // execute iut: read (PC) from ram
-                            .rPC(0x0004)
+                            .rPc(0x0004)
                             .rHL(addr)
                             .ram(addr, res),
                     },
@@ -3284,17 +3284,17 @@ test "test jump immediate" {
         TestCpuState.init(),
         &[_]*TestCpuState{
             TestCpuState.init() // read nop(PC) from ram
-                .rPC(0x0001),
+                .rPc(0x0001),
             TestCpuState.init() // execute nop | read iut(PC) from ram
-                .rPC(0x0002),
+                .rPc(0x0002),
             TestCpuState.init() // execute iut: read lo(PC) from ram
-                .rPC(0x0003),
+                .rPc(0x0003),
             TestCpuState.init() // execute iut: read hi(PC) from ram
-                .rPC(0x0004),
+                .rPc(0x0004),
             TestCpuState.init() // execute iut: write PC
-                .rPC(addr),
+                .rPc(addr),
             TestCpuState.init() // execute iut: read (PC) from ram
-                .rPC(addr + 1),
+                .rPc(addr + 1),
         },
     );
 }
@@ -3315,13 +3315,13 @@ test "test jump HL" {
             .rHL(addr),
         &[_]*TestCpuState{
             TestCpuState.init() // read nop(PC) from ram
-                .rPC(0x0001)
+                .rPc(0x0001)
                 .rHL(addr),
             TestCpuState.init() // execute nop | read iut(PC) from ram
-                .rPC(0x0002)
+                .rPc(0x0002)
                 .rHL(addr),
             TestCpuState.init() // execute iut: write PC | read (PC) from ram
-                .rPC(addr + 1)
+                .rPc(addr + 1)
                 .rHL(addr),
         },
     );
@@ -3350,34 +3350,34 @@ test "test jump immediate conditional" {
             try states.append(TestCpuState.init() // read nop(PC) from ram
                 .fZ(Z)
                 .fC(C)
-                .rPC(0x0001));
+                .rPc(0x0001));
             try states.append(TestCpuState.init() // execute nop | read iut(PC) from ram
                 .fZ(Z)
                 .fC(C)
-                .rPC(0x0002));
+                .rPc(0x0002));
             try states.append(TestCpuState.init() // execute iut: read lo(PC) from ram
                 .fZ(Z)
                 .fC(C)
-                .rPC(0x0003));
+                .rPc(0x0003));
             try states.append(TestCpuState.init() // execute iut: read hi(PC) from ram | check condition
                 .fZ(Z)
                 .fC(C)
-                .rPC(0x0004));
+                .rPc(0x0004));
 
             if (condTrue == 1) {
                 try states.append(TestCpuState.init() // execute iut: write PC
                     .fZ(Z)
                     .fC(C)
-                    .rPC(addr));
+                    .rPc(addr));
                 try states.append(TestCpuState.init() // execute iut: read (PC) from ram
                     .fZ(Z)
                     .fC(C)
-                    .rPC(addr + 1));
+                    .rPc(addr + 1));
             } else {
                 try states.append(TestCpuState.init() // execute iut: read (PC) from ram
                     .fZ(Z)
                     .fC(C)
-                    .rPC(0x0005));
+                    .rPc(0x0005));
             }
 
             try runTestCase(
@@ -3413,15 +3413,15 @@ test "test jump relative" {
             TestCpuState.init(),
             &[_]*TestCpuState{
                 TestCpuState.init() // read nop(PC) from ram
-                    .rPC(0x0001),
+                    .rPc(0x0001),
                 TestCpuState.init() // execute nop | read iut(PC) from ram
-                    .rPC(0x0002),
+                    .rPc(0x0002),
                 TestCpuState.init() // execute iut: read e(PC) from ram
-                    .rPC(0x0003),
+                    .rPc(0x0003),
                 TestCpuState.init() // execute iut: calculate PC
-                    .rPC(0x0003),
+                    .rPc(0x0003),
                 TestCpuState.init() // execute iut: write PC | read (PC) from ram
-                    .rPC(0x0003 + e + 1),
+                    .rPc(0x0003 + e + 1),
             },
         );
     }
@@ -3450,30 +3450,30 @@ test "test jump relative conditional" {
                 try states.append(TestCpuState.init() // read nop(PC) from ram
                     .fZ(Z)
                     .fC(C)
-                    .rPC(0x0001));
+                    .rPc(0x0001));
                 try states.append(TestCpuState.init() // execute nop | read iut(PC) from ram
                     .fZ(Z)
                     .fC(C)
-                    .rPC(0x0002));
+                    .rPc(0x0002));
                 try states.append(TestCpuState.init() // execute iut: read e(PC) from ram | check condition
                     .fZ(Z)
                     .fC(C)
-                    .rPC(0x0003));
+                    .rPc(0x0003));
 
                 if (condTrue == 1) {
                     try states.append(TestCpuState.init() // execute iut: calculate PC
                         .fZ(Z)
                         .fC(C)
-                        .rPC(0x0003));
+                        .rPc(0x0003));
                     try states.append(TestCpuState.init() // execute iut: write PC | read (PC) from ram
                         .fZ(Z)
                         .fC(C)
-                        .rPC(0x0003 + e + 1));
+                        .rPc(0x0003 + e + 1));
                 } else {
                     try states.append(TestCpuState.init() // execute iut: read (PC) from ram
                         .fZ(Z)
                         .fC(C)
-                        .rPC(0x0004));
+                        .rPc(0x0004));
                 }
 
                 try runTestCase(
@@ -3509,35 +3509,35 @@ test "test call" {
             @intCast((addr & 0xFF00) >> 8),
         },
         TestCpuState.init()
-            .rSP(sp),
+            .rSp(sp),
         &[_]*TestCpuState{
             TestCpuState.init() // read nop(PC) from ram
-                .rPC(0x0001)
-                .rSP(sp),
+                .rPc(0x0001)
+                .rSp(sp),
             TestCpuState.init() // execute nop | read iut(PC) from ram
-                .rPC(0x0002)
-                .rSP(sp),
+                .rPc(0x0002)
+                .rSp(sp),
             TestCpuState.init() // execute iut: read lo(PC) from ram
-                .rPC(0x0003)
-                .rSP(sp),
+                .rPc(0x0003)
+                .rSp(sp),
             TestCpuState.init() // execute iut: read hi(PC) from ram
-                .rPC(0x0004)
-                .rSP(sp),
+                .rPc(0x0004)
+                .rSp(sp),
             TestCpuState.init() // execute iut: decrement SP
-                .rPC(0x0004)
-                .rSP(sp - 1),
+                .rPc(0x0004)
+                .rSp(sp - 1),
             TestCpuState.init() // execute iut: write PC_hi to ram(SP-1)
-                .rPC(0x0004)
-                .rSP(sp - 2)
+                .rPc(0x0004)
+                .rSp(sp - 2)
                 .ram(sp - 1, 0x00),
             TestCpuState.init() // execute iut: write PC_lo to ram(SP-2) | write PC
-                .rPC(addr)
-                .rSP(sp - 2)
+                .rPc(addr)
+                .rSp(sp - 2)
                 .ram(sp - 1, 0x00)
                 .ram(sp - 2, 0x04),
             TestCpuState.init() // execute iut: read (PC) from ram
-                .rPC(addr + 1)
-                .rSP(sp - 2)
+                .rPc(addr + 1)
+                .rSp(sp - 2)
                 .ram(sp - 1, 0x00)
                 .ram(sp - 2, 0x04),
         },
@@ -3568,56 +3568,56 @@ test "test call conditional" {
             try states.append(TestCpuState.init() // read nop(PC) from ram
                 .fZ(Z)
                 .fC(C)
-                .rPC(0x0001)
-                .rSP(sp));
+                .rPc(0x0001)
+                .rSp(sp));
             try states.append(TestCpuState.init() // execute nop | read iut(PC) from ram
                 .fZ(Z)
                 .fC(C)
-                .rPC(0x0002)
-                .rSP(sp));
+                .rPc(0x0002)
+                .rSp(sp));
             try states.append(TestCpuState.init() // execute iut: read lo(PC) from ram
                 .fZ(Z)
                 .fC(C)
-                .rPC(0x0003)
-                .rSP(sp));
+                .rPc(0x0003)
+                .rSp(sp));
             try states.append(TestCpuState.init() // execute iut: read hi(PC) from ram | check condition
                 .fZ(Z)
                 .fC(C)
-                .rPC(0x0004)
-                .rSP(sp));
+                .rPc(0x0004)
+                .rSp(sp));
 
             if (condTrue == 1) {
                 try states.append(TestCpuState.init() // execute iut: decrement SP
                     .fZ(Z)
                     .fC(C)
-                    .rPC(0x0004)
-                    .rSP(sp - 1));
+                    .rPc(0x0004)
+                    .rSp(sp - 1));
                 try states.append(TestCpuState.init() // execute iut: write PC_hi to ram(SP-1)
                     .fZ(Z)
                     .fC(C)
-                    .rPC(0x0004)
-                    .rSP(sp - 2)
+                    .rPc(0x0004)
+                    .rSp(sp - 2)
                     .ram(sp - 1, 0x00));
                 try states.append(TestCpuState.init() // execute iut: write PC_lo to ram(SP-2) | write PC
                     .fZ(Z)
                     .fC(C)
-                    .rPC(addr)
-                    .rSP(sp - 2)
+                    .rPc(addr)
+                    .rSp(sp - 2)
                     .ram(sp - 1, 0x00)
                     .ram(sp - 2, 0x04));
                 try states.append(TestCpuState.init() // execute iut: read (PC) from ram
                     .fZ(Z)
                     .fC(C)
-                    .rPC(addr + 1)
-                    .rSP(sp - 2)
+                    .rPc(addr + 1)
+                    .rSp(sp - 2)
                     .ram(sp - 1, 0x00)
                     .ram(sp - 2, 0x04));
             } else {
                 try states.append(TestCpuState.init() // execute iut: read (PC) from ram
                     .fZ(Z)
                     .fC(C)
-                    .rPC(0x0005)
-                    .rSP(sp));
+                    .rPc(0x0005)
+                    .rSp(sp));
             }
 
             try runTestCase(
@@ -3631,7 +3631,7 @@ test "test call conditional" {
                 TestCpuState.init()
                     .fZ(Z)
                     .fC(C)
-                    .rSP(sp),
+                    .rSp(sp),
                 states.items,
             );
         }
@@ -3651,38 +3651,38 @@ test "test ret" {
             instr,
         },
         TestCpuState.init()
-            .rSP(sp)
+            .rSp(sp)
             .ram(sp, 0x10)
             .ram(sp + 1, 0x01),
         &[_]*TestCpuState{
             TestCpuState.init() // read nop(PC) from ram
-                .rPC(0x0001)
-                .rSP(sp)
+                .rPc(0x0001)
+                .rSp(sp)
                 .ram(sp, 0x10)
                 .ram(sp + 1, 0x01),
             TestCpuState.init() // execute nop | read iut(PC) from ram
-                .rPC(0x0002)
-                .rSP(sp)
+                .rPc(0x0002)
+                .rSp(sp)
                 .ram(sp, 0x10)
                 .ram(sp + 1, 0x01),
             TestCpuState.init() // execute iut: read PC_lo(SP) | inc SP
-                .rPC(0x0002)
-                .rSP(sp + 1)
+                .rPc(0x0002)
+                .rSp(sp + 1)
                 .ram(sp, 0x10)
                 .ram(sp + 1, 0x01),
             TestCpuState.init() // execute iut: read PC_hi(SP) | inc SP
-                .rPC(0x0002)
-                .rSP(sp + 2)
+                .rPc(0x0002)
+                .rSp(sp + 2)
                 .ram(sp, 0x10)
                 .ram(sp + 1, 0x01),
             TestCpuState.init() // execute iut: write PC
-                .rPC(0x0110)
-                .rSP(sp + 2)
+                .rPc(0x0110)
+                .rSp(sp + 2)
                 .ram(sp, 0x10)
                 .ram(sp + 1, 0x01),
             TestCpuState.init() // execute iut: read (PC) from ram
-                .rPC(0x0111)
-                .rSP(sp + 2)
+                .rPc(0x0111)
+                .rSp(sp + 2)
                 .ram(sp, 0x10)
                 .ram(sp + 1, 0x01),
         },
@@ -3712,22 +3712,22 @@ test "test ret conditional" {
             try states.append(TestCpuState.init() // read nop(PC) from ram
                 .fZ(Z)
                 .fC(C)
-                .rPC(0x0001)
-                .rSP(sp)
+                .rPc(0x0001)
+                .rSp(sp)
                 .ram(sp, 0x10)
                 .ram(sp + 1, 0x01));
             try states.append(TestCpuState.init() // execute nop | read iut(PC) from ram
                 .fZ(Z)
                 .fC(C)
-                .rPC(0x0002)
-                .rSP(sp)
+                .rPc(0x0002)
+                .rSp(sp)
                 .ram(sp, 0x10)
                 .ram(sp + 1, 0x01));
             try states.append(TestCpuState.init() // execute iut | check condition
                 .fZ(Z)
                 .fC(C)
-                .rPC(0x0002)
-                .rSP(sp)
+                .rPc(0x0002)
+                .rSp(sp)
                 .ram(sp, 0x10)
                 .ram(sp + 1, 0x01));
 
@@ -3735,37 +3735,37 @@ test "test ret conditional" {
                 try states.append(TestCpuState.init() // execute iut: inc SP | read PC_lo(SP)
                     .fZ(Z)
                     .fC(C)
-                    .rPC(0x0002)
-                    .rSP(sp + 1)
+                    .rPc(0x0002)
+                    .rSp(sp + 1)
                     .ram(sp, 0x10)
                     .ram(sp + 1, 0x01));
                 try states.append(TestCpuState.init() // execute iut: inc SP | read PC_hi(SP)
                     .fZ(Z)
                     .fC(C)
-                    .rPC(0x0002)
-                    .rSP(sp + 2)
+                    .rPc(0x0002)
+                    .rSp(sp + 2)
                     .ram(sp, 0x10)
                     .ram(sp + 1, 0x01));
                 try states.append(TestCpuState.init() // execute iut: write PC
                     .fZ(Z)
                     .fC(C)
-                    .rPC(0x0110)
-                    .rSP(sp + 2)
+                    .rPc(0x0110)
+                    .rSp(sp + 2)
                     .ram(sp, 0x10)
                     .ram(sp + 1, 0x01));
                 try states.append(TestCpuState.init() // execute iut: read (PC) from ram
                     .fZ(Z)
                     .fC(C)
-                    .rPC(0x0111)
-                    .rSP(sp + 2)
+                    .rPc(0x0111)
+                    .rSp(sp + 2)
                     .ram(sp, 0x10)
                     .ram(sp + 1, 0x01));
             } else {
                 try states.append(TestCpuState.init() // execute iut: read (PC) from ram
                     .fZ(Z)
                     .fC(C)
-                    .rPC(0x0003)
-                    .rSP(sp)
+                    .rPc(0x0003)
+                    .rSp(sp)
                     .ram(sp, 0x10)
                     .ram(sp + 1, 0x01));
             }
@@ -3779,7 +3779,7 @@ test "test ret conditional" {
                 TestCpuState.init()
                     .fZ(Z)
                     .fC(C)
-                    .rSP(sp)
+                    .rSp(sp)
                     .ram(sp, 0x10)
                     .ram(sp + 1, 0x01),
                 states.items,
@@ -3801,40 +3801,40 @@ test "test reti" {
             instr,
         },
         TestCpuState.init()
-            .rSP(sp)
+            .rSp(sp)
             .ram(sp, 0x10)
             .ram(sp + 1, 0x01),
         &[_]*TestCpuState{
             TestCpuState.init() // read nop(PC) from ram
-                .rPC(0x0001)
-                .rSP(sp)
+                .rPc(0x0001)
+                .rSp(sp)
                 .ram(sp, 0x10)
                 .ram(sp + 1, 0x01),
             TestCpuState.init() // execute nop | read iut(PC) from ram
-                .rPC(0x0002)
-                .rSP(sp)
+                .rPc(0x0002)
+                .rSp(sp)
                 .ram(sp, 0x10)
                 .ram(sp + 1, 0x01),
             TestCpuState.init() // execute iut: read PC_lo(SP) | inc SP
-                .rPC(0x0002)
-                .rSP(sp + 1)
+                .rPc(0x0002)
+                .rSp(sp + 1)
                 .ram(sp, 0x10)
                 .ram(sp + 1, 0x01),
             TestCpuState.init() // execute iut: read PC_hi(SP) | inc SP
-                .rPC(0x0002)
-                .rSP(sp + 2)
+                .rPc(0x0002)
+                .rSp(sp + 2)
                 .ram(sp, 0x10)
                 .ram(sp + 1, 0x01),
             TestCpuState.init() // execute iut: write PC | set IME
-                .rPC(0x0110)
-                .rSP(sp + 2)
-                .rIME(1)
+                .rPc(0x0110)
+                .rSp(sp + 2)
+                .rIme(1)
                 .ram(sp, 0x10)
                 .ram(sp + 1, 0x01),
             TestCpuState.init() // execute iut: read (PC) from ram
-                .rPC(0x0111)
-                .rSP(sp + 2)
-                .rIME(1)
+                .rPc(0x0111)
+                .rSp(sp + 2)
+                .rIme(1)
                 .ram(sp, 0x10)
                 .ram(sp + 1, 0x01),
         },
@@ -3857,29 +3857,29 @@ test "test rst" {
                 instr,
             },
             TestCpuState.init()
-                .rSP(sp),
+                .rSp(sp),
             &[_]*TestCpuState{
                 TestCpuState.init() // read nop(PC) from ram
-                    .rPC(0x0001)
-                    .rSP(sp),
+                    .rPc(0x0001)
+                    .rSp(sp),
                 TestCpuState.init() // execute nop | read iut(PC) from ram
-                    .rPC(0x0002)
-                    .rSP(sp),
+                    .rPc(0x0002)
+                    .rSp(sp),
                 TestCpuState.init() // execute iut: decrement SP
-                    .rPC(0x0002)
-                    .rSP(sp - 1),
+                    .rPc(0x0002)
+                    .rSp(sp - 1),
                 TestCpuState.init() // execute iut: write PC_hi to ram(SP-1)
-                    .rPC(0x0002)
-                    .rSP(sp - 2)
+                    .rPc(0x0002)
+                    .rSp(sp - 2)
                     .ram(sp - 1, 0x00),
                 TestCpuState.init() // execute iut: write PC_lo to ram(SP-2) | write PC
-                    .rPC(addr)
-                    .rSP(sp - 2)
+                    .rPc(addr)
+                    .rSp(sp - 2)
                     .ram(sp - 1, 0x00)
                     .ram(sp - 2, 0x02),
                 TestCpuState.init() // execute iut: read (PC) from ram
-                    .rPC(addr + 1)
-                    .rSP(sp - 2)
+                    .rPc(addr + 1)
+                    .rSp(sp - 2)
                     .ram(sp - 1, 0x00)
                     .ram(sp - 2, 0x02),
             },
@@ -3914,34 +3914,34 @@ test "test ei di" {
         TestCpuState.init(),
         &[_]*TestCpuState{
             TestCpuState.init() // read nop(PC) from ram
-                .rPC(0x0001),
+                .rPc(0x0001),
             TestCpuState.init() // execute nop | read di(PC) from ram
-                .rPC(0x0002),
+                .rPc(0x0002),
             TestCpuState.init() // execute di: disable interrupts | read nop(PC) from ram
-                .rPC(0x0003),
+                .rPc(0x0003),
             TestCpuState.init() // execute nop | read ei(PC) from ram
-                .rPC(0x0004),
+                .rPc(0x0004),
             TestCpuState.init() // execute ei: schedule interrupt enable | read ld(PC) from ram
-                .rPC(0x0005),
+                .rPc(0x0005),
             TestCpuState.init() // execute ld: read immediate(PC)
-                .rPC(0x0006),
+                .rPc(0x0006),
             TestCpuState.init() // execute ld: read immediate(PC)
-                .rPC(0x0007),
+                .rPc(0x0007),
             TestCpuState.init() // execute ld: read di(PC) from ram | interrupts are enabled
-                .rPC(0x0008)
-                .rIME(1),
+                .rPc(0x0008)
+                .rIme(1),
             TestCpuState.init() // execute di: disable interrupts | read ei(PC) from ram
-                .rPC(0x0009),
+                .rPc(0x0009),
             TestCpuState.init() // execute ei: schedule interrupt enable | read di(PC) from ram
-                .rPC(0x000A),
+                .rPc(0x000A),
             TestCpuState.init() // execute di: cancel interrupt enable | read nop(PC) from ram
-                .rPC(0x000B),
+                .rPc(0x000B),
             TestCpuState.init() // execute nop | read nop(PC) from ram
-                .rPC(0x000C),
+                .rPc(0x000C),
             TestCpuState.init() // execute nop | read nop(PC) from ram
-                .rPC(0x000D),
+                .rPc(0x000D),
             TestCpuState.init() // execute nop | read 0xFD(PC) from ram
-                .rPC(0x000E),
+                .rPc(0x000E),
         },
     );
 }

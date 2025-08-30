@@ -31,7 +31,7 @@ pub fn FixedSizeHeap(Element: type, Capacity: comptime_int, comp: fn (a: Element
 
             self.elements[self.count] = element;
             self.count += 1;
-            self.sift_up();
+            self.siftUp();
         }
 
         pub fn pop(self: *This) if (should_panic) Element else (FixedSizeHeapError!Element) {
@@ -46,7 +46,7 @@ pub fn FixedSizeHeap(Element: type, Capacity: comptime_int, comp: fn (a: Element
             const top = self.elements[0];
             self.count -= 1;
             self.elements[0] = self.elements[self.count];
-            self.sift_down();
+            self.siftDown();
             return top;
         }
 
@@ -61,11 +61,11 @@ pub fn FixedSizeHeap(Element: type, Capacity: comptime_int, comp: fn (a: Element
             return (i - 1) / 2;
         }
 
-        inline fn left_child(i: usize) usize {
+        inline fn leftChild(i: usize) usize {
             return 2 * i + 1;
         }
 
-        inline fn right_child(i: usize) usize {
+        inline fn rightChild(i: usize) usize {
             return 2 * i + 2;
         }
 
@@ -75,7 +75,7 @@ pub fn FixedSizeHeap(Element: type, Capacity: comptime_int, comp: fn (a: Element
             self.elements[b] = tmp;
         }
 
-        fn sift_up(self: *This) void {
+        fn siftUp(self: *This) void {
             var i = self.count - 1;
             while (i > 0) {
                 const p = parent(i);
@@ -85,11 +85,11 @@ pub fn FixedSizeHeap(Element: type, Capacity: comptime_int, comp: fn (a: Element
             }
         }
 
-        fn sift_down(self: *This) void {
+        fn siftDown(self: *This) void {
             var i: usize = 0;
             while (true) {
-                const a = left_child(i);
-                const b = right_child(i);
+                const a = leftChild(i);
+                const b = rightChild(i);
                 var smallest = i;
 
                 if (a < self.count and comp(self.elements[a], self.elements[smallest]) == Order.lt) {
@@ -108,9 +108,9 @@ pub fn FixedSizeHeap(Element: type, Capacity: comptime_int, comp: fn (a: Element
     };
 }
 
-const IntHeap = FixedSizeHeap(u32, 4, int_comp, false);
+const IntHeap = FixedSizeHeap(u32, 4, intComp, false);
 
-fn int_comp(a: u32, b: u32) Order {
+fn intComp(a: u32, b: u32) Order {
     return std.math.order(a, b);
 }
 

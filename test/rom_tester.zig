@@ -69,12 +69,12 @@ fn run_test(file: std.fs.File, writer: anytype, cfg: std.io.tty.Config) !TestRes
 
         var failure: ?[]const u8 = null;
         if (cpu.breakpointHappened()) {
-            if (cpu.reg.BC.Hi == 3 and cpu.reg.BC.Lo == 5 and cpu.reg.DE.Hi == 8 and cpu.reg.DE.Lo == 13 and cpu.reg.HL.Hi == 21 and cpu.reg.HL.Lo == 34) {
+            if (cpu.reg.BC.hi == 3 and cpu.reg.BC.lo == 5 and cpu.reg.DE.hi == 8 and cpu.reg.DE.lo == 13 and cpu.reg.HL.hi == 21 and cpu.reg.HL.lo == 34) {
                 try succeed_test(writer, cfg);
                 return .success;
             } else {
                 failure = "Breakpoint reached with invalid register values";
-                std.debug.print("B/C/D/E/H/L = {d}/{d}/{d}/{d}/{d}/{d}\n", .{ cpu.reg.BC.Hi, cpu.reg.BC.Lo, cpu.reg.DE.Hi, cpu.reg.DE.Lo, cpu.reg.HL.Hi, cpu.reg.HL.Lo });
+                std.debug.print("B/C/D/E/H/L = {d}/{d}/{d}/{d}/{d}/{d}\n", .{ cpu.reg.BC.hi, cpu.reg.BC.lo, cpu.reg.DE.hi, cpu.reg.DE.lo, cpu.reg.HL.hi, cpu.reg.HL.lo });
             }
         }
         if (cpu.illegalInstructionExecuted()) {
@@ -91,7 +91,7 @@ fn run_test(file: std.fs.File, writer: anytype, cfg: std.io.tty.Config) !TestRes
     }
 }
 
-fn list_files(dir: std.fs.Dir, writer: anytype, cfg: std.io.tty.Config) !struct { usize, usize, usize } {
+fn listFiles(dir: std.fs.Dir, writer: anytype, cfg: std.io.tty.Config) !struct { usize, usize, usize } {
     var successful: usize = 0;
     var failed: usize = 0;
     var skipped: usize = 0;
@@ -118,7 +118,7 @@ fn list_files(dir: std.fs.Dir, writer: anytype, cfg: std.io.tty.Config) !struct 
             .directory => {
                 var next_dir = try dir.openDir(item.name, .{ .iterate = true });
                 defer next_dir.close();
-                const next_successful, const next_failed, const next_skipped = try list_files(next_dir, writer, cfg);
+                const next_successful, const next_failed, const next_skipped = try listFiles(next_dir, writer, cfg);
                 successful += next_successful;
                 failed += next_failed;
                 skipped += next_skipped;
@@ -133,11 +133,11 @@ fn list_files(dir: std.fs.Dir, writer: anytype, cfg: std.io.tty.Config) !struct 
 pub fn main() !void {
     const stdout = std.io.getStdOut();
     const writer = stdout.writer();
-    const ttyConfig = std.io.tty.detectConfig(stdout);
+    const tty_config = std.io.tty.detectConfig(stdout);
 
     var dir = try std.fs.cwd().openDir("testroms", .{ .iterate = true });
     defer dir.close();
-    const successful, const failed, const skipped = try list_files(dir, writer, ttyConfig);
+    const successful, const failed, const skipped = try listFiles(dir, writer, tty_config);
 
     try writer.print("Result:\n  Pass: {d}\n  Fail: {d}\n  Skip: {d}\nTotal: {d}\n", .{ successful, failed, skipped, successful + failed + skipped });
 }

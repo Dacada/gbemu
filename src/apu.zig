@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const MemoryFlag = @import("memoryFlag.zig").MemoryFlag;
+const MemoryFlag = @import("memory_flag.zig").MemoryFlag;
 const router = @import("router.zig");
 const GenericRouter = router.Router;
 const GenericRange = router.Range;
@@ -98,7 +98,7 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
         ch3_acc_right: Accumulator,
         ch4_acc_right: Accumulator,
 
-        samplingError: u64,
+        sampling_error: u64,
 
         const Invalid = struct {
             pub fn read(_: *This, _: u16) struct { MemoryFlag, u8 } {
@@ -338,7 +338,7 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
                 .ch2_acc_right = .{},
                 .ch3_acc_right = .{},
                 .ch4_acc_right = .{},
-                .samplingError = 0,
+                .sampling_error = 0,
             };
         }
 
@@ -349,48 +349,48 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
             }
 
             inline for (1..5) |n| {
-                const channelName = std.fmt.comptimePrint("channel{d}", .{n});
+                const channel_name = std.fmt.comptimePrint("channel{d}", .{n});
 
                 // Each channel knows its DAC output value as a normalized floating point sample between 1 and -1. A
                 // disabled DAC is expected to output 0.
-                const sample: f32 = @field(self, channelName).tick();
+                const sample: f32 = @field(self, channel_name).tick();
 
                 inline for (.{ "left", "right" }) |side| {
-                    const channelSelectName = std.fmt.comptimePrint("ch{d}_{s}", .{ n, side });
-                    const accumulatorChannelName = std.fmt.comptimePrint("ch{d}_acc_{s}", .{ n, side });
+                    const channel_select_name = std.fmt.comptimePrint("ch{d}_{s}", .{ n, side });
+                    const accumulator_channel_name = std.fmt.comptimePrint("ch{d}_acc_{s}", .{ n, side });
                     const volume_name = std.fmt.comptimePrint("{s}_vol", .{side});
 
                     // Select audio channels, attenuate, and accumulate for sampling.
-                    if (@field(self, channelSelectName) == 1) {
+                    if (@field(self, channel_select_name) == 1) {
                         // Attenuate the selected channel if needed
                         var attenuation: f32 = @floatFromInt(@field(self, volume_name));
                         attenuation += 1.0;
                         attenuation /= 8.0;
 
                         const value = sample * attenuation;
-                        @field(self, accumulatorChannelName).sum += value;
+                        @field(self, accumulator_channel_name).sum += value;
                     }
 
                     // If a channel is deselected the result is that the DAC's contribution
                     // disappears, which should cause an audio pop due to the DC component changing level, which we
                     // want. Therefore we always add that sample even if the channel is not selected
-                    @field(self, accumulatorChannelName).count += 1;
+                    @field(self, accumulator_channel_name).count += 1;
                 }
             }
 
             // Resampling logic, take the accumulated samples and contruct a new sample from them, or keep the previous
             // sample
-            self.samplingError += AudioBackend.SamplingRate;
-            if (self.samplingError >= This.ApuTickRate) {
-                self.samplingError -= AudioBackend.SamplingRate;
+            self.sampling_error += AudioBackend.SamplingRate;
+            if (self.sampling_error >= This.ApuTickRate) {
+                self.sampling_error -= AudioBackend.SamplingRate;
 
                 var results: struct { left: f32 = 0, right: f32 = 0 } = .{};
                 inline for (.{ "left", "right" }) |side| {
-                    const hpfName = std.fmt.comptimePrint("hpf_{s}", .{side});
+                    const hpf_name = std.fmt.comptimePrint("hpf_{s}", .{side});
                     var mixed_total: f32 = 0;
                     inline for (1..5) |n| {
-                        const accumulatorChannelName = std.fmt.comptimePrint("ch{d}_acc_{s}", .{ n, side });
-                        var acc = &@field(self, accumulatorChannelName);
+                        const accumulator_channel_name = std.fmt.comptimePrint("ch{d}_acc_{s}", .{ n, side });
+                        var acc = &@field(self, accumulator_channel_name);
                         if (acc.count != 0) {
                             // We keep track of the last sample and keep it if there have been no new samples in the interval.
                             acc.prev = acc.sum / @as(f32, @floatFromInt(acc.count));
@@ -402,14 +402,14 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
 
                     // Renormalize first and then apply the high pass filter.
                     mixed_total /= 4;
-                    @field(results, side) = apply_hpf(&@field(self, hpfName), mixed_total);
+                    @field(results, side) = applyHpf(&@field(self, hpf_name), mixed_total);
                 }
 
                 self.backend.submit(results.left, results.right);
             }
         }
 
-        fn apply_hpf(capacitor: *f32, value: f32) f32 {
+        fn applyHpf(capacitor: *f32, value: f32) f32 {
             // This magic constant comes from the Pan Docs documentation
             const capacitor_factor = comptime std.math.pow(f32, 0.999958, 4194304.0 / AudioBackend.SamplingRate);
 
@@ -422,8 +422,8 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
         /// This is intended to be called every DIV-APU tick
         pub fn divtick(self: *This) void {
             inline for (1..5) |n| {
-                const channelName = std.fmt.comptimePrint("channel{d}", .{n});
-                @field(self, channelName).divtick();
+                const channel_name = std.fmt.comptimePrint("channel{d}", .{n});
+                @field(self, channel_name).divtick();
             }
         }
 

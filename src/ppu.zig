@@ -1,56 +1,56 @@
 const std = @import("std");
 
-const MemoryFlag = @import("memoryFlag.zig").MemoryFlag;
+const MemoryFlag = @import("memory_flag.zig").MemoryFlag;
 
 const logger = std.log.scoped(.ppu);
 
 // TODO: this may need to be non global
-var STATIC_VRAM: [0x2000]u8 = undefined;
-var STATIC_INIT_VRAM = [_]bool{false} ** 0x2000;
+var static_vram: [0x2000]u8 = undefined;
+var static_init_vram = [_]bool{false} ** 0x2000;
 
-var STATIC_OAM: [0xA0]u8 = undefined;
-var STATIC_INIT_OAM = [_]bool{false} ** 0xA0;
+var static_oam: [0xA0]u8 = undefined;
+var static_init_oam = [_]bool{false} ** 0xA0;
 
 pub const Ppu = struct {
     pub const Vram = struct {
         pub fn read(_: *Ppu, addr: u16) struct { MemoryFlag, u8 } {
-            const val = STATIC_VRAM[addr];
-            const flags = MemoryFlag{ .uninitialized = !STATIC_INIT_VRAM[addr] };
+            const val = static_vram[addr];
+            const flags = MemoryFlag{ .uninitialized = !static_init_vram[addr] };
             return .{ flags, val };
         }
 
         pub fn write(_: *Ppu, addr: u16, val: u8) MemoryFlag {
-            STATIC_VRAM[addr] = val;
-            STATIC_INIT_VRAM[addr] = true;
+            static_vram[addr] = val;
+            static_init_vram[addr] = true;
             return .{};
         }
 
         pub fn peek(_: *Ppu, addr: u16) u8 {
-            return STATIC_VRAM[addr];
+            return static_vram[addr];
         }
         pub fn poke(_: *Ppu, addr: u16, val: u8) void {
-            STATIC_VRAM[addr] = val;
+            static_vram[addr] = val;
         }
     };
 
     pub const Oam = struct {
         pub fn read(_: *Ppu, addr: u16) struct { MemoryFlag, u8 } {
-            const val = STATIC_OAM[addr];
-            const flags = MemoryFlag{ .uninitialized = !STATIC_INIT_OAM[addr] };
+            const val = static_oam[addr];
+            const flags = MemoryFlag{ .uninitialized = !static_init_oam[addr] };
             return .{ flags, val };
         }
 
         pub fn write(_: *Ppu, addr: u16, val: u8) MemoryFlag {
-            STATIC_OAM[addr] = val;
-            STATIC_INIT_OAM[addr] = true;
+            static_oam[addr] = val;
+            static_init_oam[addr] = true;
             return .{};
         }
 
         pub fn peek(_: *Ppu, addr: u16) u8 {
-            return STATIC_OAM[addr];
+            return static_oam[addr];
         }
         pub fn poke(_: *Ppu, addr: u16, val: u8) void {
-            STATIC_OAM[addr] = val;
+            static_oam[addr] = val;
         }
     };
 

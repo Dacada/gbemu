@@ -1,5 +1,5 @@
-const MemoryFlag = @import("memoryFlag.zig").MemoryFlag;
-const InterruptKind = @import("interruptKind.zig").InterruptKind;
+const MemoryFlag = @import("memory_flag.zig").MemoryFlag;
+const InterruptKind = @import("interrupt_kind.zig").InterruptKind;
 
 pub fn Timer(Apu: type, Interrupt: type) type {
     return struct {
@@ -14,8 +14,8 @@ pub fn Timer(Apu: type, Interrupt: type) type {
         enable: u1,
         clock_select: u2,
 
-        timaOverflowNextTick: bool,
-        wroteTimaThisTick: bool,
+        tima_overflow_next_tick: bool,
+        wrote_tima_this_tick: bool,
 
         pub inline fn init(apu: *Apu, intr: *Interrupt) This {
             return This{
@@ -26,22 +26,22 @@ pub fn Timer(Apu: type, Interrupt: type) type {
                 .tma = undefined,
                 .enable = undefined,
                 .clock_select = undefined,
-                .timaOverflowNextTick = false,
-                .wroteTimaThisTick = false,
+                .tima_overflow_next_tick = false,
+                .wrote_tima_this_tick = false,
             };
         }
 
         pub fn tick(self: *This) void {
-            if (self.timaOverflowNextTick) {
+            if (self.tima_overflow_next_tick) {
                 self.tima = self.tma;
                 self.intr.request(InterruptKind.timer);
-                self.timaOverflowNextTick = false;
+                self.tima_overflow_next_tick = false;
             }
 
-            const prevDiv = self.div;
+            const prev_div = self.div;
             self.div +%= 1;
-            self.triggerTimerTick(prevDiv, self.enable, self.clock_select);
-            self.wroteTimaThisTick = false;
+            self.triggerTimerTick(prev_div, self.enable, self.clock_select);
+            self.wrote_tima_this_tick = false;
         }
 
         pub fn peek(self: *This, addr: u16) u8 {
@@ -80,25 +80,25 @@ pub fn Timer(Apu: type, Interrupt: type) type {
         pub fn write(self: *This, addr: u16, val: u8) MemoryFlag {
             switch (addr) {
                 0 => {
-                    const prevDiv = self.div;
+                    const prev_div = self.div;
                     self.div = 0;
-                    self.triggerTimerTick(prevDiv, self.enable, self.clock_select);
+                    self.triggerTimerTick(prev_div, self.enable, self.clock_select);
                 },
                 1 => {
                     // Assume tick will be called AFTER the CPU's tick, overwriting this write with TMA if needed
                     self.poke(addr, val);
                     // HOWEVER, if instead of overwriting it THIS TICK we would overwrite it NEXT TICK, then we DO NOT because of the write "cancelling" the overflow
-                    self.wroteTimaThisTick = true;
+                    self.wrote_tima_this_tick = true;
                 },
                 2 => {
                     // If this cycle would update tima, it will do so with the written to value, will work assuming timer is updated AFTER cpu
                     self.poke(addr, val);
                 },
                 3 => {
-                    const prevEnable = self.enable;
-                    const prevClockSelect = self.clock_select;
+                    const prev_enable = self.enable;
+                    const prev_clock_select = self.clock_select;
                     self.poke(addr, val);
-                    self.triggerTimerTick(self.div, prevEnable, prevClockSelect);
+                    self.triggerTimerTick(self.div, prev_enable, prev_clock_select);
                 },
                 else => unreachable,
             }
@@ -106,22 +106,22 @@ pub fn Timer(Apu: type, Interrupt: type) type {
         }
 
         // TODO: check if worth optimizing
-        fn triggerTimerTick(self: *This, prevDiv: u16, prevEnable: u1, prevClockSelect: u2) void {
+        fn triggerTimerTick(self: *This, prev_div: u16, prev_enable: u1, prev_clock_select: u2) void {
             // DMG ONLY -- DIV-APU event uses a different bit in CGB in double speed mode
-            if (prevDiv & (1 << 10) != 0 and self.div & (1 << 10) == 0) {
+            if (prev_div & (1 << 10) != 0 and self.div & (1 << 10) == 0) {
                 self.apu.divtick();
             }
 
             // DMG ONLY -- In CGB the hardware is slightly different, review: https://gbdev.io/pandocs/Timer_Obscure_Behaviour.html#relation-between-timer-and-divider-register
 
             const mask = getBitMaskForDiv(self.clock_select);
-            const prevMask = getBitMaskForDiv(prevClockSelect);
+            const prev_mask = getBitMaskForDiv(prev_clock_select);
 
             const bit = self.div & mask != 0;
-            const prevBit = prevDiv & prevMask != 0;
+            const prev_bit = prev_div & prev_mask != 0;
 
             const curr = bit and self.enable == 1;
-            const prev = prevBit and prevEnable == 1;
+            const prev = prev_bit and prev_enable == 1;
 
             if (prev and !curr) {
                 self.doTimerTick();
@@ -129,13 +129,13 @@ pub fn Timer(Apu: type, Interrupt: type) type {
         }
 
         fn doTimerTick(self: *This) void {
-            const prevTima = self.tima;
+            const prev_tima = self.tima;
             self.tima +%= 1;
             const mask = 1 << 7;
 
-            if (prevTima & mask != 0 and self.tima & mask == 0) {
-                if (!self.wroteTimaThisTick) {
-                    self.timaOverflowNextTick = true;
+            if (prev_tima & mask != 0 and self.tima & mask == 0) {
+                if (!self.wrote_tima_this_tick) {
+                    self.tima_overflow_next_tick = true;
                 }
             }
         }

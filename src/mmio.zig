@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const MemoryFlag = @import("memoryFlag.zig").MemoryFlag;
+const MemoryFlag = @import("memory_flag.zig").MemoryFlag;
 const router = @import("router.zig");
 const GenericRouter = router.Router;
 const GenericRange = router.Range;

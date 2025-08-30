@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const MemoryFlag = @import("memoryFlag.zig").MemoryFlag;
+const MemoryFlag = @import("memory_flag.zig").MemoryFlag;
 
 const logger = std.log.scoped(.cartridge);
 
@@ -19,11 +19,11 @@ const logo = [_]u8{
 // TODO: might need to make rom/ram non global
 
 // This memory will always contain the totality of the currently loaded ROM
-var STATIC_ROM: [0x8000]u8 = undefined;
+var static_rom: [0x8000]u8 = undefined;
 
 // This memory holds the cartridge's RAM
-var STATIC_RAM: [0x2000]u8 = undefined;
-var STATIC_INIT_RAM: [0x2000]bool = undefined;
+var static_ram: [0x2000]u8 = undefined;
+var static_init_ram: [0x2000]bool = undefined;
 
 // https://gbdev.io/pandocs/The_Cartridge_Header.html
 pub const Cartridge = struct {
@@ -35,7 +35,7 @@ pub const Cartridge = struct {
 
     pub const Rom = struct {
         pub fn read(_: *Cartridge, addr: u16) struct { MemoryFlag, u8 } {
-            const val = STATIC_ROM[addr];
+            const val = static_rom[addr];
             return .{ .{}, val };
         }
 
@@ -44,41 +44,41 @@ pub const Cartridge = struct {
         }
 
         pub fn peek(_: *Cartridge, addr: u16) u8 {
-            return STATIC_ROM[addr];
+            return static_rom[addr];
         }
         pub fn poke(_: *Cartridge, addr: u16, val: u8) void {
-            STATIC_ROM[addr] = val;
+            static_rom[addr] = val;
         }
     };
 
     pub const Ram = struct {
         pub fn read(_: *Cartridge, addr: u16) struct { MemoryFlag, u8 } {
-            const val = STATIC_RAM[addr];
-            const flags = MemoryFlag{ .uninitialized = !STATIC_INIT_RAM[addr] };
+            const val = static_ram[addr];
+            const flags = MemoryFlag{ .uninitialized = !static_init_ram[addr] };
             return .{ flags, val };
         }
 
         pub fn write(_: *Cartridge, addr: u16, val: u8) MemoryFlag {
-            STATIC_RAM[addr] = val;
-            STATIC_INIT_RAM[addr] = true;
+            static_ram[addr] = val;
+            static_init_ram[addr] = true;
             return .{};
         }
 
         pub fn peek(_: *Cartridge, addr: u16) u8 {
-            return STATIC_RAM[addr];
+            return static_ram[addr];
         }
         pub fn poke(_: *Cartridge, addr: u16, val: u8) void {
-            STATIC_RAM[addr] = val;
+            static_ram[addr] = val;
         }
     };
 
     pub fn fromFile(file: std.fs.File) !Cartridge {
         const offset = 0x0100;
-        const header = STATIC_ROM[offset..(offset + 0x50)];
+        const header = static_rom[offset..(offset + 0x50)];
         try file.seekTo(offset);
-        const readSize = try file.readAll(header);
-        if (readSize < header.len) {
-            logger.err("could not find a header in the rom: could only read 0x{X} bytes at offset 0x{X}", .{ readSize, offset });
+        const read_size = try file.readAll(header);
+        if (read_size < header.len) {
+            logger.err("could not find a header in the rom: could only read 0x{X} bytes at offset 0x{X}", .{ read_size, offset });
             return CartridgeHeaderParseError.NoHeader;
         }
 
@@ -115,13 +115,13 @@ pub const Cartridge = struct {
         }
 
         try file.seekTo(0);
-        const readSizeRom = try file.readAll(&STATIC_ROM);
-        if (readSizeRom != STATIC_ROM.len) {
-            logger.err("unexpected cartridge file size, could only read 0x{X} bytes for rom but wanted to read 0x{X}", .{ readSizeRom, STATIC_ROM.len });
+        const read_size_rom = try file.readAll(&static_rom);
+        if (read_size_rom != static_rom.len) {
+            logger.err("unexpected cartridge file size, could only read 0x{X} bytes for rom but wanted to read 0x{X}", .{ read_size_rom, static_rom.len });
             return CartridgeHeaderParseError.NoRom;
         }
 
-        @memset(&STATIC_INIT_RAM, false);
+        @memset(&static_init_ram, false);
 
         return Cartridge{
             .title = title,
@@ -142,11 +142,11 @@ pub const Cartridge = struct {
 };
 
 fn writeBuffAndReturnFileForReading(buff: []const u8) !struct { std.fs.File, std.testing.TmpDir } {
-    var tmpDir = std.testing.tmpDir(.{});
-    const file = try tmpDir.dir.createFile("test.gb", .{});
+    var tmp_dir = std.testing.tmpDir(.{});
+    const file = try tmp_dir.dir.createFile("test.gb", .{});
     defer file.close();
     try file.writeAll(buff);
-    return .{ try tmpDir.dir.openFile("test.gb", .{}), tmpDir };
+    return .{ try tmp_dir.dir.openFile("test.gb", .{}), tmp_dir };
 }
 
 fn craftValidRomBuffer(buff: []u8, title: []const u8, checksum: u8) void {

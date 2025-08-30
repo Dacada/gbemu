@@ -51,7 +51,7 @@ pub fn ArgParser(comptime params: ArgParserParams) type {
     });
 
     return struct {
-        fn parse_value(comptime T: type, value: []const u8) ArgParserError!T {
+        fn parseValue(comptime T: type, value: []const u8) ArgParserError!T {
             comptime var info = @typeInfo(T);
             comptime var TT = T;
             if (info == .optional) {
@@ -75,11 +75,11 @@ pub fn ArgParser(comptime params: ArgParserParams) type {
             };
         }
 
-        fn parse_and_assign_value(value: []const u8, comptime name: []const u8, comptime T: type, args: *Args) !void {
-            @field(args, name) = try parse_value(T, value);
+        fn parseAndAssignValue(value: []const u8, comptime name: []const u8, comptime T: type, args: *Args) !void {
+            @field(args, name) = try parseValue(T, value);
         }
 
-        fn parse_long_argument(arg: []const u8, iter: *std.process.ArgIterator, args: *Args) ArgParserError!void {
+        fn parseLongArgument(arg: []const u8, iter: *std.process.ArgIterator, args: *Args) ArgParserError!void {
             inline for (params.optional) |opt| {
                 if (std.mem.eql(u8, arg, opt.name)) {
                     const value = iter.next();
@@ -87,7 +87,7 @@ pub fn ArgParser(comptime params: ArgParserParams) type {
                         logger.err("Argument without value: {s}", .{arg});
                         return ArgParserError.ArgumentWithoutValue;
                     }
-                    return parse_and_assign_value(value.?, opt.name, opt.type, args);
+                    return parseAndAssignValue(value.?, opt.name, opt.type, args);
                 }
             }
 
@@ -95,12 +95,12 @@ pub fn ArgParser(comptime params: ArgParserParams) type {
             return ArgParserError.UnknownArgument;
         }
 
-        fn parse_inner(iter: *std.process.ArgIterator) ArgParserError!Args {
+        fn parseInner(iter: *std.process.ArgIterator) ArgParserError!Args {
             var args = Args{};
             while (iter.next()) |arg| {
                 if (arg[0] == '-') {
                     if (arg[1] == '-') {
-                        try parse_long_argument(arg[2..], iter, &args);
+                        try parseLongArgument(arg[2..], iter, &args);
                     } else {
                         @panic("I haven't implemented short optional arguments yet!");
                     }
@@ -111,7 +111,7 @@ pub fn ArgParser(comptime params: ArgParserParams) type {
             return args;
         }
 
-        fn print_usage_and_exit(program_name: []const u8, exit_code: u8) noreturn {
+        fn printUsageAndExit(program_name: []const u8, exit_code: u8) noreturn {
             const stderr = std.io.getStdErr();
             const writer = stderr.writer();
             const tty = std.io.tty.detectConfig(stderr);
@@ -180,8 +180,8 @@ pub fn ArgParser(comptime params: ArgParserParams) type {
         pub fn parse(iter: *std.process.ArgIterator) Args {
             const program_name = iter.next() orelse "program";
 
-            return parse_inner(iter) catch {
-                print_usage_and_exit(program_name, params.error_exit_code);
+            return parseInner(iter) catch {
+                printUsageAndExit(program_name, params.error_exit_code);
             };
         }
     };

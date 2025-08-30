@@ -16,7 +16,7 @@ const period: u11 = 1750;
 const period_low = period & 0xFF;
 const period_high = (period & 0x0700) >> 8;
 
-fn wait_and_collect_until(channel: anytype, max_samples: usize) !std.ArrayList(f32) {
+fn waitAndCollectUntil(channel: anytype, max_samples: usize) !std.ArrayList(f32) {
     var samples = std.ArrayList(f32).init(std.testing.allocator);
     var div_counter: usize = 0;
 
@@ -65,7 +65,7 @@ test "test channel 1" {
     try std.testing.expect(!channel.write(3, nr13_val).any());
     try std.testing.expect(!channel.write(4, nr14_val).any());
 
-    var samples = try wait_and_collect_until(&channel, 1_200_000);
+    var samples = try waitAndCollectUntil(&channel, 1_200_000);
     defer samples.deinit();
 
     const output_file = try std.fs.createFileAbsolute("/tmp/out_ch1.raw", .{});
@@ -101,7 +101,7 @@ test "test channel 2" {
     try std.testing.expect(!channel.write(3, nr23_val).any());
     try std.testing.expect(!channel.write(4, nr24_val).any());
 
-    var samples = try wait_and_collect_until(&channel, 300_000);
+    var samples = try waitAndCollectUntil(&channel, 300_000);
     defer samples.deinit();
 
     const output_file = try std.fs.createFileAbsolute("/tmp/out_ch2.raw", .{});

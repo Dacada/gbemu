@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const MemoryFlag = @import("memoryFlag.zig").MemoryFlag;
+const MemoryFlag = @import("memory_flag.zig").MemoryFlag;
 const router = @import("router.zig");
 const GenericRouter = router.Router;
 const GenericRange = router.Range;
@@ -10,11 +10,11 @@ const logger = std.log.scoped(.mmu);
 
 // TODO: May need to make this non global
 // DMG ONLY -- In CGB, the second half is a switchable bank
-var STATIC_WRAM = [_]u8{0x00} ** 0x2000;
-var STATIC_INIT_WRAM = [_]bool{false} ** 0x2000;
+var static_wram = [_]u8{0x00} ** 0x2000;
+var static_init_wram = [_]bool{false} ** 0x2000;
 
-var STATIC_HRAM = [_]u8{0x00} ** 0x7F;
-var STATIC_INIT_HRAM = [_]bool{false} ** 0x7F;
+var static_hram = [_]u8{0x00} ** 0x7F;
+var static_init_hram = [_]bool{false} ** 0x7F;
 
 pub fn Mmu(Cartridge: type, Ppu: type, Mmio: type) type {
     return struct {
@@ -22,41 +22,41 @@ pub fn Mmu(Cartridge: type, Ppu: type, Mmio: type) type {
 
         const Wram = struct {
             pub fn read(_: *This, addr: u16) struct { MemoryFlag, u8 } {
-                const val = STATIC_WRAM[addr];
-                const flags = MemoryFlag{ .uninitialized = !STATIC_INIT_WRAM[addr] };
+                const val = static_wram[addr];
+                const flags = MemoryFlag{ .uninitialized = !static_init_wram[addr] };
                 return .{ flags, val };
             }
 
             pub fn write(_: *This, addr: u16, val: u8) MemoryFlag {
-                STATIC_WRAM[addr] = val;
-                STATIC_INIT_WRAM[addr] = true;
+                static_wram[addr] = val;
+                static_init_wram[addr] = true;
                 return .{};
             }
 
             pub fn peek(_: *This, addr: u16) u8 {
-                return STATIC_WRAM[addr];
+                return static_wram[addr];
             }
             pub fn poke(_: *This, addr: u16, val: u8) void {
-                STATIC_WRAM[addr] = val;
+                static_wram[addr] = val;
             }
         };
 
         const Hram = struct {
             pub fn read(_: *This, addr: u16) struct { MemoryFlag, u8 } {
-                const val = STATIC_HRAM[addr];
-                const flags = MemoryFlag{ .uninitialized = !STATIC_INIT_HRAM[addr] };
+                const val = static_hram[addr];
+                const flags = MemoryFlag{ .uninitialized = !static_init_hram[addr] };
                 return .{ flags, val };
             }
             pub fn write(_: *This, addr: u16, val: u8) MemoryFlag {
-                STATIC_HRAM[addr] = val;
-                STATIC_INIT_HRAM[addr] = true;
+                static_hram[addr] = val;
+                static_init_hram[addr] = true;
                 return .{};
             }
             pub fn peek(_: *This, addr: u16) u8 {
-                return STATIC_HRAM[addr];
+                return static_hram[addr];
             }
             pub fn poke(_: *This, addr: u16, val: u8) void {
-                STATIC_HRAM[addr] = val;
+                static_hram[addr] = val;
             }
         };
 
@@ -227,16 +227,16 @@ pub fn Mmu(Cartridge: type, Ppu: type, Mmio: type) type {
 
 pub const MockMmu = struct {
     // TODO: might need to make this non global
-    pub var backingArray = [_]u8{0x00} ** 0x10000;
+    pub var backing_array = [_]u8{0x00} ** 0x10000;
 
     flags: MemoryFlag = .{},
 
     pub inline fn peek(_: *MockMmu, addr: u16) u8 {
-        return backingArray[addr];
+        return backing_array[addr];
     }
 
     pub inline fn poke(_: *MockMmu, addr: u16, val: u8) void {
-        backingArray[addr] = val;
+        backing_array[addr] = val;
     }
 
     pub inline fn read(self: *MockMmu, addr: u16) u8 {
@@ -250,14 +250,14 @@ pub const MockMmu = struct {
 
 /// To emulate any memory region where we don't care beyond being able to retrieve the last write
 pub const MockMemory = struct {
-    lastWrite: u8 = 0x00,
+    last_write: u8 = 0x00,
 
     pub fn read(self: anytype, _: u16) struct { MemoryFlag, u8 } {
-        return .{ .{}, self.lastWrite };
+        return .{ .{}, self.last_write };
     }
 
     pub fn write(self: anytype, _: u16, val: u8) MemoryFlag {
-        self.lastWrite = val;
+        self.last_write = val;
         return .{};
     }
 
@@ -272,14 +272,14 @@ pub const MockMemory = struct {
 };
 
 const MockCartridge = struct {
-    lastWrite: u8 = 0x00,
+    last_write: u8 = 0x00,
 
     const Rom = MockMemory;
     const Ram = MockMemory;
 };
 
 const MockPpu = struct {
-    lastWrite: u8 = 0x00,
+    last_write: u8 = 0x00,
 
     const Vram = MockMemory;
     const Oam = MockMemory;

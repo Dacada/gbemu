@@ -1,4 +1,4 @@
-const MemoryFlag = @import("memoryFlag.zig").MemoryFlag;
+const MemoryFlag = @import("memory_flag.zig").MemoryFlag;
 
 inline fn dac(sample: u4) f32 {
     return switch (sample) {
@@ -162,35 +162,35 @@ const PeriodUnit = struct {
 
 const ControlUnit = struct {
     active: bool,
-    dacEnabled: bool,
+    dac_enabled: bool,
 
     inline fn init() ControlUnit {
         return ControlUnit{
             .active = false,
-            .dacEnabled = false,
+            .dac_enabled = false,
         };
     }
 
     fn isActive(self: *const ControlUnit) bool {
-        return self.active and self.dacEnabled;
+        return self.active and self.dac_enabled;
     }
 
     fn poweroff(self: *ControlUnit) void {
         self.active = false;
-        self.dacEnabled = false;
+        self.dac_enabled = false;
     }
 };
 
 const LengthUnit = struct {
     enable: u1,
-    initialCounter: u6,
+    initial_counter: u6,
 
     counter: u6, // TODO: u8 for channel3!
 
     inline fn init() LengthUnit {
         return LengthUnit{
             .enable = undefined,
-            .initialCounter = undefined,
+            .initial_counter = undefined,
             .counter = 0,
         };
     }
@@ -206,7 +206,7 @@ const LengthUnit = struct {
     }
 
     fn reset(self: *LengthUnit) void {
-        self.counter = self.initialCounter;
+        self.counter = self.initial_counter;
     }
 };
 
@@ -280,7 +280,7 @@ pub fn Channel(number: comptime_int) type {
         }
 
         pub fn tick(self: *This) f32 {
-            if (!self.control.dacEnabled) {
+            if (!self.control.dac_enabled) {
                 return 0.0;
             }
 
@@ -345,7 +345,7 @@ pub fn Channel(number: comptime_int) type {
                     var ret: u8 = 0;
                     ret |= self.square.duty;
                     ret <<= 6;
-                    ret |= self.length.initialCounter;
+                    ret |= self.length.initial_counter;
                     return ret;
                 },
                 2 => {
@@ -388,7 +388,7 @@ pub fn Channel(number: comptime_int) type {
                 },
                 1 => {
                     self.square.duty = @intCast((val & 0b11_000000) >> 6);
-                    self.length.initialCounter = @intCast(val & 0b00_111111);
+                    self.length.initial_counter = @intCast(val & 0b00_111111);
                 },
                 2 => {
                     self.volume.initial_volume = @intCast((val & 0xF0) >> 4);
@@ -417,9 +417,9 @@ pub fn Channel(number: comptime_int) type {
             }
             self.poke(addr, val);
             if (self.volume.direction == 0 and self.volume.initial_volume == 0) {
-                self.control.dacEnabled = false;
+                self.control.dac_enabled = false;
             } else {
-                self.control.dacEnabled = true;
+                self.control.dac_enabled = true;
             }
             if (!self.powered_off and addr == 4 and val & 0b1000_0000 != 0) {
                 self.trigger();
@@ -445,7 +445,7 @@ test "init starts inert and inactive" {
 
     try std.testing.expect(!ch.isActive());
     try std.testing.expect(!ch.powered_off);
-    try std.testing.expect(!ch.control.dacEnabled);
+    try std.testing.expect(!ch.control.dac_enabled);
     try std.testing.expectEqual(@as(u11, 0), ch.period.counter);
     try std.testing.expectEqual(@as(u3, 0), ch.square.duty);
     try std.testing.expectEqual(@as(f32, 0.0), ch.current);
@@ -457,19 +457,19 @@ test "write(2) enables/disables DAC according to initial_volume/direction" {
 
     // volume=0, direction=0 -> DAC disabled
     _ = ch.write(2, 0x00);
-    try std.testing.expect(!ch.control.dacEnabled);
+    try std.testing.expect(!ch.control.dac_enabled);
 
     // volume>0 -> DAC enabled
     _ = ch.write(2, 0x10); // initial_volume=1
-    try std.testing.expect(ch.control.dacEnabled);
+    try std.testing.expect(ch.control.dac_enabled);
 
     // volume=0 but direction=1 -> DAC enabled
     _ = ch.write(2, 0x08); // direction=1
-    try std.testing.expect(ch.control.dacEnabled);
+    try std.testing.expect(ch.control.dac_enabled);
 
     // volume=0 and direction=0 -> DAC disabled again
     _ = ch.write(2, 0x00);
-    try std.testing.expect(!ch.control.dacEnabled);
+    try std.testing.expect(!ch.control.dac_enabled);
 }
 
 test "poke/peek round-trips for NR21 (addr 1) and NR23 (addr 3)" {

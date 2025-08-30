@@ -2,19 +2,19 @@ const std = @import("std");
 const lib = @import("lib");
 
 const MockMemory = lib.mmu.MockMemory;
-const InterruptKind = lib.interruptKind.InterruptKind;
+const InterruptKind = lib.interrupt_kind.InterruptKind;
 
 pub const FakeScheduler = struct {};
 
 pub const FakeCartridge = struct {
-    lastWrite: u8 = 0x00,
+    last_write: u8 = 0x00,
 
     pub const Rom = MockMemory;
     pub const Ram = MockMemory;
 };
 
 pub const FakePpu = struct {
-    lastWrite: u8 = 0x00,
+    last_write: u8 = 0x00,
 
     pub const Vram = MockMemory;
     pub const Oam = MockMemory;
@@ -32,7 +32,7 @@ pub const FakeTimer = struct {
 };
 
 pub const FakeDebugger = struct {
-    pub fn enter_debugger_if_needed(_: *const FakeDebugger) !?lib.debugger.DebuggerResult {
+    pub fn enterDebuggerIfNeeded(_: *const FakeDebugger) !?lib.debugger.DebuggerResult {
         return null;
     }
 };
@@ -82,7 +82,7 @@ test "serial transfer" {
     );
 
     var mmu = Mmu.init(&cart, &ppu, &mmio);
-    lib.emulator.initialize_memory(Mmu, &mmu);
+    lib.emulator.initializeMemory(Mmu, &mmu);
 
     var cpu = FakeCpu{};
     var timer = FakeTimer{};

@@ -2,7 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 // Ignore output sent through the logging system, except for the testutil scope, which we will display as captured output
-const logCaptureContext = struct {
+const log_capture_context = struct {
     var allocator: ?std.mem.Allocator = null;
     var captured: ?std.ArrayList([]const u8) = null;
 };
@@ -11,15 +11,15 @@ fn reportingLogFn(comptime _: std.log.Level, comptime scope: @TypeOf(.enum_liter
         return;
     }
 
-    if (logCaptureContext.allocator == null or logCaptureContext.captured == null) {
+    if (log_capture_context.allocator == null or log_capture_context.captured == null) {
         return;
     }
 
-    const buffer = std.fmt.allocPrint(logCaptureContext.allocator.?, format, args) catch {
+    const buffer = std.fmt.allocPrint(log_capture_context.allocator.?, format, args) catch {
         return;
     };
 
-    logCaptureContext.captured.?.append(buffer) catch {
+    log_capture_context.captured.?.append(buffer) catch {
         return;
     };
 }
@@ -32,7 +32,7 @@ var fake_stderr: ?std.posix.fd_t = null;
 var fake_stdout: ?std.posix.fd_t = null;
 var current_stderr: std.posix.fd_t = std.posix.STDERR_FILENO;
 var current_stdout: std.posix.fd_t = std.posix.STDOUT_FILENO;
-fn mask_std() void {
+fn maskStd() void {
     if (fake_stderr) |fd| {
         current_stderr = fd;
     }
@@ -40,7 +40,7 @@ fn mask_std() void {
         current_stdout = fd;
     }
 }
-fn restore_std() void {
+fn restoreStd() void {
     current_stderr = std.posix.STDERR_FILENO;
     current_stdout = std.posix.STDOUT_FILENO;
 }
@@ -57,48 +57,48 @@ pub const os = struct {
 
 // Panic handling
 var panicking = false;
-fn test_runner_panic(msg: []const u8, first_trace_addr: ?usize) noreturn {
+fn testRunnerPanic(msg: []const u8, first_trace_addr: ?usize) noreturn {
     if (panicking) {
         std.posix.abort();
     }
     panicking = true;
 
-    restore_std();
+    restoreStd();
 
     const stdout = std.io.getStdOut();
     const writer = stdout.writer();
-    const ttyConfig = std.io.tty.detectConfig(stdout);
-    errorOutput.writeColor(ttyConfig, writer, "PANIC!\n") catch {};
+    const tty_config = std.io.tty.detectConfig(stdout);
+    ErrorOutput.writeColor(tty_config, writer, "PANIC!\n") catch {};
 
     if (current_test) |t| {
         writer.writeAll("  → in: ") catch {};
-        importantOutput.beginColor(ttyConfig, writer) catch {};
+        ImportantOutput.beginColor(tty_config, writer) catch {};
         writer.print("{s}\n", .{t.name}) catch {};
-        endColor(ttyConfig, writer) catch {};
+        endColor(tty_config, writer) catch {};
         writer.writeAll("    ↪ msg: ") catch {};
     } else {
         writer.writeAll("  → msg: ") catch {};
     }
 
-    importantOutput.beginColor(ttyConfig, writer) catch {};
+    ImportantOutput.beginColor(tty_config, writer) catch {};
     writer.print("{s}\n", .{msg}) catch {};
-    endColor(ttyConfig, writer) catch {};
+    endColor(tty_config, writer) catch {};
 
     writer.writeAll("\n  → captured output: ") catch {};
     if (fake_stdout) |fd| {
-        const captured_stdout = extractCapturedOutput(fd, logCaptureContext.allocator.?) catch null;
+        const captured_stdout = extractCapturedOutput(fd, log_capture_context.allocator.?) catch null;
         if (captured_stdout) |cap| {
-            displayCapturedOutputLine(ttyConfig, writer, "stdout", cap) catch {};
+            displayCapturedOutputLine(tty_config, writer, "stdout", cap) catch {};
         }
     }
     if (fake_stderr) |fd| {
-        const captured_stderr = extractCapturedOutput(fd, logCaptureContext.allocator.?) catch null;
+        const captured_stderr = extractCapturedOutput(fd, log_capture_context.allocator.?) catch null;
         if (captured_stderr) |cap| {
-            displayCapturedOutputLine(ttyConfig, writer, "stderr", cap) catch {};
+            displayCapturedOutputLine(tty_config, writer, "stderr", cap) catch {};
         }
     }
-    for (logCaptureContext.captured.?.items) |line| {
-        displayCapturedOutputLine(ttyConfig, writer, "log call", line) catch {};
+    for (log_capture_context.captured.?.items) |line| {
+        displayCapturedOutputLine(tty_config, writer, "log call", line) catch {};
     }
 
     writer.writeAll("\nStack trace (stderr):\n") catch {};
@@ -109,7 +109,7 @@ fn test_runner_panic(msg: []const u8, first_trace_addr: ?usize) noreturn {
 
     std.posix.abort();
 }
-pub const panic = std.debug.FullPanic(test_runner_panic);
+pub const panic = std.debug.FullPanic(testRunnerPanic);
 
 fn extractCapturedOutput(fd: std.posix.fd_t, allocator: std.mem.Allocator) !?[]const u8 {
     try std.posix.lseek_END(fd, 0);
@@ -129,7 +129,7 @@ fn extractCapturedOutput(fd: std.posix.fd_t, allocator: std.mem.Allocator) !?[]c
     return buff;
 }
 
-fn makeColorOutputFunctions(comptime color: std.io.tty.Color) type {
+fn MakeColorOutputFunctions(comptime color: std.io.tty.Color) type {
     return struct {
         fn beginColor(tty: std.io.tty.Config, writer: anytype) !void {
             try tty.setColor(writer, color);
@@ -147,13 +147,13 @@ fn endColor(tty: std.io.tty.Config, writer: anytype) !void {
     try tty.setColor(writer, .reset);
 }
 
-const goodOutput = makeColorOutputFunctions(std.io.tty.Color.green);
-const errorOutput = makeColorOutputFunctions(std.io.tty.Color.red);
-const importantOutput = makeColorOutputFunctions(std.io.tty.Color.blue);
+const GoodOutput = MakeColorOutputFunctions(std.io.tty.Color.green);
+const ErrorOutput = MakeColorOutputFunctions(std.io.tty.Color.red);
+const ImportantOutput = MakeColorOutputFunctions(std.io.tty.Color.blue);
 
 fn displayCapturedOutputLine(tty: std.io.tty.Config, writer: anytype, name: []const u8, content: []const u8) !void {
     try writer.writeAll("\n    ↪ ");
-    try importantOutput.writeColor(tty, writer, name);
+    try ImportantOutput.writeColor(tty, writer, name);
     try writer.writeAll(": ");
     try writer.writeAll(std.mem.trim(u8, content, "\n\r \t"));
 }
@@ -179,12 +179,12 @@ const RunnerLogCapturedOutput = struct {
 };
 
 pub fn main() void {
-    inner_main() catch @panic("test runner error");
+    innerMain() catch @panic("test runner error");
 }
 
 var current_test: ?*const std.builtin.TestFn = null;
 
-pub fn inner_main() !void {
+pub fn innerMain() !void {
     if (builtin.test_functions.len == 0) {
         return;
     }
@@ -194,7 +194,7 @@ pub fn inner_main() !void {
 
     const stdout = std.io.getStdOut();
     const writer = stdout.writer();
-    const ttyConfig = std.io.tty.detectConfig(stdout);
+    const tty_config = std.io.tty.detectConfig(stdout);
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
@@ -210,9 +210,9 @@ pub fn inner_main() !void {
         .stderr = std.StringHashMap(RunnerCapturedOutput).init(allocator),
     };
 
-    logCaptureContext.allocator = allocator;
-    logCaptureContext.captured = std.ArrayList([]const u8).init(allocator);
-    var logOutputs = std.StringHashMap(RunnerLogCapturedOutput).init(allocator);
+    log_capture_context.allocator = allocator;
+    log_capture_context.captured = std.ArrayList([]const u8).init(allocator);
+    var log_outputs = std.StringHashMap(RunnerLogCapturedOutput).init(allocator);
 
     var failures = std.ArrayList(RunnerErrorEntry).init(allocator);
 
@@ -229,18 +229,18 @@ pub fn inner_main() !void {
         std.testing.allocator_instance = .{};
 
         total_tests += 1;
-        mask_std();
+        maskStd();
         const start = std.time.milliTimestamp();
         current_test = &t;
         const result = t.func();
         current_test = null;
         const elapsed = std.time.milliTimestamp() - start;
-        restore_std();
+        restoreStd();
 
         inline for (@typeInfo(@TypeOf(outputs)).@"struct".fields) |field| {
             const fd = @field(fake_fds, field.name);
-            const buffNullable = try extractCapturedOutput(fd.?, allocator);
-            if (buffNullable) |buff| {
+            const buff_nullable = try extractCapturedOutput(fd.?, allocator);
+            if (buff_nullable) |buff| {
                 try @field(outputs, field.name).put(t.name, .{
                     .content = buff,
                     .displayed = false,
@@ -248,12 +248,12 @@ pub fn inner_main() !void {
             }
         }
 
-        if (logCaptureContext.captured.?.items.len > 0) {
-            try logOutputs.put(t.name, .{
-                .lines = try logCaptureContext.captured.?.toOwnedSlice(),
+        if (log_capture_context.captured.?.items.len > 0) {
+            try log_outputs.put(t.name, .{
+                .lines = try log_capture_context.captured.?.toOwnedSlice(),
                 .displayed = false,
             });
-            logCaptureContext.captured.?.clearRetainingCapacity();
+            log_capture_context.captured.?.clearRetainingCapacity();
         }
 
         if (slowest.time < elapsed) {
@@ -261,10 +261,10 @@ pub fn inner_main() !void {
             slowest.time = elapsed;
         }
 
-        var errorsHappened = false;
+        var errors_happened = false;
 
         if (std.testing.allocator_instance.deinit() == .leak) {
-            errorsHappened = true;
+            errors_happened = true;
             total_failures += 1;
             try failures.append(RunnerErrorEntry{
                 .name = t.name,
@@ -273,7 +273,7 @@ pub fn inner_main() !void {
         }
 
         result catch |err| {
-            errorsHappened = true;
+            errors_happened = true;
             total_failures += 1;
             try failures.append(RunnerErrorEntry{
                 .name = t.name,
@@ -281,8 +281,8 @@ pub fn inner_main() !void {
             });
         };
 
-        if (errorsHappened) {
-            try errorOutput.writeColor(ttyConfig, writer, "X");
+        if (errors_happened) {
+            try ErrorOutput.writeColor(tty_config, writer, "X");
         } else {
             try writer.writeByte('.');
         }
@@ -290,25 +290,25 @@ pub fn inner_main() !void {
     try writer.writeByte('\n');
 
     if (failures.items.len > 0) {
-        try errorOutput.writeColor(ttyConfig, writer, "\nFAILED TESTS");
+        try ErrorOutput.writeColor(tty_config, writer, "\nFAILED TESTS");
 
         for (failures.items) |failed_test| {
             try writer.writeAll("\n  → ");
-            try importantOutput.writeColor(ttyConfig, writer, failed_test.name);
+            try ImportantOutput.writeColor(tty_config, writer, failed_test.name);
             try writer.writeAll(": ");
-            try errorOutput.writeColor(ttyConfig, writer, failed_test.err);
+            try ErrorOutput.writeColor(tty_config, writer, failed_test.err);
 
             inline for (@typeInfo(@TypeOf(outputs)).@"struct".fields) |field| {
-                const outputNullable = @field(outputs, field.name).getEntry(failed_test.name);
-                if (outputNullable) |output| {
-                    try displayCapturedOutputLine(ttyConfig, writer, field.name, output.value_ptr.content);
+                const output_nullable = @field(outputs, field.name).getEntry(failed_test.name);
+                if (output_nullable) |output| {
+                    try displayCapturedOutputLine(tty_config, writer, field.name, output.value_ptr.content);
                     output.value_ptr.displayed = true;
                 }
             }
-            const outputNullable = logOutputs.getEntry(failed_test.name);
-            if (outputNullable) |output| {
+            const output_nullable = log_outputs.getEntry(failed_test.name);
+            if (output_nullable) |output| {
                 for (output.value_ptr.lines) |line| {
-                    try displayCapturedOutputLine(ttyConfig, writer, "testutil", line);
+                    try displayCapturedOutputLine(tty_config, writer, "testutil", line);
                 }
                 output.value_ptr.displayed = true;
             }
@@ -329,8 +329,8 @@ pub fn inner_main() !void {
             break;
         }
     }
-    var logOutputs_iter = logOutputs.iterator();
-    while (logOutputs_iter.next()) |output| {
+    var log_outputs_iter = log_outputs.iterator();
+    while (log_outputs_iter.next()) |output| {
         if (!output.value_ptr.displayed) {
             additional_output = true;
             break;
@@ -338,7 +338,7 @@ pub fn inner_main() !void {
     }
 
     if (additional_output) {
-        try errorOutput.writeColor(ttyConfig, writer, "\nCAPTURED OUTPUT");
+        try ErrorOutput.writeColor(tty_config, writer, "\nCAPTURED OUTPUT");
         inline for (@typeInfo(@TypeOf(outputs)).@"struct".fields) |field| {
             var output_iter = @field(outputs, field.name).iterator();
             while (output_iter.next()) |output| {
@@ -346,42 +346,42 @@ pub fn inner_main() !void {
                     continue;
                 }
                 try writer.writeAll("\n  → ");
-                try importantOutput.writeColor(ttyConfig, writer, output.key_ptr.*);
-                try displayCapturedOutputLine(ttyConfig, writer, field.name, output.value_ptr.content);
+                try ImportantOutput.writeColor(tty_config, writer, output.key_ptr.*);
+                try displayCapturedOutputLine(tty_config, writer, field.name, output.value_ptr.content);
             }
         }
-        var logOutput_iter = logOutputs.iterator();
-        while (logOutput_iter.next()) |output| {
+        var log_output_iter = log_outputs.iterator();
+        while (log_output_iter.next()) |output| {
             if (output.value_ptr.displayed) {
                 continue;
             }
             try writer.writeAll("\n  → ");
-            try importantOutput.writeColor(ttyConfig, writer, output.key_ptr.*);
+            try ImportantOutput.writeColor(tty_config, writer, output.key_ptr.*);
             for (output.value_ptr.lines) |line| {
-                try displayCapturedOutputLine(ttyConfig, writer, "testutil", line);
+                try displayCapturedOutputLine(tty_config, writer, "testutil", line);
             }
         }
         try writer.writeByte('\n');
     }
 
-    try importantOutput.writeColor(ttyConfig, writer, "\nSUMMARY");
+    try ImportantOutput.writeColor(tty_config, writer, "\nSUMMARY");
 
     try writer.writeAll("\n  → ");
-    try importantOutput.beginColor(ttyConfig, writer);
+    try ImportantOutput.beginColor(tty_config, writer);
     try std.fmt.format(writer, "{d}", .{total_tests});
-    try endColor(ttyConfig, writer);
+    try endColor(tty_config, writer);
     try writer.writeAll(" tests, ");
     if (total_failures == 0) {
-        try goodOutput.beginColor(ttyConfig, writer);
+        try GoodOutput.beginColor(tty_config, writer);
     } else {
-        try errorOutput.beginColor(ttyConfig, writer);
+        try ErrorOutput.beginColor(tty_config, writer);
     }
     try std.fmt.format(writer, "{d}", .{total_failures});
-    try endColor(ttyConfig, writer);
+    try endColor(tty_config, writer);
     try writer.writeAll(" failures");
 
     try writer.writeAll("\n  → Slowest test: ");
-    try importantOutput.writeColor(ttyConfig, writer, slowest.name);
+    try ImportantOutput.writeColor(tty_config, writer, slowest.name);
     try std.fmt.format(writer, " ({d}ms)", .{slowest.time});
     try writer.writeAll("\n=== TESTING SESSION ENDS ===\n");
 }

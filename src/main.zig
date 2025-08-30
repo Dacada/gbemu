@@ -48,7 +48,7 @@ pub fn main() !void {
     const stdout = std.io.getStdOut();
     const writer = stdout.writer();
 
-    var audioBackend = AudioBackend.init();
+    var audio_backend = AudioBackend.init();
 
     var cart = try makeCart();
 
@@ -57,7 +57,7 @@ pub fn main() !void {
     var intr = Interrupt.init();
     var joypad = Joypad.init(&intr);
     var serial = Serial.init(&sched, &intr);
-    var apu = Apu.init(&audioBackend);
+    var apu = Apu.init(&audio_backend);
     var timer = Timer.init(&apu, &intr);
     var lcd = Lcd{};
     var boot_rom = BootRom{};
@@ -74,10 +74,10 @@ pub fn main() !void {
     );
 
     var mmu = Mmu.init(&cart, &ppu, &mmio);
-    lib.emulator.initialize_memory(Mmu, &mmu);
+    lib.emulator.initializeMemory(Mmu, &mmu);
 
     var cpu = Cpu.init(&mmu, &intr, args.@"breakpoint-instruction");
-    lib.emulator.initialize_cpu(Cpu, &cpu, cart.checksum);
+    lib.emulator.initializeCpu(Cpu, &cpu, cart.checksum);
 
     // This executes a nop and fetches the first instruction of the ROM
     cpu.tick();

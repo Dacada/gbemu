@@ -1,5 +1,5 @@
 const std = @import("std");
-const Heap = @import("fixed_size_heap.zig").FixedSizeHeap(ScheduledEvent, 32, scheduled_event_comp, true);
+const Heap = @import("fixed_size_heap.zig").FixedSizeHeap(ScheduledEvent, 32, scheduledEventComp, true);
 
 pub const ScheduledEvent = struct {
     context: *anyopaque,
@@ -7,7 +7,7 @@ pub const ScheduledEvent = struct {
     scheduled_at_tick: u64 = undefined, // ignored when passing it into the .schedule method
 };
 
-fn scheduled_event_comp(a: ScheduledEvent, b: ScheduledEvent) std.math.Order {
+fn scheduledEventComp(a: ScheduledEvent, b: ScheduledEvent) std.math.Order {
     return std.math.order(a.scheduled_at_tick, b.scheduled_at_tick);
 }
 

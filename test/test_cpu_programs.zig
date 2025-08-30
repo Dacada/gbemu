@@ -71,15 +71,15 @@ test "LD only integ test" {
 
     var cpu = try runProgram(program);
 
-    try std.testing.expectEqual(program.len, cpu.reg.PC);
+    try std.testing.expectEqual(program.len, cpu.reg.pc);
 
-    try std.testing.expectEqual(0x99, cpu.reg.AF.Hi);
-    try std.testing.expectEqual(0xC0, cpu.reg.BC.Hi);
-    try std.testing.expectEqual(0x00, cpu.reg.BC.Lo);
-    try std.testing.expectEqual(0xC0, cpu.reg.DE.Hi);
-    try std.testing.expectEqual(0x05, cpu.reg.DE.Lo);
-    try std.testing.expectEqual(0xC0, cpu.reg.HL.Hi);
-    try std.testing.expectEqual(0x05, cpu.reg.HL.Lo);
+    try std.testing.expectEqual(0x99, cpu.reg.af.hi);
+    try std.testing.expectEqual(0xC0, cpu.reg.bc.hi);
+    try std.testing.expectEqual(0x00, cpu.reg.bc.lo);
+    try std.testing.expectEqual(0xC0, cpu.reg.de.hi);
+    try std.testing.expectEqual(0x05, cpu.reg.de.lo);
+    try std.testing.expectEqual(0xC0, cpu.reg.hl.hi);
+    try std.testing.expectEqual(0x05, cpu.reg.hl.lo);
 
     try std.testing.expectEqual(0xAA, cpu.mmu.read(0xC000));
     try std.testing.expectEqual(0xBB, cpu.mmu.read(0xC001));
@@ -138,13 +138,13 @@ test "LD only integ test (16-bit)" {
 
     var cpu = try runProgram(program);
 
-    try std.testing.expectEqual(program.len, cpu.reg.PC);
+    try std.testing.expectEqual(program.len, cpu.reg.pc);
 
-    try std.testing.expectEqual(0x99, cpu.reg.AF.Hi);
-    try std.testing.expectEqual(0x1234, cpu.reg.BC.all());
-    try std.testing.expectEqual(0xC000, cpu.reg.DE.all());
-    try std.testing.expectEqual(0xFFF8, cpu.reg.HL.all());
-    try std.testing.expectEqual(0xFFF8, cpu.reg.SP.all());
+    try std.testing.expectEqual(0x99, cpu.reg.af.hi);
+    try std.testing.expectEqual(0x1234, cpu.reg.bc.all());
+    try std.testing.expectEqual(0xC000, cpu.reg.de.all());
+    try std.testing.expectEqual(0xFFF8, cpu.reg.hl.all());
+    try std.testing.expectEqual(0xFFF8, cpu.reg.sp.all());
 
     try std.testing.expectEqual(0xF0, cpu.mmu.read(0xC010));
     try std.testing.expectEqual(0xFF, cpu.mmu.read(0xC011));
@@ -217,14 +217,14 @@ test "Arithmetic (8-bit)" {
 
     var cpu = try runProgram(program);
 
-    try std.testing.expectEqual(program.len, cpu.reg.PC);
+    try std.testing.expectEqual(program.len, cpu.reg.pc);
 
-    try std.testing.expectEqual(0x0A, cpu.reg.AF.Hi);
-    try std.testing.expectEqual(0x34, cpu.reg.BC.Hi);
-    try std.testing.expectEqual(0x08, cpu.reg.BC.Lo);
-    try std.testing.expectEqual(0xFF, cpu.reg.DE.Hi);
-    try std.testing.expectEqual(0xC003, cpu.reg.HL.all());
-    try std.testing.expectEqual(0xFFEB, cpu.reg.SP.all());
+    try std.testing.expectEqual(0x0A, cpu.reg.af.hi);
+    try std.testing.expectEqual(0x34, cpu.reg.bc.hi);
+    try std.testing.expectEqual(0x08, cpu.reg.bc.lo);
+    try std.testing.expectEqual(0xFF, cpu.reg.de.hi);
+    try std.testing.expectEqual(0xC003, cpu.reg.hl.all());
+    try std.testing.expectEqual(0xFFEB, cpu.reg.sp.all());
 
     try std.testing.expectEqual(0x0A, cpu.mmu.read(0xC000));
     try std.testing.expectEqual(0x34, cpu.mmu.read(0xC001));
@@ -276,12 +276,12 @@ test "Arithmetic (16-bit)" {
 
     var cpu = try runProgram(program);
 
-    try std.testing.expectEqual(program.len, cpu.reg.PC);
+    try std.testing.expectEqual(program.len, cpu.reg.pc);
 
-    try std.testing.expectEqual(0x1235, cpu.reg.BC.all());
-    try std.testing.expectEqual(0x1110, cpu.reg.DE.all());
-    try std.testing.expectEqual(0x2345, cpu.reg.HL.all());
-    try std.testing.expectEqual(0xFFEC, cpu.reg.SP.all());
+    try std.testing.expectEqual(0x1235, cpu.reg.bc.all());
+    try std.testing.expectEqual(0x1110, cpu.reg.de.all());
+    try std.testing.expectEqual(0x2345, cpu.reg.hl.all());
+    try std.testing.expectEqual(0xFFEC, cpu.reg.sp.all());
 }
 
 test "Misc bit operations" {
@@ -309,15 +309,15 @@ test "Misc bit operations" {
 
     const cpu = try runProgram(program);
 
-    try std.testing.expectEqual(program.len, cpu.reg.PC);
+    try std.testing.expectEqual(program.len, cpu.reg.pc);
 
-    try std.testing.expectEqual(0x96, cpu.reg.AF.Hi);
-    try std.testing.expectEqual(0x24, cpu.reg.BC.Hi);
-    try std.testing.expectEqual(0x40, cpu.reg.BC.Lo);
-    try std.testing.expectEqual(0xC3, cpu.reg.DE.Hi);
-    try std.testing.expectEqual(0x00, cpu.reg.DE.Lo);
-    try std.testing.expectEqual(0x08, cpu.reg.HL.Hi);
-    try std.testing.expectEqual(1, cpu.reg.AF.Lo.Z);
+    try std.testing.expectEqual(0x96, cpu.reg.af.hi);
+    try std.testing.expectEqual(0x24, cpu.reg.bc.hi);
+    try std.testing.expectEqual(0x40, cpu.reg.bc.lo);
+    try std.testing.expectEqual(0xC3, cpu.reg.de.hi);
+    try std.testing.expectEqual(0x00, cpu.reg.de.lo);
+    try std.testing.expectEqual(0x08, cpu.reg.hl.hi);
+    try std.testing.expectEqual(1, cpu.reg.af.lo.z);
 }
 
 test "Jump operations" {
@@ -372,9 +372,9 @@ test "Jump operations" {
 
     const cpu = try runProgram(program);
 
-    try std.testing.expectEqual(program.len, cpu.reg.PC);
+    try std.testing.expectEqual(program.len, cpu.reg.pc);
 
-    try std.testing.expectEqual(123 * 39, cpu.reg.BC.all());
+    try std.testing.expectEqual(123 * 39, cpu.reg.bc.all());
 }
 
 // Now tests just for fun
@@ -423,7 +423,7 @@ test "Fibonacci" {
 
     var cpu = try runProgram(program);
 
-    try std.testing.expectEqual(program.len, cpu.reg.PC);
+    try std.testing.expectEqual(program.len, cpu.reg.pc);
 
     try std.testing.expectEqual(1, cpu.mmu.read(0xC000));
     try std.testing.expectEqual(0, cpu.mmu.read(0xC001));
@@ -492,7 +492,7 @@ test "Prime Sieve" {
 
     var cpu = try runProgram(program);
 
-    try std.testing.expectEqual(program.len, cpu.reg.PC);
+    try std.testing.expectEqual(program.len, cpu.reg.pc);
 
     var primes = [_]u8{1} ** 256;
     primes[0] = 0;
@@ -549,7 +549,7 @@ test "Integer Division" {
 
     const cpu = try runProgram(program);
 
-    try std.testing.expectEqual(program.len, cpu.reg.PC);
-    try std.testing.expectEqual(11, cpu.reg.BC.Hi);
-    try std.testing.expectEqual(3, cpu.reg.BC.Lo);
+    try std.testing.expectEqual(program.len, cpu.reg.pc);
+    try std.testing.expectEqual(11, cpu.reg.bc.hi);
+    try std.testing.expectEqual(3, cpu.reg.bc.lo);
 }

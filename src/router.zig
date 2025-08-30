@@ -1,4 +1,4 @@
-const MemoryFlag = @import("memoryFlag.zig").MemoryFlag;
+const MemoryFlag = @import("memory_flag.zig").MemoryFlag;
 
 pub fn Range(Target: type) type {
     return struct { start: u16, end: u16, target: Target };
@@ -12,7 +12,7 @@ pub fn Router(
     Target: type,
     ranges: []const Range(Target),
     nomatch: struct { addr: u16, target: Target },
-    targetFields: []const TargetField(Target),
+    target_fields: []const TargetField(Target),
 ) type {
     return struct {
         const Operation = enum {
@@ -33,9 +33,9 @@ pub fn Router(
 
         pub inline fn dispatch(parent: anytype, addr: u16, comptime operation: Operation, value: u8) struct { MemoryFlag, u8 } {
             const resolved_address, const target = decode(addr);
-            inline for (targetFields) |targetField| {
+            inline for (target_fields) |targetField| {
                 if (target == targetField.target) {
-                    return make_call(
+                    return makeCall(
                         if (targetField.field) |field|
                             (if (@typeInfo(@TypeOf(@field(parent, field))) == .pointer)
                                 @field(parent, field)
@@ -53,7 +53,7 @@ pub fn Router(
             unreachable;
         }
 
-        inline fn make_call(instance: anytype, comptime namespace: type, comptime operation: Operation, addr: u16, value: u8) struct { MemoryFlag, u8 } {
+        inline fn makeCall(instance: anytype, comptime namespace: type, comptime operation: Operation, addr: u16, value: u8) struct { MemoryFlag, u8 } {
             const opname = @tagName(operation);
             switch (operation) {
                 .peek => return .{ undefined, @field(namespace, opname)(instance, addr) },

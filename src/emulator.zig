@@ -38,7 +38,7 @@ pub fn Emulator(Cpu: type, Apu: type, Ppu: type, Timer: type, Scheduler: type, D
                 // Sound system counters advance
                 self.apu.tick();
 
-                const result = try self.dbg.enter_debugger_if_needed();
+                const result = try self.dbg.enterDebuggerIfNeeded();
                 if (result == .should_stop) {
                     return true;
                 }
@@ -65,25 +65,25 @@ pub fn Emulator(Cpu: type, Apu: type, Ppu: type, Timer: type, Scheduler: type, D
     };
 }
 
-pub fn initialize_cpu(T: type, cpu: *T, header_checksum: u8) void {
+pub fn initializeCpu(T: type, cpu: *T, header_checksum: u8) void {
     // DMG ONLY -- https://gbdev.io/pandocs/Power_Up_Sequence.html
-    cpu.reg.AF.Hi = 0x01;
-    cpu.reg.AF.Lo.Z = 1;
-    cpu.reg.AF.Lo.N = 0;
-    cpu.reg.AF.Lo.H = @intFromBool(header_checksum != 0);
-    cpu.reg.AF.Lo.C = @intFromBool(header_checksum != 0);
-    cpu.reg.BC.Hi = 0x00;
-    cpu.reg.BC.Lo = 0x13;
-    cpu.reg.DE.Hi = 0x00;
-    cpu.reg.DE.Lo = 0xD8;
-    cpu.reg.HL.Hi = 0x01;
-    cpu.reg.HL.Lo = 0x4D;
-    cpu.reg.PC = 0x0100;
-    cpu.reg.SP.setAll(0xFFFE);
-    cpu.reg.IME = 0;
+    cpu.reg.af.hi = 0x01;
+    cpu.reg.af.lo.z = 1;
+    cpu.reg.af.lo.n = 0;
+    cpu.reg.af.lo.h = @intFromBool(header_checksum != 0);
+    cpu.reg.af.lo.c = @intFromBool(header_checksum != 0);
+    cpu.reg.bc.hi = 0x00;
+    cpu.reg.bc.lo = 0x13;
+    cpu.reg.de.hi = 0x00;
+    cpu.reg.de.lo = 0xD8;
+    cpu.reg.hl.hi = 0x01;
+    cpu.reg.hl.lo = 0x4D;
+    cpu.reg.pc = 0x0100;
+    cpu.reg.sp.setAll(0xFFFE);
+    cpu.reg.ime = 0;
 }
 
-pub fn initialize_memory(T: type, mmu: *T) void {
+pub fn initializeMemory(T: type, mmu: *T) void {
     // DMG ONLY -- https://gbdev.io/pandocs/Power_Up_Sequence.html
     mmu.write(0xFF00, 0xCF);
     mmu.write(0xFF01, 0x00);

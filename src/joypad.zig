@@ -1,5 +1,5 @@
-const MemoryFlag = @import("memoryFlag.zig").MemoryFlag;
-const InterruptKind = @import("interruptKind.zig").InterruptKind;
+const MemoryFlag = @import("memory_flag.zig").MemoryFlag;
+const InterruptKind = @import("interrupt_kind.zig").InterruptKind;
 
 /// true -> button is pressed
 pub const JoypadButtons = packed struct {

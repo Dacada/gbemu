@@ -1,5 +1,5 @@
-const MemoryFlag = @import("memoryFlag.zig").MemoryFlag;
-const InterruptKind = @import("interruptKind.zig").InterruptKind;
+const MemoryFlag = @import("memory_flag.zig").MemoryFlag;
+const InterruptKind = @import("interrupt_kind.zig").InterruptKind;
 
 // TODO: stub, always open bus
 
@@ -60,28 +60,28 @@ pub fn Serial(Scheduler: type, Interrupt: type) type {
             self.poke(addr, val);
 
             if (addr == 1 and !self.running and self.transfer_enable == 1 and self.clock_select == 1) {
-                self.start_transfer();
+                self.startTransfer();
                 for (1..8) |i| {
-                    self.sched.schedule(.{ .context = self, .callback = do_shift }, i * 512);
+                    self.sched.schedule(.{ .context = self, .callback = doShift }, i * 512);
                 }
-                self.sched.schedule(.{ .context = self, .callback = finish_transfer }, 8 * 512);
+                self.sched.schedule(.{ .context = self, .callback = finishTransfer }, 8 * 512);
             }
             return .{};
         }
 
-        fn start_transfer(self: *This) void {
+        fn startTransfer(self: *This) void {
             self.running = true;
         }
 
-        fn do_shift(selfptr: *anyopaque) void {
+        fn doShift(selfptr: *anyopaque) void {
             const self: *This = @alignCast(@ptrCast(selfptr));
             self.data <<= 1;
             self.data |= 1; // only 1s coming in, simulating open bus
         }
 
-        fn finish_transfer(selfptr: *anyopaque) void {
+        fn finishTransfer(selfptr: *anyopaque) void {
             const self: *This = @alignCast(@ptrCast(selfptr));
-            do_shift(selfptr);
+            doShift(selfptr);
             self.running = false;
             self.transfer_enable = 0;
             self.intr.request(InterruptKind.serial);
@@ -139,10 +139,10 @@ test "Serial bit shift behavior" {
     var serial = MockedSerial.init(&sched, &intr);
     serial.data = 0b1010_0000;
 
-    MockedSerial.do_shift(&serial);
+    MockedSerial.doShift(&serial);
     try std.testing.expectEqual(serial.data, 0b0100_0001); // Shift left, bring in '1'
 
-    MockedSerial.do_shift(&serial);
+    MockedSerial.doShift(&serial);
     try std.testing.expectEqual(serial.data, 0b1000_0011);
 }
 
@@ -154,15 +154,15 @@ test "Serial transfer completion" {
     serial.transfer_enable = 1;
     serial.clock_select = 1;
 
-    serial.start_transfer();
+    serial.startTransfer();
     try std.testing.expect(serial.running);
 
     // Simulate scheduled shifts
     for (1..7) |_| {
-        MockedSerial.do_shift(&serial);
+        MockedSerial.doShift(&serial);
     }
 
-    MockedSerial.finish_transfer(&serial);
+    MockedSerial.finishTransfer(&serial);
     try std.testing.expect(!serial.running);
     try std.testing.expectEqual(serial.transfer_enable, 0);
 }
