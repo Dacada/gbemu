@@ -234,16 +234,85 @@ const SquareWaveUnit = struct {
     }
 };
 
+const LfsrUnit = struct {
+    clock_shift: u4,
+    width: u1,
+    clock_div: u3,
+
+    register: u16,
+    tick_counter: u20,
+    target: u20,
+
+    inline fn init() LfsrUnit {
+        return LfsrUnit{
+            .clock_shift = undefined,
+            .width = undefined,
+            .clock_div = undefined,
+
+            .register = 0,
+            .tick_counter = 0,
+            .target = 0,
+        };
+    }
+
+    fn tick(self: *LfsrUnit) bool {
+        self.tick_counter +%= 1;
+        if (self.tick_counter >= self.target) {
+            self.tick_counter = 0;
+            return true;
+        }
+        return false;
+    }
+
+    fn updateTarget(self: *LfsrUnit) void {
+        self.target = if (self.clock_div == 0)
+            @as(u20, 1) << (@as(u5, @intCast(self.clock_shift)) + 1)
+        else
+            @as(u20, @intCast(self.clock_div)) << (@as(u5, @intCast(self.clock_shift)) + 2);
+    }
+
+    fn sample(self: *LfsrUnit) u4 {
+        const bit0: u1 = @intCast(self.register & 1);
+        const bit1: u1 = @intCast((self.register >> 1) & 1);
+        const nxor: u1 = ~(bit0 ^ bit1);
+
+        var mask: u16 = nxor;
+        if (self.width == 1) {
+            mask <<= 8;
+            mask |= nxor;
+            mask <<= 7;
+            self.register &= 0b0111_1111_0111_1111;
+        } else {
+            mask <<= 15;
+            self.register &= 0b0111_1111_1111_1111;
+        }
+        self.register |= mask;
+
+        self.register >>= 1;
+
+        if (self.register & 1 != 0) {
+            return 0xF;
+        } else {
+            return 0;
+        }
+    }
+
+    fn reset(self: *LfsrUnit) void {
+        self.register = 0;
+    }
+};
+
 pub fn Channel(number: comptime_int) type {
     return struct {
         const This = @This();
 
         control: ControlUnit,
         period_sweep: if (number == 1) SweepPeriodUnit else void,
-        period: PeriodUnit,
+        period: if (number != 4) PeriodUnit else void,
         volume: VolumeUnit,
         length: LengthUnit,
-        square: SquareWaveUnit,
+        square: if (number == 1 or number == 2) SquareWaveUnit else void,
+        lfsr: if (number == 4) LfsrUnit else void,
 
         current: f32,
         divtick_counter: u3,
@@ -253,10 +322,12 @@ pub fn Channel(number: comptime_int) type {
             return This{
                 .control = ControlUnit.init(),
                 .period_sweep = if (number == 1) SweepPeriodUnit.init() else {},
-                .period = PeriodUnit.init(),
+                .period = if (number != 4) PeriodUnit.init() else {},
                 .volume = VolumeUnit.init(),
                 .length = LengthUnit.init(),
-                .square = SquareWaveUnit.init(),
+                .square = if (number == 1 or number == 2) SquareWaveUnit.init() else {},
+                .lfsr = if (number == 4) LfsrUnit.init() else {},
+
                 .current = 0.0,
                 .divtick_counter = 0,
                 .powered_off = false,
@@ -288,7 +359,8 @@ pub fn Channel(number: comptime_int) type {
                 return dac(0);
             }
 
-            if (self.period.tick()) {
+            const ticked = if (number == 4) self.lfsr.tick() else self.period.tick();
+            if (ticked) {
                 var s: u8 = self.sample();
                 s *= self.volume.volume;
                 s /= 15;
@@ -299,7 +371,12 @@ pub fn Channel(number: comptime_int) type {
         }
 
         fn sample(self: *This) u4 {
-            return self.square.sample();
+            if (number == 1 or number == 2) {
+                return self.square.sample();
+            }
+            if (number == 4) {
+                return self.lfsr.sample();
+            }
         }
 
         pub fn divtick(self: *This) void {
@@ -320,7 +397,8 @@ pub fn Channel(number: comptime_int) type {
             if (self.length.counter == 0) {
                 self.length.reset();
             }
-            self.period.reset();
+            if (number != 4) self.period.reset();
+            if (number == 4) self.lfsr.reset();
             self.volume.reset();
             if (number == 1) self.period_sweep.reset(&self.period, &self.control);
         }
@@ -343,8 +421,10 @@ pub fn Channel(number: comptime_int) type {
                 },
                 1 => {
                     var ret: u8 = 0;
-                    ret |= self.square.duty;
-                    ret <<= 6;
+                    if (number == 1 or number == 2) {
+                        ret |= self.square.duty;
+                        ret <<= 6;
+                    }
                     ret |= self.length.initial_counter;
                     return ret;
                 },
@@ -357,7 +437,18 @@ pub fn Channel(number: comptime_int) type {
                     ret |= self.volume.pace;
                     return ret;
                 },
-                3 => return @intCast(self.period.period & 0xFF),
+                3 => {
+                    if (number == 4) {
+                        var ret: u8 = 0;
+                        ret |= self.lfsr.clock_shift;
+                        ret <<= 1;
+                        ret |= self.lfsr.width;
+                        ret <<= 3;
+                        ret |= self.lfsr.clock_div;
+                        return ret;
+                    }
+                    return @intCast(self.period.period & 0xFF);
+                },
                 4 => {
                     var ret: u8 = 0;
                     ret |= 1;
@@ -365,8 +456,13 @@ pub fn Channel(number: comptime_int) type {
                     ret |= self.length.enable;
                     ret <<= 3;
                     ret |= 0b111;
-                    ret <<= 3;
-                    ret |= @intCast(self.period.period & 0x700);
+                    if (number == 4) {
+                        ret <<= 3;
+                        ret |= 0b111;
+                    } else {
+                        ret <<= 3;
+                        ret |= @intCast(self.period.period & 0x700);
+                    }
                     return ret;
                 },
                 else => unreachable,
@@ -387,7 +483,9 @@ pub fn Channel(number: comptime_int) type {
                     }
                 },
                 1 => {
-                    self.square.duty = @intCast((val & 0b11_000000) >> 6);
+                    if (number == 1 or number == 2) {
+                        self.square.duty = @intCast((val & 0b11_000000) >> 6);
+                    }
                     self.length.initial_counter = @intCast(val & 0b00_111111);
                 },
                 2 => {
@@ -395,10 +493,21 @@ pub fn Channel(number: comptime_int) type {
                     self.volume.direction = @intCast((val & 0b0000_1000) >> 3);
                     self.volume.pace = @intCast(val & 0b0000_0111);
                 },
-                3 => self.period.period = (self.period.period & 0x700) | val,
+                3 => {
+                    if (number == 4) {
+                        self.lfsr.clock_shift = @intCast((val & 0xF0) >> 4);
+                        self.lfsr.width = @intCast((val & 0b0000_1000) >> 3);
+                        self.lfsr.clock_div = @intCast(val & 0b0000_0111);
+                        self.lfsr.updateTarget();
+                    } else {
+                        self.period.period = (self.period.period & 0x700) | val;
+                    }
+                },
                 4 => {
                     self.length.enable = @intCast((val & 0b0100_0000) >> 6);
-                    self.period.period = (self.period.period & 0x0FF) | (@as(u11, @intCast(val & 0b0000_0111)) << 8);
+                    if (number != 4) {
+                        self.period.period = (self.period.period & 0x0FF) | (@as(u11, @intCast(val & 0b0000_0111)) << 8);
+                    }
                 },
                 else => unreachable,
             }
