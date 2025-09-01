@@ -809,3 +809,148 @@ test "Channel(1) paced increment may overflow on a subsequent step (pace=1)" {
     // However, the overflow check takes place early, so the channel is already disabled here
     try std.testing.expect(!ch.control.active);
 }
+
+test "Channel(4) NR43 (addr 3) poke/peek round-trip + updateTarget math" {
+    var ch = Channel(4).init();
+
+    // Case 1: clock_div = 0, clock_shift = 4, width = 0
+    // Expected target = 1 << (shift + 1) = 1 << 5 = 32
+    const shift1: u4 = 4;
+    const width1: u1 = 0;
+    const div1: u3 = 0;
+
+    _ = ch.write(3, (@as(u8, shift1) << 4) | (@as(u8, width1) << 3) | div1);
+    try std.testing.expectEqual(
+        (@as(u8, shift1) << 4) | (@as(u8, width1) << 3) | div1,
+        ch.peek(3),
+    );
+    try std.testing.expectEqual(@as(u20, 32), ch.lfsr.target);
+
+    // Case 2: clock_div = 3, clock_shift = 2, width = 1
+    // Expected target = div << (shift + 2) = 3 << 4 = 48
+    const shift2: u4 = 2;
+    const width2: u1 = 1;
+    const div2: u3 = 3;
+
+    _ = ch.write(3, (@as(u8, shift2) << 4) | (@as(u8, width2) << 3) | div2);
+    try std.testing.expectEqual(
+        (@as(u8, shift2) << 4) | (@as(u8, width2) << 3) | div2,
+        ch.peek(3),
+    );
+    try std.testing.expectEqual(@as(u20, 48), ch.lfsr.target);
+}
+
+test "Channel(4) NR44 (addr 4) peek exposes LEN enable and fixed ones; trigger works" {
+    var ch = Channel(4).init();
+
+    // Enable DAC so triggering can make it 'active'
+    _ = ch.write(2, 0x10); // initial_volume=1
+
+    // Length enable = 1; write without trigger bit first
+    _ = ch.write(4, 0b0100_0000);
+    const p = ch.peek(4);
+    // Bit layout for Channel 4 peek(4):
+    // 7: always 1, 6: length.enable, 5..3: 111, 2..0: 111
+    try std.testing.expectEqual(@as(u8, 0b1_1_111_111), p);
+
+    // Now trigger
+    _ = ch.write(4, 0b1100_0000); // lengthEnable=1, trigger=1
+    try std.testing.expect(ch.control.active);
+    try std.testing.expectEqual(@as(u16, 0), ch.lfsr.register); // reset() sets register=0
+    try std.testing.expectEqual(ch.volume.initial_volume, ch.volume.volume);
+}
+
+test "Channel(4) DAC gating: write(2) enables/disables; tick() respects DAC and active" {
+    const eps: f32 = 1e-6;
+    var ch = Channel(4).init();
+
+    // 1) DAC disabled -> tick returns 0.0
+    _ = ch.write(2, 0x00);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.0), ch.tick(), eps);
+
+    // 2) DAC enabled but not active -> dac(0) baseline (1.0)
+    _ = ch.write(2, 0x08); // volume=0, direction=1 enables DAC
+    try std.testing.expectApproxEqAbs(@as(f32, 1.0), ch.tick(), eps);
+
+    // 3) Trigger -> still respect gating and produce a stable current value
+    // Make the LFSR tick frequently: shift=0, div=0 => target = 1 << (0+1) = 2
+    _ = ch.write(3, (0 << 4) | (0 << 3) | 0);
+    _ = ch.write(4, 0x80); // trigger
+    // A couple of ticks should not be NaN and should be finite
+    _ = ch.tick();
+    const s = ch.tick();
+    // If active and DAC on, value must be within [-1, 1]
+    try std.testing.expect(s <= 1.0 and s >= -1.0);
+}
+
+test "Channel(4) LFSR.sample() basic sequences: width=0 vs width=1" {
+    var ch = Channel(4).init();
+
+    // Start from a known state
+    ch.lfsr.reset();
+
+    // width=0: first 14 samples low (0), then high (0xF) afterwards
+    ch.lfsr.width = 0;
+    inline for (0..14) |i| {
+        _ = i;
+        try std.testing.expectEqual(@as(u4, 0x0), ch.lfsr.sample());
+    }
+    try std.testing.expectEqual(@as(u4, 0xF), ch.lfsr.sample());
+
+    // Reset and use width=1: the tap changes; the 7th sample becomes high
+    ch.lfsr.reset();
+    ch.lfsr.width = 1;
+    inline for (0..6) |i| {
+        _ = i;
+        try std.testing.expectEqual(@as(u4, 0x0), ch.lfsr.sample());
+    }
+    try std.testing.expectEqual(@as(u4, 0xF), ch.lfsr.sample());
+}
+
+test "Channel(4) length timer disables channel when enabled and wraps" {
+    var ch = Channel(4).init();
+
+    // Prepare: length=63 so one length 'tick' wraps to 0 and disables.
+    _ = ch.write(1, 63); // NR41 length only for channel 4
+    _ = ch.write(2, 0x10); // enable DAC
+    _ = ch.write(4, 0xC0); // trigger + lengthEnable=1
+
+    try std.testing.expect(ch.control.active);
+
+    ch.divtick(); // 1 -> no length tick
+    ch.divtick(); // 2 -> length increments 63->0, active=false
+
+    try std.testing.expect(!ch.control.active);
+}
+
+test "Channel(4) poweroff blocks writes (except NR41) and prevents trigger" {
+    var ch = Channel(4).init();
+
+    ch.poweroff();
+
+    // Attempt to trigger while powered off -> must not activate
+    _ = ch.write(4, 0x80);
+    try std.testing.expect(!ch.control.active);
+
+    // Writes to NR43 while powered off are ignored
+    _ = ch.write(3, 0xA5);
+    try std.testing.expectEqual(@as(u4, 0), ch.lfsr.clock_shift);
+    try std.testing.expectEqual(@as(u1, 0), ch.lfsr.width);
+    try std.testing.expectEqual(@as(u3, 0), ch.lfsr.clock_div);
+
+    // NR41 (addr 1, length) remains writable on power-off (DMG quirk in this impl)
+    _ = ch.write(1, 17);
+    try std.testing.expectEqual(@as(u8, 17), ch.peek(1));
+}
+
+test "Channel(4) illegal NRx0 access: read/write flag as illegal" {
+    var ch = Channel(4).init();
+
+    // Write to addr 0 should be flagged illegal
+    const wf = ch.write(0, 0x12);
+    try std.testing.expect(wf.illegal);
+
+    // Read from addr 0 should also be flagged illegal
+    const rf = ch.read(0);
+    try std.testing.expect(rf[0].illegal);
+}
