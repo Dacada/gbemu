@@ -34,10 +34,14 @@ pub fn Emulator(Cpu: type, Apu: type, Ppu: type, Timer: type, Scheduler: type, D
                 // react to falling edges on memory writes, to emulate all this we update it right after the CPU but
                 // before any debugger calls
                 self.timer.tick();
+            }
 
-                // Sound system counters advance
+            if (self.divider % 2 == 0) {
+                // Sound system counters advance. They depend on timer having ticked.
                 self.apu.tick();
+            }
 
+            if (self.divider == 0) {
                 const result = try self.dbg.enterDebuggerIfNeeded();
                 if (result == .should_stop) {
                     return true;

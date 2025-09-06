@@ -2,20 +2,29 @@ const std = @import("std");
 const lib = @import("lib");
 const Channel1 = lib.channel.Channel(1);
 const Channel2 = lib.channel.Channel(2);
+const Channel3 = lib.channel.Channel(3);
 const Channel4 = lib.channel.Channel(4);
 
 const cpu_freq_hz = 4_194_304;
-const apu_freq_hz = cpu_freq_hz / 4;
+const apu_freq_hz = cpu_freq_hz / 2;
 const frame_seq_freq_hz = 512;
 const apu_ticks_per_div = apu_freq_hz / frame_seq_freq_hz;
 
-// target tone: ~440Hz
+// target tone: ~440Hz (for square channels)
 // f = 131072 / (2048 - N)
 // N = 2048 - 131072 / f
 // f = 440 -> N ~= 1750
 const period: u11 = 1750;
 const period_low = period & 0xFF;
 const period_high = (period & 0x0700) >> 8;
+
+// target tone: ~440Hz (for wave channel)
+// f = 65536 / (2048 - N)
+// N = 2048 - 65536 / f
+// f = 440 -> N ~= 1899
+const period2: u11 = 1899;
+const period2_low = period2 & 0xFF;
+const period2_high = (period2 & 0x700) >> 8;
 
 fn waitAndCollectUntil(channel: anytype, max_samples: usize) !std.ArrayList(f32) {
     var samples = std.ArrayList(f32).init(std.testing.allocator);
@@ -33,6 +42,13 @@ fn waitAndCollectUntil(channel: anytype, max_samples: usize) !std.ArrayList(f32)
     }
 
     return samples;
+}
+
+fn getExpectedArray(comptime name: []const u8) ![]const f32 {
+    const bytes = @embedFile(name);
+    const floats = try std.testing.allocator.alloc(f32, bytes.len / 4);
+    @memcpy(@as([]u8, @ptrCast(floats)), bytes);
+    return floats;
 }
 
 test "test channel 2" {
@@ -60,14 +76,17 @@ test "test channel 2" {
     try std.testing.expect(!channel.write(3, nr23_val).any());
     try std.testing.expect(!channel.write(4, nr24_val).any());
 
-    var samples = try waitAndCollectUntil(&channel, 300_000);
+    const nsamples: usize = 600_000;
+
+    var samples = try waitAndCollectUntil(&channel, nsamples);
     defer samples.deinit();
 
     const output_file = try std.fs.createFileAbsolute("/tmp/out_ch2.raw", .{});
     defer output_file.close();
     try output_file.writeAll(std.mem.sliceAsBytes(samples.items));
 
-    const expected: []const f32 = @alignCast(std.mem.bytesAsSlice(f32, @embedFile("res/ch2.raw")));
+    const expected: []const f32 = try getExpectedArray("res/ch2.raw");
+    defer std.testing.allocator.free(expected);
     try std.testing.expectEqualSlices(f32, expected, samples.items);
 }
 
@@ -102,14 +121,17 @@ test "test channel 1" {
     try std.testing.expect(!channel.write(3, nr13_val).any());
     try std.testing.expect(!channel.write(4, nr14_val).any());
 
-    var samples = try waitAndCollectUntil(&channel, 1_200_000);
+    const nsamples: usize = 2_400_000;
+
+    var samples = try waitAndCollectUntil(&channel, nsamples);
     defer samples.deinit();
 
     const output_file = try std.fs.createFileAbsolute("/tmp/out_ch1.raw", .{});
     defer output_file.close();
     try output_file.writeAll(std.mem.sliceAsBytes(samples.items));
 
-    const expected: []const f32 = @alignCast(std.mem.bytesAsSlice(f32, @embedFile("res/ch1.raw")));
+    const expected: []const f32 = try getExpectedArray("res/ch1.raw");
+    defer std.testing.allocator.free(expected);
     try std.testing.expectEqualSlices(f32, expected, samples.items);
 }
 
@@ -138,7 +160,9 @@ test "test channel 4" {
     try std.testing.expect(!channel.write(3, nr43_val).any());
     try std.testing.expect(!channel.write(4, nr44_val).any());
 
-    var samples = try waitAndCollectUntil(&channel, 400_000);
+    const nsamples = 800_000;
+
+    var samples = try waitAndCollectUntil(&channel, nsamples);
     defer samples.deinit();
 
     // change width to wide and retrigger
@@ -146,7 +170,7 @@ test "test channel 4" {
     try std.testing.expect(!channel.write(3, nr43_val_2).any());
     try std.testing.expect(!channel.write(4, nr44_val).any());
 
-    var samples_2 = try waitAndCollectUntil(&channel, 400_000);
+    var samples_2 = try waitAndCollectUntil(&channel, nsamples);
     defer samples_2.deinit();
 
     const output_file = try std.fs.createFileAbsolute("/tmp/out_ch4.raw", .{});
@@ -154,7 +178,70 @@ test "test channel 4" {
     try output_file.writeAll(std.mem.sliceAsBytes(samples.items));
     try output_file.writeAll(std.mem.sliceAsBytes(samples_2.items));
 
-    const expected: []const f32 = @alignCast(std.mem.bytesAsSlice(f32, @embedFile("res/ch4.raw")));
-    try std.testing.expectEqualSlices(f32, expected[0..400_001], samples.items);
-    try std.testing.expectEqualSlices(f32, expected[400_001..], samples_2.items);
+    const expected: []const f32 = try getExpectedArray("res/ch4.raw");
+    defer std.testing.allocator.free(expected);
+    try std.testing.expectEqualSlices(f32, expected[0..(nsamples + 1)], samples.items);
+    try std.testing.expectEqualSlices(f32, expected[(nsamples + 1)..], samples_2.items);
+}
+
+test "test channel 3" {
+    // dac on
+    const nr30_val = 0b1000_0000;
+
+    // maximum length timer
+    const nr31_val = 0;
+
+    // 100% output level
+    const nr32_val = 0b0_01_00000;
+
+    // period
+    const nr33_val = period2_low;
+
+    // length enable, trigger
+    const nr34_val = 0b1_1_000_000 | period2_high;
+
+    var channel = Channel3.init();
+
+    try std.testing.expect(!channel.write(0, 0).any());
+    try std.testing.expect(!channel.write(1, 0).any());
+    try std.testing.expect(!channel.write(2, 0).any());
+    try std.testing.expect(!channel.write(3, 0).any());
+    try std.testing.expect(!channel.write(4, 0).any());
+
+    // Write a sawtooth cycle to the wave memory
+    try std.testing.expect(!Channel3.wave_memory_interface.write(&channel, 0, 0xFF).any());
+    try std.testing.expect(!Channel3.wave_memory_interface.write(&channel, 1, 0xEE).any());
+    try std.testing.expect(!Channel3.wave_memory_interface.write(&channel, 2, 0xDD).any());
+    try std.testing.expect(!Channel3.wave_memory_interface.write(&channel, 3, 0xCC).any());
+    try std.testing.expect(!Channel3.wave_memory_interface.write(&channel, 4, 0xBB).any());
+    try std.testing.expect(!Channel3.wave_memory_interface.write(&channel, 5, 0xAA).any());
+    try std.testing.expect(!Channel3.wave_memory_interface.write(&channel, 6, 0x99).any());
+    try std.testing.expect(!Channel3.wave_memory_interface.write(&channel, 7, 0x88).any());
+    try std.testing.expect(!Channel3.wave_memory_interface.write(&channel, 8, 0x77).any());
+    try std.testing.expect(!Channel3.wave_memory_interface.write(&channel, 9, 0x66).any());
+    try std.testing.expect(!Channel3.wave_memory_interface.write(&channel, 10, 0x55).any());
+    try std.testing.expect(!Channel3.wave_memory_interface.write(&channel, 11, 0x44).any());
+    try std.testing.expect(!Channel3.wave_memory_interface.write(&channel, 12, 0x33).any());
+    try std.testing.expect(!Channel3.wave_memory_interface.write(&channel, 13, 0x22).any());
+    try std.testing.expect(!Channel3.wave_memory_interface.write(&channel, 14, 0x11).any());
+    try std.testing.expect(!Channel3.wave_memory_interface.write(&channel, 15, 0x00).any());
+
+    try std.testing.expect(!channel.write(0, nr30_val).any());
+    try std.testing.expect(!channel.write(1, nr31_val).any());
+    try std.testing.expect(!channel.write(2, nr32_val).any());
+    try std.testing.expect(!channel.write(3, nr33_val).any());
+    try std.testing.expect(!channel.write(4, nr34_val).any());
+
+    const nsamples = 2_500_000;
+
+    var samples = try waitAndCollectUntil(&channel, nsamples);
+    defer samples.deinit();
+
+    const output_file = try std.fs.createFileAbsolute("/tmp/out_ch3.raw", .{});
+    defer output_file.close();
+    try output_file.writeAll(std.mem.sliceAsBytes(samples.items));
+
+    const expected: []const f32 = try getExpectedArray("res/ch3.raw");
+    defer std.testing.allocator.free(expected);
+    try std.testing.expectEqualSlices(f32, expected, samples.items);
 }

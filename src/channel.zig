@@ -21,77 +21,81 @@ inline fn dac(sample: u4) f32 {
     };
 }
 
-const SweepPeriodUnit = struct {
-    pace: u3,
-    individual_step: u3,
-    direction: u1,
+fn SweepPeriodUnit(number: comptime_int) type {
+    return struct {
+        const This = @This();
 
-    counter: u3,
-    enabled: bool,
-    shadow: u11,
+        pace: u3,
+        individual_step: u3,
+        direction: u1,
 
-    fn init() SweepPeriodUnit {
-        return SweepPeriodUnit{
-            .pace = undefined,
-            .individual_step = undefined,
-            .direction = undefined,
+        counter: u3,
+        enabled: bool,
+        shadow: u11,
 
-            .counter = 0,
-            .enabled = false,
-            .shadow = 0,
-        };
-    }
+        fn init() This {
+            return This{
+                .pace = undefined,
+                .individual_step = undefined,
+                .direction = undefined,
 
-    fn tick(self: *SweepPeriodUnit, control: *ControlUnit, period: *PeriodUnit) void {
-        self.counter +%= 1;
-        if (self.counter < self.pace) {
-            return;
+                .counter = 0,
+                .enabled = false,
+                .shadow = 0,
+            };
         }
-        self.counter = 0;
 
-        // Entire confusing and weird implementation from Pan Docs
-        if (self.enabled and self.pace != 0) {
-            const new_period = self.period_calculation();
-            self.overflow_check(new_period, control);
-            if (new_period <= 0x7FF and self.individual_step != 0) {
-                self.shadow = @intCast(new_period);
-                period.period = @intCast(new_period);
+        fn tick(self: *This, control: *ControlUnit, period: *PeriodUnit(number)) void {
+            self.counter +%= 1;
+            if (self.counter < self.pace) {
+                return;
+            }
+            self.counter = 0;
+
+            // Entire confusing and weird implementation from Pan Docs
+            if (self.enabled and self.pace != 0) {
+                const new_period = self.period_calculation();
+                self.overflow_check(new_period, control);
+                if (new_period <= 0x7FF and self.individual_step != 0) {
+                    self.shadow = @intCast(new_period);
+                    period.period = @intCast(new_period);
+                    self.overflow_check(self.period_calculation(), control);
+                }
+            }
+        }
+
+        fn period_calculation(self: *const This) u12 {
+            const shifted = self.shadow >> self.individual_step;
+            // store it as a u12 to check for "overflow" later
+            var new_period: u12 = @intCast(self.shadow);
+            if (self.direction == 0) {
+                new_period += @intCast(shifted);
+            } else {
+                // shifted will always be smaller since it's the result of right shifting that value
+                new_period -= @intCast(shifted);
+            }
+            return new_period;
+        }
+
+        fn overflow_check(self: *This, period: u12, control: *ControlUnit) void {
+            if (period > 0x7FF) {
+                control.active = false;
+                self.enabled = false;
+            }
+        }
+
+        fn reset(self: *This, period: *const PeriodUnit(number), control: *ControlUnit) void {
+            self.shadow = period.period;
+            self.counter = 0;
+            self.enabled = self.pace != 0 or self.individual_step != 0;
+
+            // Pan Docs says: If the individual step is non-zero, frequency calculation and overflow check are performed immediately.
+            if (self.individual_step != 0) {
                 self.overflow_check(self.period_calculation(), control);
             }
         }
-    }
-
-    fn period_calculation(self: *const SweepPeriodUnit) u12 {
-        const shifted = self.shadow >> self.individual_step;
-        // store it as a u12 to check for "overflow" later
-        var new_period: u12 = @intCast(self.shadow);
-        if (self.direction == 0) {
-            new_period += @intCast(shifted);
-        } else {
-            // shifted will always be smaller since it's the result of right shifting that value
-            new_period -= @intCast(shifted);
-        }
-        return new_period;
-    }
-
-    fn overflow_check(self: *SweepPeriodUnit, period: u12, control: *ControlUnit) void {
-        if (period > 0x7FF) {
-            control.active = false;
-            self.enabled = false;
-        }
-    }
-
-    fn reset(self: *SweepPeriodUnit, period: *const PeriodUnit, control: *ControlUnit) void {
-        self.shadow = period.period;
-        self.counter = 0;
-        self.enabled = self.pace != 0 or self.individual_step != 0;
-
-        // Pan Docs says: If the individual step is non-zero, frequency calculation and overflow check are performed immediately.
-        if (self.individual_step != 0) {
-            self.overflow_check(self.period_calculation(), control);
-        }
-    }
-};
+    };
+}
 
 const VolumeUnit = struct {
     pace: u3,
@@ -134,31 +138,56 @@ const VolumeUnit = struct {
     }
 };
 
-const PeriodUnit = struct {
-    period: u11,
+fn PeriodUnit(number: comptime_int) type {
+    return struct {
+        const This = @This();
 
-    counter: u11,
+        period: u11,
 
-    inline fn init() PeriodUnit {
-        return PeriodUnit{
-            .period = undefined,
-            .counter = 0,
-        };
-    }
+        divider: if (number != 3) u1 else void,
+        counter: u11,
 
-    fn tick(self: *PeriodUnit) bool {
-        self.counter +%= 1;
-        if (self.counter == 0) {
-            self.reset();
+        inline fn init() This {
+            return This{
+                .period = undefined,
+                .divider = if (number != 3) 0 else {},
+                .counter = 0,
+            };
+        }
+
+        fn wouldTick(self: *const This) bool {
+            if (number != 3) {
+                if (self.divider +% 1 != 0) {
+                    return false;
+                }
+            }
+            if (self.counter +% 1 != 0) {
+                return false;
+            }
             return true;
         }
-        return false;
-    }
 
-    fn reset(self: *PeriodUnit) void {
-        self.counter = self.period;
-    }
-};
+        fn tick(self: *This) bool {
+            if (number != 3) {
+                self.divider +%= 1;
+                if (self.divider != 0) {
+                    return false;
+                }
+            }
+
+            self.counter +%= 1;
+            if (self.counter == 0) {
+                self.reset();
+                return true;
+            }
+            return false;
+        }
+
+        fn reset(self: *This) void {
+            self.counter = self.period;
+        }
+    };
+}
 
 const ControlUnit = struct {
     active: bool,
@@ -181,34 +210,40 @@ const ControlUnit = struct {
     }
 };
 
-const LengthUnit = struct {
-    enable: u1,
-    initial_counter: u6,
+fn LengthUnit(number: comptime_int) type {
+    return struct {
+        const This = @This();
 
-    counter: u6, // TODO: u8 for channel3!
+        enable: u1,
+        initial_counter: if (number == 3) u8 else u6,
 
-    inline fn init() LengthUnit {
-        return LengthUnit{
-            .enable = undefined,
-            .initial_counter = undefined,
-            .counter = 0,
-        };
-    }
+        counter: if (number == 3) u8 else u6,
 
-    fn tick(self: *LengthUnit, control: *ControlUnit) void {
-        if (self.enable == 0) {
-            return;
+        inline fn init() This {
+            if (number != 1 and number != 2 and number != 3 and number != 4) @compileError("Invalid channel number.");
+
+            return This{
+                .enable = undefined,
+                .initial_counter = undefined,
+                .counter = 0,
+            };
         }
-        self.counter +%= 1;
-        if (self.counter == 0) {
-            control.active = false;
-        }
-    }
 
-    fn reset(self: *LengthUnit) void {
-        self.counter = self.initial_counter;
-    }
-};
+        fn tick(self: *This, control: *ControlUnit) void {
+            if (self.enable == 0) {
+                return;
+            }
+            self.counter +%= 1;
+            if (self.counter == 0) {
+                control.active = false;
+            }
+        }
+
+        fn reset(self: *This) void {
+            self.counter = self.initial_counter;
+        }
+    };
+}
 
 const SquareWaveUnit = struct {
     duty: u2,
@@ -222,12 +257,12 @@ const SquareWaveUnit = struct {
         };
     }
 
-    fn sample(self: *SquareWaveUnit) u4 {
-        const waveforms: [4][8]u4 = .{
-            .{ 0xF, 0xF, 0xF, 0xF, 0xF, 0xF, 0xF, 0x0 },
-            .{ 0x0, 0xF, 0xF, 0xF, 0xF, 0xF, 0xF, 0x0 },
-            .{ 0x0, 0xF, 0xF, 0xF, 0xF, 0x0, 0x0, 0x0 },
-            .{ 0xF, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xF },
+    fn sample(self: *SquareWaveUnit) bool {
+        const waveforms: [4][8]bool = .{
+            .{ true, true, true, true, true, true, true, false },
+            .{ false, true, true, true, true, true, true, false },
+            .{ false, true, true, true, true, false, false, false },
+            .{ true, false, false, false, false, false, false, true },
         };
         defer self.counter +%= 1;
         return waveforms[self.duty][self.counter];
@@ -271,7 +306,7 @@ const LfsrUnit = struct {
             @as(u20, @intCast(self.clock_div)) << (@as(u5, @intCast(self.clock_shift)) + 2);
     }
 
-    fn sample(self: *LfsrUnit) u4 {
+    fn sample(self: *LfsrUnit) bool {
         const bit0: u1 = @intCast(self.register & 1);
         const bit1: u1 = @intCast((self.register >> 1) & 1);
         const nxor: u1 = ~(bit0 ^ bit1);
@@ -290,11 +325,7 @@ const LfsrUnit = struct {
 
         self.register >>= 1;
 
-        if (self.register & 1 != 0) {
-            return 0xF;
-        } else {
-            return 0;
-        }
+        return self.register & 1 != 0;
     }
 
     fn reset(self: *LfsrUnit) void {
@@ -302,31 +333,118 @@ const LfsrUnit = struct {
     }
 };
 
+const OutputLevelUnit = struct {
+    output_level: u2,
+
+    inline fn init() OutputLevelUnit {
+        return OutputLevelUnit{
+            .output_level = undefined,
+        };
+    }
+
+    fn scale(self: *const OutputLevelUnit, sample: u4) u4 {
+        if (self.output_level == 0) return 0;
+        return sample >> (self.output_level - 1);
+    }
+};
+
+const WaveSamplerUnit = struct {
+    const wave_memory_interface = struct {
+        fn should_fail(channel: *Channel(3)) bool {
+            // DMG ONLY -- Pan Docs says: "On monochrome consoles, wave RAM can only be accessed on the same cycle that CH3 does. Otherwise, reads return $FF, and writes are ignored."
+            return channel.control.active and !channel.period.wouldTick();
+
+            // TODO: Pan Docs also says: On AGB, reads return $FF, and writes are ignored.
+
+            // TODO: Pan Docs also says: On other consoles, the byte accessed will be the one CH3 is currently reading6; that is, if CH3 is currently reading one of the first two samples, the CPU will really access $FF30, regardless of the address being used.
+        }
+
+        pub fn peek(channel: *Channel(3), addr: u16) u8 {
+            return channel.wave.samples[addr];
+        }
+
+        pub fn poke(channel: *Channel(3), addr: u16, val: u8) void {
+            channel.wave.samples[addr] = val;
+        }
+
+        pub fn read(channel: *Channel(3), addr: u16) struct { MemoryFlag, u8 } {
+            if (should_fail(channel)) {
+                return .{ .{ .illegal = true }, 0xFF };
+            }
+            return .{ .{}, peek(channel, addr) };
+        }
+
+        pub fn write(channel: *Channel(3), addr: u16, val: u8) MemoryFlag {
+            if (should_fail(channel)) {
+                return .{ .illegal = true };
+            }
+            poke(channel, addr, val);
+            return .{};
+        }
+    };
+
+    samples: [16]u8,
+
+    current_value: u4,
+    next_index: u5,
+
+    inline fn init() WaveSamplerUnit {
+        return WaveSamplerUnit{
+            .samples = .{0} ** 16,
+
+            .current_value = 0,
+            .next_index = 1,
+        };
+    }
+
+    fn sample(self: *WaveSamplerUnit) u4 {
+        defer self.advance();
+        return self.current_value;
+    }
+
+    fn advance(self: *WaveSamplerUnit) void {
+        defer self.next_index +%= 1;
+        const byte = self.samples[self.next_index / 2];
+        self.current_value = if (self.next_index % 2 == 0)
+            @intCast(byte & 0xF)
+        else
+            @intCast((byte & 0xF0) >> 4);
+    }
+};
+
 pub fn Channel(number: comptime_int) type {
     return struct {
         const This = @This();
 
+        pub const wave_memory_interface = if (number == 3) WaveSamplerUnit.wave_memory_interface else struct {};
+
         control: ControlUnit,
-        period_sweep: if (number == 1) SweepPeriodUnit else void,
-        period: if (number != 4) PeriodUnit else void,
-        volume: VolumeUnit,
-        length: LengthUnit,
+        period_sweep: if (number == 1) SweepPeriodUnit(number) else void,
+        period: if (number != 4) PeriodUnit(number) else void,
+        volume: if (number != 3) VolumeUnit else void,
+        output_level: if (number == 3) OutputLevelUnit else void,
+        length: LengthUnit(number),
         square: if (number == 1 or number == 2) SquareWaveUnit else void,
         lfsr: if (number == 4) LfsrUnit else void,
+        wave: if (number == 3) WaveSamplerUnit else void,
 
         current: f32,
         divtick_counter: u3,
         powered_off: bool,
 
         pub inline fn init() This {
+            if (number != 1 and number != 2 and number != 3 and number != 4) @compileError("Invalid channel number.");
+
             return This{
                 .control = ControlUnit.init(),
-                .period_sweep = if (number == 1) SweepPeriodUnit.init() else {},
-                .period = if (number != 4) PeriodUnit.init() else {},
-                .volume = VolumeUnit.init(),
-                .length = LengthUnit.init(),
+                .period_sweep = if (number == 1) SweepPeriodUnit(number).init() else {},
+                .period = if (number != 4) PeriodUnit(number).init() else {},
+                .volume = if (number != 3) VolumeUnit.init() else {},
+                .output_level = if (number == 3) OutputLevelUnit.init() else {},
+                .length = LengthUnit(number).init(),
                 .square = if (number == 1 or number == 2) SquareWaveUnit.init() else {},
                 .lfsr = if (number == 4) LfsrUnit.init() else {},
+                .wave = if (number == 3) WaveSamplerUnit.init() else {},
 
                 .current = 0.0,
                 .divtick_counter = 0,
@@ -361,16 +479,21 @@ pub fn Channel(number: comptime_int) type {
 
             const ticked = if (number == 4) self.lfsr.tick() else self.period.tick();
             if (ticked) {
-                var s: u8 = self.sample();
-                s *= self.volume.volume;
-                s /= 15;
-                self.current = dac(@intCast(s));
+                if (number == 3) {
+                    self.current = dac(self.output_level.scale(self.wave.sample()));
+                } else {
+                    if (self.sample()) {
+                        self.current = dac(self.volume.volume);
+                    } else {
+                        self.current = dac(0);
+                    }
+                }
             }
 
             return self.current;
         }
 
-        fn sample(self: *This) u4 {
+        fn sample(self: *This) bool {
             if (number == 1 or number == 2) {
                 return self.square.sample();
             }
@@ -388,7 +511,7 @@ pub fn Channel(number: comptime_int) type {
                 if (number == 1) self.period_sweep.tick(&self.control, &self.period);
             }
             if (self.divtick_counter == 0) {
-                self.volume.tick();
+                if (number != 3) self.volume.tick();
             }
         }
 
@@ -399,7 +522,7 @@ pub fn Channel(number: comptime_int) type {
             }
             if (number != 4) self.period.reset();
             if (number == 4) self.lfsr.reset();
-            self.volume.reset();
+            if (number != 3) self.volume.reset();
             if (number == 1) self.period_sweep.reset(&self.period, &self.control);
         }
 
@@ -417,9 +540,19 @@ pub fn Channel(number: comptime_int) type {
                         ret |= self.period_sweep.individual_step;
                         return ret;
                     }
+                    if (number == 3) {
+                        var ret: u8 = 0;
+                        ret |= @intFromBool(self.control.dac_enabled);
+                        ret <<= 7;
+                        ret |= 0b111_1111;
+                        return ret;
+                    }
                     return 0xFF;
                 },
                 1 => {
+                    if (number == 3) {
+                        return self.length.initial_counter;
+                    }
                     var ret: u8 = 0;
                     if (number == 1 or number == 2) {
                         ret |= self.square.duty;
@@ -429,6 +562,15 @@ pub fn Channel(number: comptime_int) type {
                     return ret;
                 },
                 2 => {
+                    if (number == 3) {
+                        var ret: u8 = 0;
+                        ret |= 1;
+                        ret <<= 2;
+                        ret |= self.output_level.output_level;
+                        ret <<= 5;
+                        ret |= 0b11111;
+                        return ret;
+                    }
                     var ret: u8 = 0;
                     ret |= self.volume.initial_volume;
                     ret <<= 1;
@@ -461,7 +603,7 @@ pub fn Channel(number: comptime_int) type {
                         ret |= 0b111;
                     } else {
                         ret <<= 3;
-                        ret |= @intCast(self.period.period & 0x700);
+                        ret |= @intCast((self.period.period & 0x700) >> 8);
                     }
                     return ret;
                 },
@@ -470,10 +612,6 @@ pub fn Channel(number: comptime_int) type {
         }
 
         pub fn poke(self: *This, addr: u16, val: u8) void {
-            if (self.powered_off and addr != 1) { // DMG ONLY -- Length timers are unaffected by power off only on monochrome models
-                return;
-            }
-
             switch (addr) {
                 0 => {
                     if (number == 1) {
@@ -481,17 +619,28 @@ pub fn Channel(number: comptime_int) type {
                         self.period_sweep.direction = @intCast((val & 0b0000_1000) >> 3);
                         self.period_sweep.individual_step = @intCast(val & 0b0000_0111);
                     }
+                    if (number == 3) {
+                        self.control.dac_enabled = val & 0b1000_0000 != 0;
+                    }
                 },
                 1 => {
-                    if (number == 1 or number == 2) {
-                        self.square.duty = @intCast((val & 0b11_000000) >> 6);
+                    if (number == 3) {
+                        self.length.initial_counter = val;
+                    } else {
+                        if (number == 1 or number == 2) {
+                            self.square.duty = @intCast((val & 0b11_000000) >> 6);
+                        }
+                        self.length.initial_counter = @intCast(val & 0b00_111111);
                     }
-                    self.length.initial_counter = @intCast(val & 0b00_111111);
                 },
                 2 => {
-                    self.volume.initial_volume = @intCast((val & 0xF0) >> 4);
-                    self.volume.direction = @intCast((val & 0b0000_1000) >> 3);
-                    self.volume.pace = @intCast(val & 0b0000_0111);
+                    if (number == 3) {
+                        self.output_level.output_level = @intCast((val & 0b0110_0000) >> 5);
+                    } else {
+                        self.volume.initial_volume = @intCast((val & 0xF0) >> 4);
+                        self.volume.direction = @intCast((val & 0b0000_1000) >> 3);
+                        self.volume.pace = @intCast(val & 0b0000_0111);
+                    }
                 },
                 3 => {
                     if (number == 4) {
@@ -514,21 +663,25 @@ pub fn Channel(number: comptime_int) type {
         }
 
         pub fn read(self: *This, addr: u16) struct { MemoryFlag, u8 } {
-            if (addr == 0 and number != 1) {
+            if (addr == 0 and number != 1 and number != 3) {
                 return .{ .{ .illegal = true }, self.peek(addr) };
             }
             return .{ .{}, self.peek(addr) };
         }
 
         pub fn write(self: *This, addr: u16, val: u8) MemoryFlag {
-            if (addr == 0 and number != 1) {
+            if (addr == 0 and number != 1 and number != 3) {
                 return .{ .illegal = true };
             }
-            self.poke(addr, val);
-            if (self.volume.direction == 0 and self.volume.initial_volume == 0) {
-                self.control.dac_enabled = false;
-            } else {
-                self.control.dac_enabled = true;
+            if (!self.powered_off or addr == 1) { // DMG ONLY -- Length timers are unaffected by power off only on monochrome models
+                self.poke(addr, val);
+            }
+            if (number != 3) { // channel 3 uses a direct bit write instead of a side effect
+                if (self.volume.direction == 0 and self.volume.initial_volume == 0) {
+                    self.control.dac_enabled = false;
+                } else {
+                    self.control.dac_enabled = true;
+                }
             }
             if (!self.powered_off and addr == 4 and val & 0b1000_0000 != 0) {
                 self.trigger();
@@ -637,13 +790,19 @@ test "tick() obeys dacEnabled and active; waveform progression matches table" {
     _ = ch.write(3, 0xFF);
     _ = ch.write(4, 0x87); // trigger, upper period=0b111
 
+    // First tick is 0 as we don't trigger the period yet
+    try std.testing.expectApproxEqAbs(0.0, ch.tick(), eps);
+
     // With duty=0, the first 7 samples are 0xF (high), then 0x0.
     try std.testing.expectApproxEqAbs(-1.0, ch.tick(), eps);
 
-    // Next 6 ticks: still 'high' (same value)
-    inline for (0..6) |_| {
+    // Next 6 (12, as we only tick every 2 ticks) ticks: still 'high' (same value)
+    inline for (0..12) |_| {
         try std.testing.expectApproxEqAbs(-1.0, ch.tick(), eps);
     }
+
+    // One more repeated -1 tick as we don't trigger yet
+    try std.testing.expectApproxEqAbs(-1.0, ch.tick(), eps);
 
     // 8th tick of the duty cycle returns 0x0 -> dac(0) = 1.0
     try std.testing.expectApproxEqAbs(@as(f32, 1.0), ch.tick(), eps);
@@ -893,18 +1052,18 @@ test "Channel(4) LFSR.sample() basic sequences: width=0 vs width=1" {
     ch.lfsr.width = 0;
     inline for (0..14) |i| {
         _ = i;
-        try std.testing.expectEqual(@as(u4, 0x0), ch.lfsr.sample());
+        try std.testing.expectEqual(false, ch.lfsr.sample());
     }
-    try std.testing.expectEqual(@as(u4, 0xF), ch.lfsr.sample());
+    try std.testing.expectEqual(true, ch.lfsr.sample());
 
     // Reset and use width=1: the tap changes; the 7th sample becomes high
     ch.lfsr.reset();
     ch.lfsr.width = 1;
     inline for (0..6) |i| {
         _ = i;
-        try std.testing.expectEqual(@as(u4, 0x0), ch.lfsr.sample());
+        try std.testing.expectEqual(false, ch.lfsr.sample());
     }
-    try std.testing.expectEqual(@as(u4, 0xF), ch.lfsr.sample());
+    try std.testing.expectEqual(true, ch.lfsr.sample());
 }
 
 test "Channel(4) length timer disables channel when enabled and wraps" {
@@ -953,4 +1112,228 @@ test "Channel(4) illegal NRx0 access: read/write flag as illegal" {
     // Read from addr 0 should also be flagged illegal
     const rf = ch.read(0);
     try std.testing.expect(rf[0].illegal);
+}
+
+test "Channel(3) NR30 (addr 0) poke/peek round-trip + DAC gating" {
+    var ch = Channel(3).init();
+
+    // Initially DAC disabled
+    try std.testing.expect(!ch.control.dac_enabled);
+
+    // Enable DAC via NR30 bit7
+    _ = ch.write(0, 0x80);
+    try std.testing.expect(ch.control.dac_enabled);
+
+    // peek(0): bit7 mirrors DAC enable; lower 7 bits read as 1s
+    try std.testing.expectEqual(@as(u8, 0b1_1111111), ch.peek(0));
+
+    // Disable DAC
+    _ = ch.write(0, 0x00);
+    try std.testing.expect(!ch.control.dac_enabled);
+    try std.testing.expectEqual(@as(u8, 0b0_1111111), ch.peek(0));
+}
+
+test "Channel(3) NR31/NR32/NR33/NR34 poke/peek basics" {
+    var ch = Channel(3).init();
+
+    // NR31: 8-bit length, echoed directly by peek(1)
+    _ = ch.write(1, 0xA5);
+    try std.testing.expectEqual(@as(u8, 0xA5), ch.peek(1));
+
+    // NR32: output level in bits 6..5; others read back as 1s with bit7=1
+    _ = ch.write(2, 0b0110_0000); // output_level=0b11
+    try std.testing.expectEqual(@as(u2, 0b11), ch.output_level.output_level);
+    try std.testing.expectEqual(@as(u8, 0b1_11_11111), ch.peek(2));
+
+    // NR33 low period, NR34 high period + length enable + trigger bit
+    _ = ch.write(3, 0x34);
+    _ = ch.write(4, 0b0100_0010); // len.enable=1, upper period=0b010, no trigger
+    try std.testing.expectEqual(@as(u11, 0b010_00110100), ch.period.period);
+
+    // peek(4): 7:1, 6:length.enable, 5..3:111, 2..0: upper period
+    try std.testing.expectEqual(@as(u8, 0b1_1_111_010), ch.peek(4));
+}
+
+test "Channel(3) tick() respects DAC and active; baseline when inactive" {
+    const eps: f32 = 1e-6;
+    var ch = Channel(3).init();
+
+    // 1) DAC disabled -> 0.0
+    _ = ch.write(0, 0x00);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.0), ch.tick(), eps);
+
+    // 2) DAC enabled but not active -> dac(0) baseline (1.0)
+    _ = ch.write(0, 0x80);
+    try std.testing.expectApproxEqAbs(@as(f32, 1.0), ch.tick(), eps);
+
+    // 3) Trigger and ensure one period-sample happens and yields a finite in-range value
+    //    Set period to 0x7FF so first tick immediately samples.
+    _ = ch.write(2, 0b0010_0000); // output_level=01 (no attenuation)
+    _ = ch.write(3, 0xFF);
+    _ = ch.write(4, 0x80 | 0b0000_0111); // trigger with upper period=0b111
+    const s = ch.tick();
+    try std.testing.expect(s <= 1.0 and s >= -1.0);
+}
+
+test "Channel(3) output-level scaling maps nibble -> attenuation correctly" {
+    const eps: f32 = 1e-6;
+    var ch = Channel(3).init();
+
+    // Prepare: set a known nibble path via wave.current_value directly by advancing once
+    ch.wave.samples[0] = 0xFF;
+    ch.wave.samples[1] = 0xFF;
+    ch.wave.samples[2] = 0xFF;
+
+    // Enable DAC, set period so first tick samples, then trigger
+    _ = ch.write(0, 0x80);
+    _ = ch.write(3, 0xFF);
+    _ = ch.write(4, 0x80 | 0b111);
+
+    // output_level=00 -> always 0
+    _ = ch.write(2, 0b0000_0000);
+    _ = ch.tick(); // first sample uses current_value (=0), then advances to 0xF
+    try std.testing.expectApproxEqAbs(@as(f32, 1.0), ch.current, eps); // dac(0) = 1.0
+
+    // Now next period sample will be 0xF scaled
+    // Force an immediate sample again by resetting counter to 0x7FF
+    _ = ch.write(4, 0x80 | 0b111);
+    // output_level=01 (no shift)
+    _ = ch.write(2, 0b0010_0000);
+    const v1 = ch.tick();
+    try std.testing.expectApproxEqAbs(dac(@as(u4, 0xF)), v1, eps);
+
+    // output_level=10 (>>1)
+    _ = ch.write(4, 0x80 | 0b111);
+    _ = ch.write(2, 0b0100_0000);
+    const v2 = ch.tick();
+    try std.testing.expectApproxEqAbs(dac(@as(u4, 0xF >> 1)), v2, eps);
+
+    // output_level=11 (>>2)
+    _ = ch.write(4, 0x80 | 0b111);
+    _ = ch.write(2, 0b0110_0000);
+    const v3 = ch.tick();
+    try std.testing.expectApproxEqAbs(dac(@as(u4, 0xF >> 2)), v3, eps);
+}
+
+test "WaveSamplerUnit.sample() returns nibbles in [hi, lo, hi, lo, ...] order starting at index 1" {
+    var ch = Channel(3).init();
+
+    // Set first four bytes to known patterns: [AB, CD, EF, 01] in hex
+    ch.wave.samples[0] = 0xAB; // A=high, B=low
+    ch.wave.samples[1] = 0xCD;
+    ch.wave.samples[2] = 0xEF;
+    ch.wave.samples[3] = 0x01;
+
+    // Initial state: current_value=0, next_index=1
+    // sample(): returns 0, then advances to high nibble of byte 0 (=A)
+    try std.testing.expectEqual(@as(u4, 0x0), ch.wave.sample());
+
+    // Next call returns A, then advance to low nibble of byte 1 (=D)
+    try std.testing.expectEqual(@as(u4, 0xA), ch.wave.sample());
+
+    // Next returns D, advance to high nibble of byte 1 (=C)
+    try std.testing.expectEqual(@as(u4, 0xD), ch.wave.sample());
+
+    // Next returns C, advance to low nibble of byte 2 (=F)
+    try std.testing.expectEqual(@as(u4, 0xC), ch.wave.sample());
+
+    // Next returns F, advance to high nibble of byte 2 (=E)
+    try std.testing.expectEqual(@as(u4, 0xF), ch.wave.sample());
+
+    // And so on...
+    try std.testing.expectEqual(@as(u4, 0xE), ch.wave.sample());
+}
+
+test "Channel(3) wave RAM access rules: illegal when active & not at sample tick; OK otherwise" {
+    var ch = Channel(3).init();
+
+    // Helper alias
+    const W = Channel(3).wave_memory_interface;
+
+    // Case 1: inactive -> reads/writes succeed
+    {
+        const w1 = W.write(&ch, 0, 0x12);
+        try std.testing.expect(!w1.illegal);
+        const r1 = W.read(&ch, 0);
+        try std.testing.expect(!r1[0].illegal);
+        try std.testing.expectEqual(@as(u8, 0x12), r1[1]);
+    }
+
+    // Activate with counter not at a wouldTick point -> access must fail (return 0xFF / illegal)
+    _ = ch.write(0, 0x80); // DAC enable
+    _ = ch.write(3, 0x00); // low period = 0
+    _ = ch.write(4, 0x80 | 0b000); // trigger with upper period=0 -> counter=0, wouldTick() = false
+    {
+        const rf = W.read(&ch, 0);
+        try std.testing.expect(rf[0].illegal);
+        try std.testing.expectEqual(@as(u8, 0xFF), rf[1]);
+        const wf = W.write(&ch, 0, 0x77);
+        try std.testing.expect(wf.illegal);
+        // Under failure, the sample must remain unchanged
+        try std.testing.expectEqual(@as(u8, 0x12), W.peek(&ch, 0));
+    }
+
+    // Set counter so wouldTick() is true (period=0x7FF) -> access allowed while active
+    _ = ch.write(3, 0xFF);
+    _ = ch.write(4, 0x80 | 0b111); // trigger: counter=0x7FF, wouldTick() = true
+    {
+        const wf2 = W.write(&ch, 1, 0x66);
+        try std.testing.expect(!wf2.illegal);
+        const rf2 = W.read(&ch, 1);
+        try std.testing.expect(!rf2[0].illegal);
+        try std.testing.expectEqual(@as(u8, 0x66), rf2[1]);
+    }
+}
+
+test "Channel(3) length timer disables when enabled and wraps" {
+    var ch = Channel(3).init();
+
+    // Length=255 so one length 'tick' wraps to 0 and disables when enabled
+    _ = ch.write(1, 255);
+    _ = ch.write(0, 0x80); // enable DAC
+    _ = ch.write(4, 0xC0); // trigger + lengthEnable=1 (upper period=0)
+
+    try std.testing.expect(ch.control.active);
+
+    ch.divtick(); // 1 -> no length tick
+    ch.divtick(); // 2 -> length increments 255->0, active=false
+
+    try std.testing.expect(!ch.control.active);
+}
+
+test "Channel(3) poweroff zeros NR30/NR32/NR33/NR34 (NR31 length spared on DMG quirk)" {
+    var ch = Channel(3).init();
+
+    // Seed non-zero values
+    _ = ch.write(0, 0x80);
+    _ = ch.write(1, 0x77);
+    _ = ch.write(2, 0b0110_0000);
+    _ = ch.write(3, 0xAA);
+    _ = ch.write(4, 0x87);
+
+    ch.poweroff();
+
+    // NR30, NR32, NR33, NR34 zeroed by poweroff
+    try std.testing.expectEqual(@as(u8, 0b0_1111111), ch.peek(0));
+    try std.testing.expectEqual(@as(u8, 0b1_00_11111), ch.peek(2));
+    try std.testing.expectEqual(@as(u8, 0x00), ch.peek(3));
+    try std.testing.expectEqual(@as(u8, 0b1_0_111_000), ch.peek(4));
+
+    // NR31 (length) left intact per this implementation (DMG-only quirk)
+    try std.testing.expectEqual(@as(u8, 0x77), ch.peek(1));
+}
+
+test "Channel(3) illegal access flags: only NRx0 reads/writes are legal on ch3; others illegal" {
+    var ch = Channel(3).init();
+
+    // addr 0 is legal (unlike ch2/ch4)
+    const wf0 = ch.write(0, 0x80);
+    try std.testing.expect(!wf0.illegal);
+    const rf0 = ch.read(0);
+    try std.testing.expect(!rf0[0].illegal);
+
+    // Any other illegal address checks are exercised already across suite;
+    // here just sanity-check a legal read via normal path
+    const rf1 = ch.read(1);
+    try std.testing.expect(!rf1[0].illegal);
 }
