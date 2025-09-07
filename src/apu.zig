@@ -5,13 +5,14 @@ const router = @import("router.zig");
 const GenericRouter = router.Router;
 const GenericRange = router.Range;
 const GenericTargetField = router.TargetField;
+const Channel = @import("channel.zig").Channel;
 
 // TODO: The mysterious fifth channel from the cartridge itself? (absolutely not worth it)
 
 // DMG ONLY -- CGB models include registers that allow inspecting the emitted sample
 
 const MockChannel = struct {
-    const Wave = struct {
+    const wave_memory_interface = struct {
         pub fn read(_: *MockChannel, _: u16) struct { MemoryFlag, u8 } {
             return .{ .{}, 0xFF };
         }
@@ -48,7 +49,7 @@ const MockChannel = struct {
 };
 
 pub fn Apu(AudioBackend: type) type {
-    return ApuGeneric(MockChannel, MockChannel, MockChannel, MockChannel, AudioBackend);
+    return ApuGeneric(Channel(1), Channel(2), Channel(3), Channel(3), AudioBackend);
 }
 
 fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, AudioBackend: type) type {
@@ -298,7 +299,7 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
                 .{
                     .target = .wave,
                     .field = "channel3",
-                    .namespace = Channel3.Wave,
+                    .namespace = Channel3.wave_memory_interface,
                 },
                 .{
                     .target = .invalid,

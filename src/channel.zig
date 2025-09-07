@@ -526,7 +526,7 @@ pub fn Channel(number: comptime_int) type {
             if (number == 1) self.period_sweep.reset(&self.period, &self.control);
         }
 
-        fn peek(self: *This, addr: u16) u8 {
+        pub fn peek(self: *This, addr: u16) u8 {
             switch (addr) {
                 0 => {
                     if (number == 1) {
