@@ -59,8 +59,8 @@ fn read_one_token(input: []const u8) struct { []const u8, []const u8 } {
 }
 
 pub fn lexer(input: []const u8, allocator: std.mem.Allocator) ![]Token {
-    var tokens = std.ArrayList(Token).init(allocator);
-    defer tokens.deinit();
+    var tokens = try std.ArrayList(Token).initCapacity(allocator, 16);
+    defer tokens.deinit(allocator);
 
     var it = std.mem.splitScalar(u8, input, '\n');
     var idx: usize = 0;
@@ -79,7 +79,7 @@ pub fn lexer(input: []const u8, allocator: std.mem.Allocator) ![]Token {
                 if (which == TokenKind.Label) {
                     token = token[0 .. token.len - 1];
                 }
-                try tokens.append(Token{
+                try tokens.append(allocator, Token{
                     .line = idx + 1,
                     .source = token,
                     .which = which,
@@ -98,7 +98,7 @@ pub fn lexer(input: []const u8, allocator: std.mem.Allocator) ![]Token {
                     token = token[0 .. token.len - 1];
                 }
                 if (token.len != 0) {
-                    try tokens.append(Token{
+                    try tokens.append(allocator, Token{
                         .line = idx + 1,
                         .source = token,
                         .which = TokenKind.Argument,
@@ -108,7 +108,7 @@ pub fn lexer(input: []const u8, allocator: std.mem.Allocator) ![]Token {
         }
     }
 
-    return tokens.toOwnedSlice();
+    return tokens.toOwnedSlice(allocator);
 }
 
 test "lexer" {
@@ -259,7 +259,7 @@ const Argument = struct {
     incDec: ?bool,
     offset: ?i8,
 
-    fn format(self: *const Argument, writer: anytype) !void {
+    fn format(self: *const Argument, writer: *std.Io.Writer) !void {
         if (self.indirect) {
             try writer.writeByte('(');
         }
@@ -754,11 +754,10 @@ test "formatArgument 1" {
     };
 
     var buffer: [64]u8 = undefined;
-    var source: std.io.StreamSource = .{ .buffer = std.io.fixedBufferStream(&buffer) };
-    const writer = source.writer();
+    var writer = std.Io.Writer.fixed(&buffer);
 
-    try arg.format(writer);
-    try std.testing.expectEqualStrings("0x1234", source.buffer.getWritten());
+    try arg.format(&writer);
+    try std.testing.expectEqualStrings("0x1234", writer.buffered());
 }
 
 test "formatArgument 2" {
@@ -772,11 +771,10 @@ test "formatArgument 2" {
     };
 
     var buffer: [64]u8 = undefined;
-    var source: std.io.StreamSource = .{ .buffer = std.io.fixedBufferStream(&buffer) };
-    const writer = source.writer();
+    var writer = std.Io.Writer.fixed(&buffer);
 
-    try arg.format(writer);
-    try std.testing.expectEqualStrings("(0x1234)", source.buffer.getWritten());
+    try arg.format(&writer);
+    try std.testing.expectEqualStrings("(0x1234)", writer.buffered());
 }
 
 test "formatArgument 3" {
@@ -790,11 +788,10 @@ test "formatArgument 3" {
     };
 
     var buffer: [64]u8 = undefined;
-    var source: std.io.StreamSource = .{ .buffer = std.io.fixedBufferStream(&buffer) };
-    const writer = source.writer();
+    var writer = std.Io.Writer.fixed(&buffer);
 
-    try arg.format(writer);
-    try std.testing.expectEqualStrings("BC", source.buffer.getWritten());
+    try arg.format(&writer);
+    try std.testing.expectEqualStrings("BC", writer.buffered());
 }
 
 test "formatArgument 4" {
@@ -808,11 +805,10 @@ test "formatArgument 4" {
     };
 
     var buffer: [64]u8 = undefined;
-    var source: std.io.StreamSource = .{ .buffer = std.io.fixedBufferStream(&buffer) };
-    const writer = source.writer();
+    var writer = std.Io.Writer.fixed(&buffer);
 
-    try arg.format(writer);
-    try std.testing.expectEqualStrings("(BC)", source.buffer.getWritten());
+    try arg.format(&writer);
+    try std.testing.expectEqualStrings("(BC)", writer.buffered());
 }
 
 test "formatArgument 5" {
@@ -826,11 +822,10 @@ test "formatArgument 5" {
     };
 
     var buffer: [64]u8 = undefined;
-    var source: std.io.StreamSource = .{ .buffer = std.io.fixedBufferStream(&buffer) };
-    const writer = source.writer();
+    var writer = std.Io.Writer.fixed(&buffer);
 
-    try arg.format(writer);
-    try std.testing.expectEqualStrings("(BC+)", source.buffer.getWritten());
+    try arg.format(&writer);
+    try std.testing.expectEqualStrings("(BC+)", writer.buffered());
 }
 
 test "formatArgument 6" {
@@ -844,11 +839,10 @@ test "formatArgument 6" {
     };
 
     var buffer: [64]u8 = undefined;
-    var source: std.io.StreamSource = .{ .buffer = std.io.fixedBufferStream(&buffer) };
-    const writer = source.writer();
+    var writer = std.Io.Writer.fixed(&buffer);
 
-    try arg.format(writer);
-    try std.testing.expectEqualStrings("(BC-)", source.buffer.getWritten());
+    try arg.format(&writer);
+    try std.testing.expectEqualStrings("(BC-)", writer.buffered());
 }
 
 test "formatArgument 7" {
@@ -862,11 +856,10 @@ test "formatArgument 7" {
     };
 
     var buffer: [64]u8 = undefined;
-    var source: std.io.StreamSource = .{ .buffer = std.io.fixedBufferStream(&buffer) };
-    const writer = source.writer();
+    var writer = std.Io.Writer.fixed(&buffer);
 
-    try arg.format(writer);
-    try std.testing.expectEqualStrings("BC-7", source.buffer.getWritten());
+    try arg.format(&writer);
+    try std.testing.expectEqualStrings("BC-7", writer.buffered());
 }
 
 const Register8BitArgumentDefinition = union(enum) {
@@ -3592,7 +3585,7 @@ const Opcode = struct {
     arg1: ?Argument,
     arg2: ?Argument,
 
-    fn format(self: *const Opcode, writer: anytype) !void {
+    fn format(self: *const Opcode, writer: *std.Io.Writer) !void {
         try writer.writeAll(@tagName(self.instr));
         if (self.arg1) |arg| {
             try writer.writeByte(' ');
@@ -3642,7 +3635,7 @@ const Opcode = struct {
         }
     }
 
-    fn encode(self: *const Opcode, stream: *std.ArrayList(u8)) ![]u8 {
+    fn encode(self: *const Opcode, stream: *std.ArrayList(u8), allocator: std.mem.Allocator) ![]u8 {
         var latest_error: ?AssemblerError = null;
         for (defined_opcodes) |opcode_definition| {
             if (opcode_definition.instr != self.instr) {
@@ -3700,25 +3693,25 @@ const Opcode = struct {
 
             var size: usize = 0;
             if (opcode_definition.prefix != null) {
-                try stream.append(opcode_definition.prefix.?);
+                try stream.append(allocator, opcode_definition.prefix.?);
                 size += 1;
             }
-            try stream.append(opcode);
+            try stream.append(allocator, opcode);
             size += 1;
             if (imm1 != null) {
-                try stream.append(imm1.?);
+                try stream.append(allocator, imm1.?);
                 size += 1;
             }
             if (imm2 != null) {
-                try stream.append(imm2.?);
+                try stream.append(allocator, imm2.?);
                 size += 1;
             }
             if (imm3 != null) {
-                try stream.append(imm3.?);
+                try stream.append(allocator, imm3.?);
                 size += 1;
             }
             if (imm4 != null) {
-                try stream.append(imm4.?);
+                try stream.append(allocator, imm4.?);
                 size += 1;
             }
 
@@ -3911,9 +3904,9 @@ test "addArgument 3" {
 }
 
 test "encode immediate 16" {
-    var stream = std.ArrayList(u8).init(std.testing.allocator);
-    try stream.append(0x11);
-    defer stream.deinit();
+    var stream = try std.ArrayList(u8).initCapacity(std.testing.allocator, 16);
+    try stream.append(std.testing.allocator, 0x11);
+    defer stream.deinit(std.testing.allocator);
 
     const expected_stream = [_]u8{ 0x11, 0b00000001, 0xBB, 0xAA };
     const expected_slice = [_]u8{ 0b00000001, 0xBB, 0xAA };
@@ -3939,16 +3932,16 @@ test "encode immediate 16" {
         .line = 0,
     };
 
-    const actual = try opcode.encode(&stream);
+    const actual = try opcode.encode(&stream, std.testing.allocator);
 
     try std.testing.expectEqualSlices(u8, &expected_stream, stream.items);
     try std.testing.expectEqualSlices(u8, &expected_slice, actual);
 }
 
 test "encode immediate 8" {
-    var stream = std.ArrayList(u8).init(std.testing.allocator);
-    try stream.append(0x11);
-    defer stream.deinit();
+    var stream = try std.ArrayList(u8).initCapacity(std.testing.allocator, 16);
+    try stream.append(std.testing.allocator, 0x11);
+    defer stream.deinit(std.testing.allocator);
 
     const expected_stream = [_]u8{ 0x11, 0b00000110, 0xAA };
     const expected_slice = [_]u8{ 0b00000110, 0xAA };
@@ -3974,16 +3967,16 @@ test "encode immediate 8" {
         .line = 0,
     };
 
-    const actual = try opcode.encode(&stream);
+    const actual = try opcode.encode(&stream, std.testing.allocator);
 
     try std.testing.expectEqualSlices(u8, &expected_stream, stream.items);
     try std.testing.expectEqualSlices(u8, &expected_slice, actual);
 }
 
 test "encode immediate 8 as immediate 16" {
-    var stream = std.ArrayList(u8).init(std.testing.allocator);
-    try stream.append(0x11);
-    defer stream.deinit();
+    var stream = try std.ArrayList(u8).initCapacity(std.testing.allocator, 16);
+    try stream.append(std.testing.allocator, 0x11);
+    defer stream.deinit(std.testing.allocator);
 
     const expected_stream = [_]u8{ 0x11, 0b00000001, 0xAA, 0x00 };
     const expected_slice = [_]u8{ 0b00000001, 0xAA, 0x00 };
@@ -4009,16 +4002,16 @@ test "encode immediate 8 as immediate 16" {
         .line = 0,
     };
 
-    const actual = try opcode.encode(&stream);
+    const actual = try opcode.encode(&stream, std.testing.allocator);
 
     try std.testing.expectEqualSlices(u8, &expected_stream, stream.items);
     try std.testing.expectEqualSlices(u8, &expected_slice, actual);
 }
 
 test "encode label as immediate 16" {
-    var stream = std.ArrayList(u8).init(std.testing.allocator);
-    try stream.append(0x11);
-    defer stream.deinit();
+    var stream = try std.ArrayList(u8).initCapacity(std.testing.allocator, 16);
+    try stream.append(std.testing.allocator, 0x11);
+    defer stream.deinit(std.testing.allocator);
 
     const expected_stream = [_]u8{ 0x11, 0b00000001, 0xAA, 0xAA };
     const expected_slice = [_]u8{ 0b00000001, 0xAA, 0xAA };
@@ -4046,16 +4039,16 @@ test "encode label as immediate 16" {
         .line = 0,
     };
 
-    const actual = try opcode.encode(&stream);
+    const actual = try opcode.encode(&stream, std.testing.allocator);
 
     try std.testing.expectEqualSlices(u8, &expected_stream, stream.items);
     try std.testing.expectEqualSlices(u8, &expected_slice, actual);
 }
 
 test "encode indirect 16" {
-    var stream = std.ArrayList(u8).init(std.testing.allocator);
-    try stream.append(0x11);
-    defer stream.deinit();
+    var stream = try std.ArrayList(u8).initCapacity(std.testing.allocator, 16);
+    try stream.append(std.testing.allocator, 0x11);
+    defer stream.deinit(std.testing.allocator);
 
     const expected_stream = [_]u8{ 0x11, 0b11111010, 0xBB, 0xAA };
     const expected_slice = [_]u8{ 0b11111010, 0xBB, 0xAA };
@@ -4081,16 +4074,16 @@ test "encode indirect 16" {
         .line = 0,
     };
 
-    const actual = try opcode.encode(&stream);
+    const actual = try opcode.encode(&stream, std.testing.allocator);
 
     try std.testing.expectEqualSlices(u8, &expected_stream, stream.items);
     try std.testing.expectEqualSlices(u8, &expected_slice, actual);
 }
 
 test "encode indirect 8" {
-    var stream = std.ArrayList(u8).init(std.testing.allocator);
-    try stream.append(0x11);
-    defer stream.deinit();
+    var stream = try std.ArrayList(u8).initCapacity(std.testing.allocator, 16);
+    try stream.append(std.testing.allocator, 0x11);
+    defer stream.deinit(std.testing.allocator);
 
     const expected_stream = [_]u8{ 0x11, 0b11110000, 0xAA };
     const expected_slice = [_]u8{ 0b11110000, 0xAA };
@@ -4116,16 +4109,16 @@ test "encode indirect 8" {
         .line = 0,
     };
 
-    const actual = try opcode.encode(&stream);
+    const actual = try opcode.encode(&stream, std.testing.allocator);
 
     try std.testing.expectEqualSlices(u8, &expected_stream, stream.items);
     try std.testing.expectEqualSlices(u8, &expected_slice, actual);
 }
 
 test "encode indirect 8 as indirect 16" {
-    var stream = std.ArrayList(u8).init(std.testing.allocator);
-    try stream.append(0x11);
-    defer stream.deinit();
+    var stream = try std.ArrayList(u8).initCapacity(std.testing.allocator, 16);
+    try stream.append(std.testing.allocator, 0x11);
+    defer stream.deinit(std.testing.allocator);
 
     const expected_stream = [_]u8{ 0x11, 0b11111010, 0xAA, 0x00 };
     const expected_slice = [_]u8{ 0b11111010, 0xAA, 0x00 };
@@ -4151,16 +4144,16 @@ test "encode indirect 8 as indirect 16" {
         .line = 0,
     };
 
-    const actual = try opcode.encode(&stream);
+    const actual = try opcode.encode(&stream, std.testing.allocator);
 
     try std.testing.expectEqualSlices(u8, &expected_stream, stream.items);
     try std.testing.expectEqualSlices(u8, &expected_slice, actual);
 }
 
 test "encode label as indirect 16" {
-    var stream = std.ArrayList(u8).init(std.testing.allocator);
-    try stream.append(0x11);
-    defer stream.deinit();
+    var stream = try std.ArrayList(u8).initCapacity(std.testing.allocator, 16);
+    try stream.append(std.testing.allocator, 0x11);
+    defer stream.deinit(std.testing.allocator);
 
     const expected_stream = [_]u8{ 0x11, 0b11111010, 0xAA, 0xAA };
     const expected_slice = [_]u8{ 0b11111010, 0xAA, 0xAA };
@@ -4188,16 +4181,16 @@ test "encode label as indirect 16" {
         .line = 0,
     };
 
-    const actual = try opcode.encode(&stream);
+    const actual = try opcode.encode(&stream, std.testing.allocator);
 
     try std.testing.expectEqualSlices(u8, &expected_stream, stream.items);
     try std.testing.expectEqualSlices(u8, &expected_slice, actual);
 }
 
 test "encode reg16 offset" {
-    var stream = std.ArrayList(u8).init(std.testing.allocator);
-    try stream.append(0x11);
-    defer stream.deinit();
+    var stream = try std.ArrayList(u8).initCapacity(std.testing.allocator, 16);
+    try stream.append(std.testing.allocator, 0x11);
+    defer stream.deinit(std.testing.allocator);
 
     const expected_stream = [_]u8{ 0x11, 0b11111000, 0xFF };
     const expected_slice = [_]u8{ 0b11111000, 0xFF };
@@ -4223,16 +4216,16 @@ test "encode reg16 offset" {
         .line = 0,
     };
 
-    const actual = try opcode.encode(&stream);
+    const actual = try opcode.encode(&stream, std.testing.allocator);
 
     try std.testing.expectEqualSlices(u8, &expected_stream, stream.items);
     try std.testing.expectEqualSlices(u8, &expected_slice, actual);
 }
 
 test "encode reg16 offset 2" {
-    var stream = std.ArrayList(u8).init(std.testing.allocator);
-    try stream.append(0x11);
-    defer stream.deinit();
+    var stream = try std.ArrayList(u8).initCapacity(std.testing.allocator, 16);
+    try stream.append(std.testing.allocator, 0x11);
+    defer stream.deinit(std.testing.allocator);
 
     const expected_stream = [_]u8{ 0x11, 0b11111000, 0x01 };
     const expected_slice = [_]u8{ 0b11111000, 0x01 };
@@ -4258,15 +4251,15 @@ test "encode reg16 offset 2" {
         .line = 0,
     };
 
-    const actual = try opcode.encode(&stream);
+    const actual = try opcode.encode(&stream, std.testing.allocator);
 
     try std.testing.expectEqualSlices(u8, &expected_stream, stream.items);
     try std.testing.expectEqualSlices(u8, &expected_slice, actual);
 }
 
 test "encode failure" {
-    var stream = std.ArrayList(u8).init(std.testing.allocator);
-    defer stream.deinit();
+    var stream = try std.ArrayList(u8).initCapacity(std.testing.allocator, 16);
+    defer stream.deinit(std.testing.allocator);
 
     const opcode = Opcode{
         .instr = Instruction.LD,
@@ -4275,7 +4268,7 @@ test "encode failure" {
         .line = 0,
     };
 
-    const actual = opcode.encode(&stream);
+    const actual = opcode.encode(&stream, std.testing.allocator);
 
     try std.testing.expectError(AssemblerError.InvalidInstructionArguments, actual);
 }
@@ -4303,11 +4296,10 @@ test "formatOpcode 1" {
     };
 
     var buffer: [64]u8 = undefined;
-    var source: std.io.StreamSource = .{ .buffer = std.io.fixedBufferStream(&buffer) };
-    const writer = source.writer();
+    var writer = std.Io.Writer.fixed(&buffer);
 
-    try opcode.format(writer);
-    try std.testing.expectEqualStrings("LD 0x123, 0x123", source.buffer.getWritten());
+    try opcode.format(&writer);
+    try std.testing.expectEqualStrings("LD 0x123, 0x123", writer.buffered());
 }
 
 test "formatOpcode 2" {
@@ -4326,11 +4318,10 @@ test "formatOpcode 2" {
     };
 
     var buffer: [64]u8 = undefined;
-    var source: std.io.StreamSource = .{ .buffer = std.io.fixedBufferStream(&buffer) };
-    const writer = source.writer();
+    var writer = std.Io.Writer.fixed(&buffer);
 
-    try opcode.format(writer);
-    try std.testing.expectEqualStrings("LD 0x123", source.buffer.getWritten());
+    try opcode.format(&writer);
+    try std.testing.expectEqualStrings("LD 0x123", writer.buffered());
 }
 
 test "formatOpcode 3" {
@@ -4342,16 +4333,15 @@ test "formatOpcode 3" {
     };
 
     var buffer: [64]u8 = undefined;
-    var source: std.io.StreamSource = .{ .buffer = std.io.fixedBufferStream(&buffer) };
-    const writer = source.writer();
+    var writer = std.Io.Writer.fixed(&buffer);
 
-    try opcode.format(writer);
-    try std.testing.expectEqualStrings("LD", source.buffer.getWritten());
+    try opcode.format(&writer);
+    try std.testing.expectEqualStrings("LD", writer.buffered());
 }
 
 pub fn parser(input: []const Token, allocator: std.mem.Allocator) !struct { std.StringHashMap(usize), []Opcode } {
-    var opcodes = std.ArrayList(Opcode).init(allocator);
-    defer opcodes.deinit();
+    var opcodes = try std.ArrayList(Opcode).initCapacity(allocator, 64);
+    defer opcodes.deinit(allocator);
 
     var labels = std.StringHashMap(usize).init(allocator);
     errdefer labels.deinit();
@@ -4387,7 +4377,7 @@ pub fn parser(input: []const Token, allocator: std.mem.Allocator) !struct { std.
                 errdefer next.free(allocator);
 
                 if (current != null) {
-                    try opcodes.append(current.?);
+                    try opcodes.append(allocator, current.?);
                 }
                 idx += 1;
                 current = next;
@@ -4401,12 +4391,12 @@ pub fn parser(input: []const Token, allocator: std.mem.Allocator) !struct { std.
     }
 
     if (current != null) {
-        try opcodes.append(current.?);
+        try opcodes.append(allocator, current.?);
     }
 
     return .{
         labels,
-        try opcodes.toOwnedSlice(),
+        try opcodes.toOwnedSlice(allocator),
     };
 }
 
@@ -4503,22 +4493,22 @@ pub fn assembler(input: []const Opcode, labelMap: *std.StringHashMap(usize), all
     var accumulatedOpcodeSize = try allocator.alloc(usize, input.len + 1);
     defer allocator.free(accumulatedOpcodeSize);
 
-    var result = std.ArrayList(u8).init(allocator);
-    defer result.deinit();
+    var result = try std.ArrayList(u8).initCapacity(allocator, 128);
+    defer result.deinit(allocator);
 
     var labelReferences = std.StringHashMap(std.ArrayList(usize)).init(allocator);
     defer labelReferences.deinit();
     defer {
         var it = labelReferences.iterator();
         while (it.next()) |pair| {
-            pair.value_ptr.deinit();
+            pair.value_ptr.deinit(allocator);
         }
     }
 
     // Encode opcodes and remember label references
     accumulatedOpcodeSize[0] = 0;
     for (input, 0..) |opcode, idx| {
-        const bytes: []u8 = try opcode.encode(&result);
+        const bytes: []u8 = try opcode.encode(&result, std.testing.allocator);
         const accumulated: usize = accumulatedOpcodeSize[idx];
         accumulatedOpcodeSize[idx + 1] = accumulated + bytes.len;
 
@@ -4533,11 +4523,11 @@ pub fn assembler(input: []const Opcode, labelMap: *std.StringHashMap(usize), all
         if (lbl != null) {
             const getOrPut = try labelReferences.getOrPut(lbl.?);
             if (!getOrPut.found_existing) {
-                var newlist = std.ArrayList(usize).init(allocator);
-                errdefer newlist.deinit();
+                var newlist = try std.ArrayList(usize).initCapacity(allocator, 64);
+                errdefer newlist.deinit(allocator);
                 getOrPut.value_ptr.* = newlist;
             }
-            try getOrPut.value_ptr.append(accumulated);
+            try getOrPut.value_ptr.append(allocator, accumulated);
         }
     }
 
@@ -4569,7 +4559,7 @@ pub fn assembler(input: []const Opcode, labelMap: *std.StringHashMap(usize), all
         }
     }
 
-    return result.toOwnedSlice();
+    return result.toOwnedSlice(allocator);
 }
 
 fn freeLabelMap(labelMap: *std.StringHashMap(usize), allocator: std.mem.Allocator) void {
@@ -4697,7 +4687,7 @@ pub fn translate(code: []const u8, allocator: std.mem.Allocator, offset: u16) ![
     return assembler(opcodes, &labelMap, allocator, offset);
 }
 
-pub fn formatNext(stream: []const u8, writer: anytype) ![]const u8 {
+pub fn formatNext(stream: []const u8, writer: *std.Io.Writer) ![]const u8 {
     const opcode, const next = Opcode.decode(stream) catch {
         try writer.writeAll("<UNK>");
         return stream[1..];
@@ -5309,15 +5299,14 @@ test "disassemble" {
     ;
 
     var buffer: [0x1000]u8 = undefined;
-    var source = std.io.StreamSource{ .buffer = std.io.fixedBufferStream(&buffer) };
-    const writer = source.writer();
+    var writer = std.Io.Writer.fixed(&buffer);
 
     var slice: []const u8 = &stream;
     while (slice.len > 0) {
         const opcode, slice = try Opcode.decode(slice);
-        try opcode.format(writer);
+        try opcode.format(&writer);
         try writer.writeByte('\n');
     }
 
-    try std.testing.expectEqualStrings(expected, source.buffer.getWritten());
+    try std.testing.expectEqualStrings(expected, writer.buffered());
 }

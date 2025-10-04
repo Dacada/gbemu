@@ -3336,8 +3336,8 @@ test "test jump immediate conditional" {
             const name = try std.fmt.allocPrint(std.testing.allocator, "test jump immediate conditional (cond={b}) (true={b})", .{ cond, condTrue });
             defer std.testing.allocator.free(name);
 
-            var states = std.ArrayList(*TestCpuState).init(std.testing.allocator);
-            defer states.deinit();
+            var states = try std.ArrayList(*TestCpuState).initCapacity(std.testing.allocator, 16);
+            defer states.deinit(std.testing.allocator);
 
             var Z: u1 = 0;
             var C: u1 = 0;
@@ -3347,34 +3347,34 @@ test "test jump immediate conditional" {
                 C = 1;
             }
 
-            try states.append(TestCpuState.init() // read nop(PC) from ram
+            try states.append(std.testing.allocator, TestCpuState.init() // read nop(PC) from ram
                 .fZ(Z)
                 .fC(C)
                 .rPc(0x0001));
-            try states.append(TestCpuState.init() // execute nop | read iut(PC) from ram
+            try states.append(std.testing.allocator, TestCpuState.init() // execute nop | read iut(PC) from ram
                 .fZ(Z)
                 .fC(C)
                 .rPc(0x0002));
-            try states.append(TestCpuState.init() // execute iut: read lo(PC) from ram
+            try states.append(std.testing.allocator, TestCpuState.init() // execute iut: read lo(PC) from ram
                 .fZ(Z)
                 .fC(C)
                 .rPc(0x0003));
-            try states.append(TestCpuState.init() // execute iut: read hi(PC) from ram | check condition
+            try states.append(std.testing.allocator, TestCpuState.init() // execute iut: read hi(PC) from ram | check condition
                 .fZ(Z)
                 .fC(C)
                 .rPc(0x0004));
 
             if (condTrue == 1) {
-                try states.append(TestCpuState.init() // execute iut: write PC
+                try states.append(std.testing.allocator, TestCpuState.init() // execute iut: write PC
                     .fZ(Z)
                     .fC(C)
                     .rPc(addr));
-                try states.append(TestCpuState.init() // execute iut: read (PC) from ram
+                try states.append(std.testing.allocator, TestCpuState.init() // execute iut: read (PC) from ram
                     .fZ(Z)
                     .fC(C)
                     .rPc(addr + 1));
             } else {
-                try states.append(TestCpuState.init() // execute iut: read (PC) from ram
+                try states.append(std.testing.allocator, TestCpuState.init() // execute iut: read (PC) from ram
                     .fZ(Z)
                     .fC(C)
                     .rPc(0x0005));
@@ -3436,8 +3436,8 @@ test "test jump relative conditional" {
                 const name = try std.fmt.allocPrint(std.testing.allocator, "test jump relative conditional (cond={b}) (true={b}) (e={d})", .{ cond, condTrue, e });
                 defer std.testing.allocator.free(name);
 
-                var states = std.ArrayList(*TestCpuState).init(std.testing.allocator);
-                defer states.deinit();
+                var states = try std.ArrayList(*TestCpuState).initCapacity(std.testing.allocator, 16);
+                defer states.deinit(std.testing.allocator);
 
                 var Z: u1 = 0;
                 var C: u1 = 0;
@@ -3447,30 +3447,30 @@ test "test jump relative conditional" {
                     C = 1;
                 }
 
-                try states.append(TestCpuState.init() // read nop(PC) from ram
+                try states.append(std.testing.allocator, TestCpuState.init() // read nop(PC) from ram
                     .fZ(Z)
                     .fC(C)
                     .rPc(0x0001));
-                try states.append(TestCpuState.init() // execute nop | read iut(PC) from ram
+                try states.append(std.testing.allocator, TestCpuState.init() // execute nop | read iut(PC) from ram
                     .fZ(Z)
                     .fC(C)
                     .rPc(0x0002));
-                try states.append(TestCpuState.init() // execute iut: read e(PC) from ram | check condition
+                try states.append(std.testing.allocator, TestCpuState.init() // execute iut: read e(PC) from ram | check condition
                     .fZ(Z)
                     .fC(C)
                     .rPc(0x0003));
 
                 if (condTrue == 1) {
-                    try states.append(TestCpuState.init() // execute iut: calculate PC
+                    try states.append(std.testing.allocator, TestCpuState.init() // execute iut: calculate PC
                         .fZ(Z)
                         .fC(C)
                         .rPc(0x0003));
-                    try states.append(TestCpuState.init() // execute iut: write PC | read (PC) from ram
+                    try states.append(std.testing.allocator, TestCpuState.init() // execute iut: write PC | read (PC) from ram
                         .fZ(Z)
                         .fC(C)
                         .rPc(0x0003 + e + 1));
                 } else {
-                    try states.append(TestCpuState.init() // execute iut: read (PC) from ram
+                    try states.append(std.testing.allocator, TestCpuState.init() // execute iut: read (PC) from ram
                         .fZ(Z)
                         .fC(C)
                         .rPc(0x0004));
@@ -3554,8 +3554,8 @@ test "test call conditional" {
             const name = try std.fmt.allocPrint(std.testing.allocator, "test call conditional (cond={b}) (true={b})", .{ cond, condTrue });
             defer std.testing.allocator.free(name);
 
-            var states = std.ArrayList(*TestCpuState).init(std.testing.allocator);
-            defer states.deinit();
+            var states = try std.ArrayList(*TestCpuState).initCapacity(std.testing.allocator, 16);
+            defer states.deinit(std.testing.allocator);
 
             var Z: u1 = 0;
             var C: u1 = 0;
@@ -3565,47 +3565,47 @@ test "test call conditional" {
                 C = 1;
             }
 
-            try states.append(TestCpuState.init() // read nop(PC) from ram
+            try states.append(std.testing.allocator, TestCpuState.init() // read nop(PC) from ram
                 .fZ(Z)
                 .fC(C)
                 .rPc(0x0001)
                 .rSp(sp));
-            try states.append(TestCpuState.init() // execute nop | read iut(PC) from ram
+            try states.append(std.testing.allocator, TestCpuState.init() // execute nop | read iut(PC) from ram
                 .fZ(Z)
                 .fC(C)
                 .rPc(0x0002)
                 .rSp(sp));
-            try states.append(TestCpuState.init() // execute iut: read lo(PC) from ram
+            try states.append(std.testing.allocator, TestCpuState.init() // execute iut: read lo(PC) from ram
                 .fZ(Z)
                 .fC(C)
                 .rPc(0x0003)
                 .rSp(sp));
-            try states.append(TestCpuState.init() // execute iut: read hi(PC) from ram | check condition
+            try states.append(std.testing.allocator, TestCpuState.init() // execute iut: read hi(PC) from ram | check condition
                 .fZ(Z)
                 .fC(C)
                 .rPc(0x0004)
                 .rSp(sp));
 
             if (condTrue == 1) {
-                try states.append(TestCpuState.init() // execute iut: decrement SP
+                try states.append(std.testing.allocator, TestCpuState.init() // execute iut: decrement SP
                     .fZ(Z)
                     .fC(C)
                     .rPc(0x0004)
                     .rSp(sp - 1));
-                try states.append(TestCpuState.init() // execute iut: write PC_hi to ram(SP-1)
+                try states.append(std.testing.allocator, TestCpuState.init() // execute iut: write PC_hi to ram(SP-1)
                     .fZ(Z)
                     .fC(C)
                     .rPc(0x0004)
                     .rSp(sp - 2)
                     .ram(sp - 1, 0x00));
-                try states.append(TestCpuState.init() // execute iut: write PC_lo to ram(SP-2) | write PC
+                try states.append(std.testing.allocator, TestCpuState.init() // execute iut: write PC_lo to ram(SP-2) | write PC
                     .fZ(Z)
                     .fC(C)
                     .rPc(addr)
                     .rSp(sp - 2)
                     .ram(sp - 1, 0x00)
                     .ram(sp - 2, 0x04));
-                try states.append(TestCpuState.init() // execute iut: read (PC) from ram
+                try states.append(std.testing.allocator, TestCpuState.init() // execute iut: read (PC) from ram
                     .fZ(Z)
                     .fC(C)
                     .rPc(addr + 1)
@@ -3613,7 +3613,7 @@ test "test call conditional" {
                     .ram(sp - 1, 0x00)
                     .ram(sp - 2, 0x04));
             } else {
-                try states.append(TestCpuState.init() // execute iut: read (PC) from ram
+                try states.append(std.testing.allocator, TestCpuState.init() // execute iut: read (PC) from ram
                     .fZ(Z)
                     .fC(C)
                     .rPc(0x0005)
@@ -3698,8 +3698,8 @@ test "test ret conditional" {
             const name = try std.fmt.allocPrint(std.testing.allocator, "test ret conditional (cond={b}) (true={b})", .{ cond, condTrue });
             defer std.testing.allocator.free(name);
 
-            var states = std.ArrayList(*TestCpuState).init(std.testing.allocator);
-            defer states.deinit();
+            var states = try std.ArrayList(*TestCpuState).initCapacity(std.testing.allocator, 16);
+            defer states.deinit(std.testing.allocator);
 
             var Z: u1 = 0;
             var C: u1 = 0;
@@ -3709,21 +3709,21 @@ test "test ret conditional" {
                 C = 1;
             }
 
-            try states.append(TestCpuState.init() // read nop(PC) from ram
+            try states.append(std.testing.allocator, TestCpuState.init() // read nop(PC) from ram
                 .fZ(Z)
                 .fC(C)
                 .rPc(0x0001)
                 .rSp(sp)
                 .ram(sp, 0x10)
                 .ram(sp + 1, 0x01));
-            try states.append(TestCpuState.init() // execute nop | read iut(PC) from ram
+            try states.append(std.testing.allocator, TestCpuState.init() // execute nop | read iut(PC) from ram
                 .fZ(Z)
                 .fC(C)
                 .rPc(0x0002)
                 .rSp(sp)
                 .ram(sp, 0x10)
                 .ram(sp + 1, 0x01));
-            try states.append(TestCpuState.init() // execute iut | check condition
+            try states.append(std.testing.allocator, TestCpuState.init() // execute iut | check condition
                 .fZ(Z)
                 .fC(C)
                 .rPc(0x0002)
@@ -3732,28 +3732,28 @@ test "test ret conditional" {
                 .ram(sp + 1, 0x01));
 
             if (condTrue == 1) {
-                try states.append(TestCpuState.init() // execute iut: inc SP | read PC_lo(SP)
+                try states.append(std.testing.allocator, TestCpuState.init() // execute iut: inc SP | read PC_lo(SP)
                     .fZ(Z)
                     .fC(C)
                     .rPc(0x0002)
                     .rSp(sp + 1)
                     .ram(sp, 0x10)
                     .ram(sp + 1, 0x01));
-                try states.append(TestCpuState.init() // execute iut: inc SP | read PC_hi(SP)
+                try states.append(std.testing.allocator, TestCpuState.init() // execute iut: inc SP | read PC_hi(SP)
                     .fZ(Z)
                     .fC(C)
                     .rPc(0x0002)
                     .rSp(sp + 2)
                     .ram(sp, 0x10)
                     .ram(sp + 1, 0x01));
-                try states.append(TestCpuState.init() // execute iut: write PC
+                try states.append(std.testing.allocator, TestCpuState.init() // execute iut: write PC
                     .fZ(Z)
                     .fC(C)
                     .rPc(0x0110)
                     .rSp(sp + 2)
                     .ram(sp, 0x10)
                     .ram(sp + 1, 0x01));
-                try states.append(TestCpuState.init() // execute iut: read (PC) from ram
+                try states.append(std.testing.allocator, TestCpuState.init() // execute iut: read (PC) from ram
                     .fZ(Z)
                     .fC(C)
                     .rPc(0x0111)
@@ -3761,7 +3761,7 @@ test "test ret conditional" {
                     .ram(sp, 0x10)
                     .ram(sp + 1, 0x01));
             } else {
-                try states.append(TestCpuState.init() // execute iut: read (PC) from ram
+                try states.append(std.testing.allocator, TestCpuState.init() // execute iut: read (PC) from ram
                     .fZ(Z)
                     .fC(C)
                     .rPc(0x0003)

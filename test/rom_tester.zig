@@ -1,7 +1,22 @@
 const std = @import("std");
 const lib = @import("lib");
 
-fn print_test_result(comptime result: []const u8, comptime color: std.io.tty.Color, msg: ?[]const u8, writer: anytype, cfg: std.io.tty.Config) !void {
+const AudioBackend = lib.backend.NullAudioBackend;
+const Scheduler = lib.scheduler.Scheduler;
+const Cartridge = lib.cartridge.Cartridge;
+const Interrupt = lib.interrupt.Interrupt;
+const Joypad = lib.joypad.Joypad(Interrupt);
+const Serial = lib.serial.Serial(Scheduler, Interrupt);
+const Apu = lib.apu.Apu(AudioBackend);
+const Timer = lib.timer.Timer(Apu, Interrupt);
+const Lcd = lib.mmio.Dummy;
+const BootRom = lib.mmio.Dummy;
+const Mmio = lib.mmio.Mmio(Joypad, Serial, Timer, Interrupt, Apu, Lcd, BootRom);
+const Ppu = lib.ppu.Ppu;
+const Mmu = lib.mmu.Mmu(Cartridge, Ppu, Mmio);
+const Cpu = lib.cpu.Cpu(Mmu, Interrupt);
+
+fn print_test_result(comptime result: []const u8, comptime color: std.io.tty.Color, msg: ?[]const u8, writer: *std.Io.Writer, cfg: std.io.tty.Config) !void {
     try writer.writeAll("  > ");
     try cfg.setColor(writer, color);
     try writer.writeAll(result);
@@ -13,15 +28,15 @@ fn print_test_result(comptime result: []const u8, comptime color: std.io.tty.Col
     }
 }
 
-fn fail_test(msg: []const u8, writer: anytype, cfg: std.io.tty.Config) !void {
+fn fail_test(msg: []const u8, writer: *std.Io.Writer, cfg: std.io.tty.Config) !void {
     return print_test_result("FAILURE", .red, msg, writer, cfg);
 }
 
-fn succeed_test(writer: anytype, cfg: std.io.tty.Config) !void {
+fn succeed_test(writer: *std.Io.Writer, cfg: std.io.tty.Config) !void {
     return print_test_result("SUCCESS", .green, null, writer, cfg);
 }
 
-fn skip_test(msg: []const u8, writer: anytype, cfg: std.io.tty.Config) !void {
+fn skip_test(msg: []const u8, writer: *std.Io.Writer, cfg: std.io.tty.Config) !void {
     return print_test_result("SKIP", .cyan, msg, writer, cfg);
 }
 
@@ -31,8 +46,10 @@ const TestResult = enum {
     skip,
 };
 
-fn run_test(file: std.fs.File, writer: anytype, cfg: std.io.tty.Config) !TestResult {
-    const cartridge = lib.cartridge.Cartridge.fromFile(file) catch |e| {
+fn run_test(file: std.fs.File, writer: *std.Io.Writer, cfg: std.io.tty.Config) !TestResult {
+    var audio_backend = AudioBackend.init();
+
+    var cart = lib.cartridge.Cartridge.fromFile(file) catch |e| {
         switch (e) {
             lib.cartridge.CartridgeHeaderParseError.NoHeader,
             lib.cartridge.CartridgeHeaderParseError.NoRom,
@@ -47,20 +64,19 @@ fn run_test(file: std.fs.File, writer: anytype, cfg: std.io.tty.Config) !TestRes
         }
     };
 
-    const ppu = lib.ppu.Ppu.init();
-    const mmio = lib.mmio.Mmio.init();
-    var mmu = lib.mmu.Mmu{
-        .cartRom = cartridge.rom,
-        .cartRam = cartridge.ram,
-        .vram = ppu.vram,
-        .oam = ppu.oam,
-        .forbidden = ppu.forbidden,
-        .mmio = mmio.mmio,
-    };
-    lib.emulator.initialize_memory(mmu.memory());
-    var mem = mmu.memory();
-    var cpu = lib.cpu.Cpu.init(&mem, 0x40);
-    lib.emulator.initialize_cpu(&cpu, cartridge.checksum);
+    var sched = Scheduler.init();
+    var intr = Interrupt.init();
+    var joypad = Joypad.init(&intr);
+    var serial = Serial.init(&sched, &intr);
+    var apu = Apu.init(&audio_backend);
+    var timer = Timer.init(&apu, &intr);
+    var lcd = Lcd{};
+    var boot_rom = BootRom{};
+    var ppu = Ppu.init();
+    var mmio = Mmio.init(&joypad, &serial, &timer, &intr, &apu, &lcd, &boot_rom);
+    var mmu = Mmu.init(&cart, &ppu, &mmio);
+    var cpu = Cpu.init(&mmu, &intr, 0x40);
+    lib.emulator.initializeCpu(Cpu, &cpu, cart.checksum);
 
     var count: u32 = 0;
     while (true) {
@@ -68,17 +84,20 @@ fn run_test(file: std.fs.File, writer: anytype, cfg: std.io.tty.Config) !TestRes
         count += 1;
 
         var failure: ?[]const u8 = null;
-        if (cpu.breakpointHappened()) {
-            if (cpu.reg.BC.hi == 3 and cpu.reg.BC.lo == 5 and cpu.reg.DE.hi == 8 and cpu.reg.DE.lo == 13 and cpu.reg.HL.hi == 21 and cpu.reg.HL.lo == 34) {
+        if (cpu.flags.breakpoint) {
+            if (cpu.reg.bc.hi == 3 and cpu.reg.bc.lo == 5 and cpu.reg.de.hi == 8 and cpu.reg.de.lo == 13 and cpu.reg.hl.hi == 21 and cpu.reg.hl.lo == 34) {
                 try succeed_test(writer, cfg);
                 return .success;
             } else {
                 failure = "Breakpoint reached with invalid register values";
-                std.debug.print("B/C/D/E/H/L = {d}/{d}/{d}/{d}/{d}/{d}\n", .{ cpu.reg.BC.hi, cpu.reg.BC.lo, cpu.reg.DE.hi, cpu.reg.DE.lo, cpu.reg.HL.hi, cpu.reg.HL.lo });
+                std.debug.print("B/C/D/E/H/L = {d}/{d}/{d}/{d}/{d}/{d}\n", .{ cpu.reg.bc.hi, cpu.reg.bc.lo, cpu.reg.de.hi, cpu.reg.de.lo, cpu.reg.hl.hi, cpu.reg.hl.lo });
             }
         }
-        if (cpu.illegalInstructionExecuted()) {
+        if (cpu.flags.illegal) {
             failure = "Illegal instruction decoded";
+        }
+        if (cpu.flags.double_halt) {
+            failure = "Double halt bug triggered";
         }
         if (count > 1_000_000) {
             failure = "Timeout";
@@ -91,7 +110,7 @@ fn run_test(file: std.fs.File, writer: anytype, cfg: std.io.tty.Config) !TestRes
     }
 }
 
-fn listFiles(dir: std.fs.Dir, writer: anytype, cfg: std.io.tty.Config) !struct { usize, usize, usize } {
+fn listFiles(dir: std.fs.Dir, writer: *std.Io.Writer, cfg: std.io.tty.Config) !struct { usize, usize, usize } {
     var successful: usize = 0;
     var failed: usize = 0;
     var skipped: usize = 0;
@@ -131,13 +150,16 @@ fn listFiles(dir: std.fs.Dir, writer: anytype, cfg: std.io.tty.Config) !struct {
 }
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut();
-    const writer = stdout.writer();
-    const tty_config = std.io.tty.detectConfig(stdout);
+    var stdout_buffer: [1024]u8 = undefined;
+    const stdout_fileno = std.fs.File.stdout();
+    var stdout_file_writer = stdout_fileno.writer(&stdout_buffer);
+    const tty_config = std.Io.tty.detectConfig(stdout_fileno);
+    const writer = &stdout_file_writer.interface;
 
     var dir = try std.fs.cwd().openDir("testroms", .{ .iterate = true });
     defer dir.close();
     const successful, const failed, const skipped = try listFiles(dir, writer, tty_config);
 
     try writer.print("Result:\n  Pass: {d}\n  Fail: {d}\n  Skip: {d}\nTotal: {d}\n", .{ successful, failed, skipped, successful + failed + skipped });
+    try writer.flush();
 }

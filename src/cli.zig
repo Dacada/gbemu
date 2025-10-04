@@ -112,14 +112,16 @@ pub fn ArgParser(comptime params: ArgParserParams) type {
         }
 
         fn printUsageAndExit(program_name: []const u8, exit_code: u8) noreturn {
-            const stderr = std.io.getStdErr();
-            const writer = stderr.writer();
-            const tty = std.io.tty.detectConfig(stderr);
+            var stderr_buffer: [1024]u8 = undefined;
+            const stderr_fileno = std.fs.File.stderr();
+            var stderr_file_writer = stderr_fileno.writer(&stderr_buffer);
+            const tty = std.io.tty.detectConfig(stderr_fileno);
+            const writer = &stderr_file_writer.interface;
 
             tty.setColor(writer, .blue) catch {};
             writer.writeAll("Usage:") catch {};
             tty.setColor(writer, .reset) catch {};
-            std.fmt.format(writer, " {s}", .{program_name}) catch {};
+            writer.print(" {s}", .{program_name}) catch {};
             if (params.optional.len > 0) {
                 writer.writeAll(" [options]") catch {};
             }
@@ -173,6 +175,7 @@ pub fn ArgParser(comptime params: ArgParserParams) type {
                 writer.writeAll(segments.default) catch {};
             }
             writer.writeByte('\n') catch {};
+            writer.flush() catch {};
 
             std.process.exit(exit_code);
         }

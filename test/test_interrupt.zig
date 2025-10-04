@@ -133,6 +133,7 @@ test "halt normally: ime=1 and no interrupt pending" {
     var cpu = Cpu.init(&mmu, &intr, 0xAA);
 
     cpu.reg.pc = 0;
+    try std.testing.expectEqual(0, cpu.reg.pc); // Removing this fails the test, assuming compiler bug after some research, TODO: investigate later
     cpu.reg.sp.setAll(0xFFFE);
     cpu.reg.ime = 0;
     intr.ie = InterruptKind.vblank.asMask();

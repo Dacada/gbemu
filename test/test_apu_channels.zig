@@ -27,12 +27,12 @@ const period2_low = period2 & 0xFF;
 const period2_high = (period2 & 0x700) >> 8;
 
 fn waitAndCollectUntil(channel: anytype, max_samples: usize) !std.ArrayList(f32) {
-    var samples = std.ArrayList(f32).init(std.testing.allocator);
+    var samples = try std.ArrayList(f32).initCapacity(std.testing.allocator, max_samples);
     var div_counter: usize = 0;
 
     while (samples.items.len <= max_samples) {
         const sample = channel.tick();
-        try samples.append(sample);
+        try samples.append(std.testing.allocator, sample);
 
         div_counter += 1;
         if (div_counter == apu_ticks_per_div) {
@@ -79,7 +79,7 @@ test "test channel 2" {
     const nsamples: usize = 600_000;
 
     var samples = try waitAndCollectUntil(&channel, nsamples);
-    defer samples.deinit();
+    defer samples.deinit(std.testing.allocator);
 
     const output_file = try std.fs.createFileAbsolute("/tmp/out_ch2.raw", .{});
     defer output_file.close();
@@ -124,7 +124,7 @@ test "test channel 1" {
     const nsamples: usize = 2_400_000;
 
     var samples = try waitAndCollectUntil(&channel, nsamples);
-    defer samples.deinit();
+    defer samples.deinit(std.testing.allocator);
 
     const output_file = try std.fs.createFileAbsolute("/tmp/out_ch1.raw", .{});
     defer output_file.close();
@@ -163,7 +163,7 @@ test "test channel 4" {
     const nsamples = 800_000;
 
     var samples = try waitAndCollectUntil(&channel, nsamples);
-    defer samples.deinit();
+    defer samples.deinit(std.testing.allocator);
 
     // change width to wide and retrigger
     const nr43_val_2 = nr43_val & 0b1111_0_111;
@@ -171,7 +171,7 @@ test "test channel 4" {
     try std.testing.expect(!channel.write(4, nr44_val).any());
 
     var samples_2 = try waitAndCollectUntil(&channel, nsamples);
-    defer samples_2.deinit();
+    defer samples_2.deinit(std.testing.allocator);
 
     const output_file = try std.fs.createFileAbsolute("/tmp/out_ch4.raw", .{});
     defer output_file.close();
@@ -235,7 +235,7 @@ test "test channel 3" {
     const nsamples = 2_500_000;
 
     var samples = try waitAndCollectUntil(&channel, nsamples);
-    defer samples.deinit();
+    defer samples.deinit(std.testing.allocator);
 
     const output_file = try std.fs.createFileAbsolute("/tmp/out_ch3.raw", .{});
     defer output_file.close();

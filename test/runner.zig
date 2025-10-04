@@ -19,7 +19,7 @@ fn reportingLogFn(comptime _: std.log.Level, comptime scope: @TypeOf(.enum_liter
         return;
     };
 
-    log_capture_context.captured.?.append(buffer) catch {
+    log_capture_context.captured.?.append(log_capture_context.allocator.?, buffer) catch {
         return;
     };
 }
@@ -30,30 +30,30 @@ pub const std_options: std.Options = .{
 // Capture stderr/stdout output
 var fake_stderr: ?std.posix.fd_t = null;
 var fake_stdout: ?std.posix.fd_t = null;
-var current_stderr: std.posix.fd_t = std.posix.STDERR_FILENO;
-var current_stdout: std.posix.fd_t = std.posix.STDOUT_FILENO;
-fn maskStd() void {
+var real_stderr: ?std.posix.fd_t = null;
+var real_stdout: ?std.posix.fd_t = null;
+fn initStdStreamCapture() !void {
+    fake_stdout = try std.posix.memfd_create("fake_stdout", 0);
+    fake_stderr = try std.posix.memfd_create("fake_stderr", 0);
+    real_stdout = try std.posix.dup(std.posix.STDOUT_FILENO);
+    real_stderr = try std.posix.dup(std.posix.STDERR_FILENO);
+}
+fn maskStd() !void {
     if (fake_stderr) |fd| {
-        current_stderr = fd;
+        try std.posix.dup2(fd, std.posix.STDERR_FILENO);
     }
     if (fake_stdout) |fd| {
-        current_stdout = fd;
+        try std.posix.dup2(fd, std.posix.STDOUT_FILENO);
     }
 }
-fn restoreStd() void {
-    current_stderr = std.posix.STDERR_FILENO;
-    current_stdout = std.posix.STDOUT_FILENO;
+fn restoreStd() !void {
+    if (real_stderr) |fd| {
+        try std.posix.dup2(fd, std.posix.STDERR_FILENO);
+    }
+    if (real_stdout) |fd| {
+        try std.posix.dup2(fd, std.posix.STDOUT_FILENO);
+    }
 }
-pub const os = struct {
-    pub const io = struct {
-        pub fn getStdErrHandle() std.posix.fd_t {
-            return current_stderr;
-        }
-        pub fn getStdOutHandle() std.posix.fd_t {
-            return current_stdout;
-        }
-    };
-};
 
 // Panic handling
 var panicking = false;
@@ -63,11 +63,14 @@ fn testRunnerPanic(msg: []const u8, first_trace_addr: ?usize) noreturn {
     }
     panicking = true;
 
-    restoreStd();
+    restoreStd() catch {};
 
-    const stdout = std.io.getStdOut();
-    const writer = stdout.writer();
-    const tty_config = std.io.tty.detectConfig(stdout);
+    var stdout_buffer: [1024]u8 = undefined;
+    const stdout_fileno = std.fs.File.stdout();
+    var stdout_file_writer = stdout_fileno.writer(&stdout_buffer);
+    const tty_config = std.Io.tty.detectConfig(stdout_fileno);
+    const writer = &stdout_file_writer.interface;
+
     ErrorOutput.writeColor(tty_config, writer, "PANIC!\n") catch {};
 
     if (current_test) |t| {
@@ -102,11 +105,12 @@ fn testRunnerPanic(msg: []const u8, first_trace_addr: ?usize) noreturn {
     }
 
     writer.writeAll("\nStack trace (stderr):\n") catch {};
-    if (@errorReturnTrace()) |t| {
-        std.debug.dumpStackTrace(t.*);
-    }
+    // if (@errorReturnTrace()) |t| {
+    //     std.debug.dumpStackTrace(t.*);
+    // }
     std.debug.dumpCurrentStackTrace(first_trace_addr orelse @returnAddress());
 
+    writer.flush() catch {};
     std.posix.abort();
 }
 pub const panic = std.debug.FullPanic(testRunnerPanic);
@@ -131,11 +135,11 @@ fn extractCapturedOutput(fd: std.posix.fd_t, allocator: std.mem.Allocator) !?[]c
 
 fn MakeColorOutputFunctions(comptime color: std.io.tty.Color) type {
     return struct {
-        fn beginColor(tty: std.io.tty.Config, writer: anytype) !void {
+        fn beginColor(tty: std.io.tty.Config, writer: *std.Io.Writer) !void {
             try tty.setColor(writer, color);
         }
 
-        fn writeColor(tty: std.io.tty.Config, writer: anytype, bytes: []const u8) !void {
+        fn writeColor(tty: std.io.tty.Config, writer: *std.Io.Writer, bytes: []const u8) !void {
             try tty.setColor(writer, color);
             try writer.writeAll(bytes);
             try tty.setColor(writer, .reset);
@@ -143,7 +147,7 @@ fn MakeColorOutputFunctions(comptime color: std.io.tty.Color) type {
     };
 }
 
-fn endColor(tty: std.io.tty.Config, writer: anytype) !void {
+fn endColor(tty: std.io.tty.Config, writer: *std.Io.Writer) !void {
     try tty.setColor(writer, .reset);
 }
 
@@ -151,7 +155,7 @@ const GoodOutput = MakeColorOutputFunctions(std.io.tty.Color.green);
 const ErrorOutput = MakeColorOutputFunctions(std.io.tty.Color.red);
 const ImportantOutput = MakeColorOutputFunctions(std.io.tty.Color.blue);
 
-fn displayCapturedOutputLine(tty: std.io.tty.Config, writer: anytype, name: []const u8, content: []const u8) !void {
+fn displayCapturedOutputLine(tty: std.io.tty.Config, writer: *std.Io.Writer, name: []const u8, content: []const u8) !void {
     try writer.writeAll("\n    ↪ ");
     try ImportantOutput.writeColor(tty, writer, name);
     try writer.writeAll(": ");
@@ -189,12 +193,13 @@ pub fn innerMain() !void {
         return;
     }
 
-    fake_stdout = try std.posix.memfd_create("fake_stdout", 0);
-    fake_stderr = try std.posix.memfd_create("fake_stderr", 0);
+    try initStdStreamCapture();
 
-    const stdout = std.io.getStdOut();
-    const writer = stdout.writer();
-    const tty_config = std.io.tty.detectConfig(stdout);
+    var stdout_buffer: [1024]u8 = undefined;
+    const stdout_fileno = std.fs.File.stdout();
+    var stdout_file_writer = stdout_fileno.writer(&stdout_buffer);
+    const tty_config = std.Io.tty.detectConfig(stdout_fileno);
+    const writer = &stdout_file_writer.interface;
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
@@ -211,10 +216,10 @@ pub fn innerMain() !void {
     };
 
     log_capture_context.allocator = allocator;
-    log_capture_context.captured = std.ArrayList([]const u8).init(allocator);
+    log_capture_context.captured = try std.ArrayList([]const u8).initCapacity(allocator, 64);
     var log_outputs = std.StringHashMap(RunnerLogCapturedOutput).init(allocator);
 
-    var failures = std.ArrayList(RunnerErrorEntry).init(allocator);
+    var failures = try std.ArrayList(RunnerErrorEntry).initCapacity(allocator, 8);
 
     var slowest = RunnerTiming{
         .name = "null",
@@ -229,17 +234,18 @@ pub fn innerMain() !void {
         std.testing.allocator_instance = .{};
 
         total_tests += 1;
-        maskStd();
+        try writer.flush();
+        try maskStd();
         const start = std.time.milliTimestamp();
         current_test = &t;
         const result = t.func();
         current_test = null;
         const elapsed = std.time.milliTimestamp() - start;
-        restoreStd();
+        try restoreStd();
 
         inline for (@typeInfo(@TypeOf(outputs)).@"struct".fields) |field| {
             const fd = @field(fake_fds, field.name);
-            const buff_nullable = try extractCapturedOutput(fd.?, allocator);
+            const buff_nullable = if (fd) |f| try extractCapturedOutput(f, allocator) else null;
             if (buff_nullable) |buff| {
                 try @field(outputs, field.name).put(t.name, .{
                     .content = buff,
@@ -250,7 +256,7 @@ pub fn innerMain() !void {
 
         if (log_capture_context.captured.?.items.len > 0) {
             try log_outputs.put(t.name, .{
-                .lines = try log_capture_context.captured.?.toOwnedSlice(),
+                .lines = try log_capture_context.captured.?.toOwnedSlice(allocator),
                 .displayed = false,
             });
             log_capture_context.captured.?.clearRetainingCapacity();
@@ -266,19 +272,25 @@ pub fn innerMain() !void {
         if (std.testing.allocator_instance.deinit() == .leak) {
             errors_happened = true;
             total_failures += 1;
-            try failures.append(RunnerErrorEntry{
-                .name = t.name,
-                .err = "MemoryLeak",
-            });
+            try failures.append(
+                allocator,
+                RunnerErrorEntry{
+                    .name = t.name,
+                    .err = "MemoryLeak",
+                },
+            );
         }
 
         result catch |err| {
             errors_happened = true;
             total_failures += 1;
-            try failures.append(RunnerErrorEntry{
-                .name = t.name,
-                .err = try std.fmt.allocPrint(allocator, "{}", .{err}),
-            });
+            try failures.append(
+                allocator,
+                RunnerErrorEntry{
+                    .name = t.name,
+                    .err = try std.fmt.allocPrint(allocator, "{}", .{err}),
+                },
+            );
         };
 
         if (errors_happened) {
@@ -368,7 +380,7 @@ pub fn innerMain() !void {
 
     try writer.writeAll("\n  → ");
     try ImportantOutput.beginColor(tty_config, writer);
-    try std.fmt.format(writer, "{d}", .{total_tests});
+    try writer.print("{d}", .{total_tests});
     try endColor(tty_config, writer);
     try writer.writeAll(" tests, ");
     if (total_failures == 0) {
@@ -376,12 +388,13 @@ pub fn innerMain() !void {
     } else {
         try ErrorOutput.beginColor(tty_config, writer);
     }
-    try std.fmt.format(writer, "{d}", .{total_failures});
+    try writer.print("{d}", .{total_failures});
     try endColor(tty_config, writer);
     try writer.writeAll(" failures");
 
     try writer.writeAll("\n  → Slowest test: ");
     try ImportantOutput.writeColor(tty_config, writer, slowest.name);
-    try std.fmt.format(writer, " ({d}ms)", .{slowest.time});
+    try writer.print(" ({d}ms)", .{slowest.time});
     try writer.writeAll("\n=== TESTING SESSION ENDS ===\n");
+    try writer.flush();
 }

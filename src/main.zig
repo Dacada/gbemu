@@ -16,7 +16,7 @@ const Mmio = lib.mmio.Mmio(Joypad, Serial, Timer, Interrupt, Apu, Lcd, BootRom);
 const Ppu = lib.ppu.Ppu;
 const Mmu = lib.mmu.Mmu(Cartridge, Ppu, Mmio);
 const Cpu = lib.cpu.Cpu(Mmu, Interrupt);
-const Debugger = lib.debugger.Debugger(Cpu, Mmu, std.fs.File.Writer);
+const Debugger = lib.debugger.Debugger(Cpu, Mmu, *std.io.Writer);
 const Emulator = lib.emulator.Emulator(Cpu, Apu, Ppu, Timer, Scheduler, Debugger);
 
 var array = [_]u8{0x00} ** 0x100;
@@ -45,8 +45,10 @@ pub fn main() !void {
     var argiter = std.process.args();
     const args = parser.parse(&argiter);
 
-    const stdout = std.io.getStdOut();
-    const writer = stdout.writer();
+    var stdout_buffer: [1024]u8 = undefined;
+    const stdout_fileno = std.fs.File.stdout();
+    var stdout_file_writer = stdout_fileno.writer(&stdout_buffer);
+    const writer = &stdout_file_writer.interface;
 
     var audio_backend = AudioBackend.init();
 

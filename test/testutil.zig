@@ -45,13 +45,15 @@ pub const TestCpuState = struct {
     pub fn init() *TestCpuState {
         const state = std.testing.allocator.create(TestCpuState) catch @panic("allocation failed");
         state.* = TestCpuState{
-            .addresses = std.ArrayList(TestRamState).init(std.testing.allocator),
+            .addresses = std.ArrayList(TestRamState).initCapacity(std.testing.allocator, 16) catch {
+                @panic("allocation failed");
+            },
         };
         return state;
     }
 
     pub fn deinit(self: *TestCpuState) void {
-        self.addresses.deinit();
+        self.addresses.deinit(std.testing.allocator);
         std.testing.allocator.destroy(self);
     }
 
@@ -159,8 +161,9 @@ pub const TestCpuState = struct {
     }
 
     pub fn ram(self: *TestCpuState, addr: u16, val: u8) *TestCpuState {
-        // again, rely on this always running under debug context so it will panic
-        self.addresses.append(TestRamState{ .address = addr, .value = val }) catch unreachable;
+        self.addresses.append(std.testing.allocator, TestRamState{ .address = addr, .value = val }) catch {
+            @panic("allocation failed");
+        };
         return self;
     }
 

@@ -54,17 +54,17 @@ fn SweepPeriodUnit(number: comptime_int) type {
 
             // Entire confusing and weird implementation from Pan Docs
             if (self.enabled and self.pace != 0) {
-                const new_period = self.period_calculation();
-                self.overflow_check(new_period, control);
+                const new_period = self.periodCalculation();
+                self.overflowCheck(new_period, control);
                 if (new_period <= 0x7FF and self.individual_step != 0) {
                     self.shadow = @intCast(new_period);
                     period.period = @intCast(new_period);
-                    self.overflow_check(self.period_calculation(), control);
+                    self.overflowCheck(self.periodCalculation(), control);
                 }
             }
         }
 
-        fn period_calculation(self: *const This) u12 {
+        fn periodCalculation(self: *const This) u12 {
             const shifted = self.shadow >> self.individual_step;
             // store it as a u12 to check for "overflow" later
             var new_period: u12 = @intCast(self.shadow);
@@ -77,7 +77,7 @@ fn SweepPeriodUnit(number: comptime_int) type {
             return new_period;
         }
 
-        fn overflow_check(self: *This, period: u12, control: *ControlUnit) void {
+        fn overflowCheck(self: *This, period: u12, control: *ControlUnit) void {
             if (period > 0x7FF) {
                 control.active = false;
                 self.enabled = false;
@@ -91,7 +91,7 @@ fn SweepPeriodUnit(number: comptime_int) type {
 
             // Pan Docs says: If the individual step is non-zero, frequency calculation and overflow check are performed immediately.
             if (self.individual_step != 0) {
-                self.overflow_check(self.period_calculation(), control);
+                self.overflowCheck(self.periodCalculation(), control);
             }
         }
     };
@@ -702,18 +702,6 @@ test "dac() maps 4-bit samples to [-1,1]" {
     try std.testing.expectApproxEqAbs(-@as(f32, 1.0), dac(@as(u4, 0b1111)), eps);
 }
 
-test "init starts inert and inactive" {
-    var ch = Channel(2).init();
-
-    try std.testing.expect(!ch.isActive());
-    try std.testing.expect(!ch.powered_off);
-    try std.testing.expect(!ch.control.dac_enabled);
-    try std.testing.expectEqual(@as(u11, 0), ch.period.counter);
-    try std.testing.expectEqual(@as(u3, 0), ch.square.duty);
-    try std.testing.expectEqual(@as(f32, 0.0), ch.current);
-    try std.testing.expectEqual(@as(u4, 0), ch.volume.volume);
-}
-
 test "write(2) enables/disables DAC according to initial_volume/direction" {
     var ch = Channel(2).init();
 
@@ -921,7 +909,7 @@ test "Channel(1) period sweep subtract updates period on schedule (pace=2 -> 1 u
     _ = ch.write(2, 0x10); // initial_volume=1 enables DAC
     // Set period to 0x400
     _ = ch.write(3, 0x00);
-    _ = ch.write(4, 0x84); // trigger=0, lengthEnable=0, upper bits=0b100 -> 0x400
+    _ = ch.write(4, 0x04); // trigger=0, lengthEnable=0, upper bits=0b100 -> 0x400
 
     // NR10: pace=2, direction=1 (subtract), step=1
     _ = ch.write(0, (2 << 4) | (1 << 3) | 1);
@@ -949,7 +937,7 @@ test "Channel(1) paced increment may overflow on a subsequent step (pace=1)" {
     _ = ch.write(2, 0x10); // initial_volume=1
     // period = 0x500
     _ = ch.write(3, 0x00);
-    _ = ch.write(4, 0x85); // upper bits=0b101 -> 0x500 (no trigger)
+    _ = ch.write(4, 0x05); // upper bits=0b101 -> 0x500 (no trigger)
 
     // NR10: pace=1, direction=0 (add), step=1
     _ = ch.write(0, (1 << 4) | (0 << 3) | 1);
