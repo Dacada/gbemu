@@ -1,7 +1,7 @@
 .{
     .name = .gbemu,
     .version = "0.0.1",
-    .minimum_zig_version = "0.15.1",
+    .minimum_zig_version = "0.15.2",
     .fingerprint = 0xc23ffa5a62e0210e,
     .paths = .{
         "build.zig",
