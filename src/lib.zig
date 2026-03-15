@@ -19,6 +19,7 @@ pub const timer = @import("timer.zig");
 pub const apu = @import("apu.zig");
 pub const backend = @import("backend.zig");
 pub const channel = @import("channel.zig");
+pub const tracker = @import("tracker.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());

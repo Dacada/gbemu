@@ -3,6 +3,7 @@ pub const cpu_program = @import("test_cpu_programs.zig");
 pub const serial = @import("test_serial.zig");
 pub const interrupt = @import("test_interrupt.zig");
 pub const channels = @import("test_apu_channels.zig");
+pub const tracks = @import("test_apu_tracks.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());
