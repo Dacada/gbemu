@@ -75,6 +75,7 @@ test "test_track_1" {
     });
 
     const ticks_per_subdivision = ticksPerSubdivision(song.metadata.bpm, song.metadata.tpb);
+    std.debug.print("Ticks per subdivision: {d}\n", .{ticks_per_subdivision});
 
     const actualBpm = actualBpmFromSubdivisionTicks(ticks_per_subdivision, song.metadata.tpb);
     std.debug.print("Target BPM: {d}\nActual BPM: {d}\n", .{ song.metadata.bpm, actualBpm });
@@ -87,17 +88,22 @@ test "test_track_1" {
     defer allocator.free(events);
 
     var div_counter: usize = 0;
+    std.debug.print("Subdivisions: {d}\n", .{events.len});
     for (events) |event| {
+        defer allocator.free(event);
+
+        //std.debug.print("event: {any}\n", .{event});
         for (event) |write| {
-            const val = apu.read(write.address);
-            try std.testing.expect(!val[0].any());
-            const flag = apu.write(write.address, write.apply(val[1]));
-            try std.testing.expect(!flag.any());
-            tickApu(&apu, ticks_per_subdivision, &div_counter);
+            //std.debug.print("write: {any}\n", .{write});
+            const read_flags, const val = apu.read(write.address);
+            try std.testing.expect(!read_flags.any());
+            const write_flags = apu.write(write.address, write.apply(val));
+            try std.testing.expect(!write_flags.any());
         }
-        allocator.free(event);
+
+        //std.debug.print("ticking the apu now :D\n", .{});
+        tickApu(&apu, ticks_per_subdivision, &div_counter);
     }
-    allocator.free(events);
 
     try backend.writeToDisk();
 }

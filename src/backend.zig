@@ -8,9 +8,11 @@ pub const NullAudioBackend = struct {
     pub fn submit(_: *NullAudioBackend, _: f32, _: f32) void {}
 };
 
+pub const WavAudioBackendError = error{TrackSizeOverflow};
+
 pub const WavAudioBackend = struct {
     pub const SamplingRate = 44_100.0;
-    const Sample = struct { left: u16, right: u16 };
+    const Sample = struct { left: i16, right: i16 };
 
     filename: []const u8,
     allocator: std.mem.Allocator,
@@ -30,8 +32,8 @@ pub const WavAudioBackend = struct {
 
     pub fn submit(self: *WavAudioBackend, left: f32, right: f32) void {
         self.samples.append(self.allocator, .{
-            .left = @intFromFloat(left * std.math.maxInt(u16)),
-            .right = @intFromFloat(right * std.math.maxInt(u16)),
+            .left = @intFromFloat(left * std.math.maxInt(i16)),
+            .right = @intFromFloat(right * std.math.maxInt(i16)),
         }) catch @panic("error during submit");
     }
 
@@ -40,7 +42,7 @@ pub const WavAudioBackend = struct {
         const num_channels: u16 = 2;
         const bits_per_sample: u16 = 16;
 
-        var content = try std.ArrayList(u8).initCapacity(self.allocator, self.samples.items.len * 2);
+        var content = try std.ArrayList(u8).initCapacity(self.allocator, self.samples.items.len * 4);
         defer content.deinit(self.allocator);
 
         var buff = [4]u8{ 0, 0, 0, 0 };
@@ -79,12 +81,16 @@ pub const WavAudioBackend = struct {
         try content.appendSlice(self.allocator, "data");
 
         // Number of bytes in data
-        std.mem.writeInt(u32, &buff, (bits_per_sample * num_channels * @as(u32, @intCast(self.samples.items.len))) / 8, .little);
+        const bytes: u64 = (bits_per_sample * num_channels * @as(u64, @intCast(self.samples.items.len))) / 8;
+        if (bytes > std.math.maxInt(u32)) {
+            return WavAudioBackendError.TrackSizeOverflow;
+        }
+        std.mem.writeInt(u32, &buff, @truncate(bytes), .little);
         try content.appendSlice(self.allocator, &buff);
 
         for (self.samples.items) |sample| {
-            std.mem.writeInt(u16, buff[0..2], sample.left, .little);
-            std.mem.writeInt(u16, buff[2..4], sample.right, .little);
+            std.mem.writeInt(i16, buff[0..2], sample.left, .little);
+            std.mem.writeInt(i16, buff[2..4], sample.right, .little);
             try content.appendSlice(self.allocator, &buff);
         }
 

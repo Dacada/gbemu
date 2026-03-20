@@ -49,7 +49,7 @@ const MockChannel = struct {
 };
 
 pub fn Apu(AudioBackend: type) type {
-    return ApuGeneric(Channel(1), Channel(2), Channel(3), Channel(3), AudioBackend);
+    return ApuGeneric(Channel(1), Channel(2), Channel(3), Channel(4), AudioBackend);
 }
 
 fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, AudioBackend: type) type {
@@ -383,7 +383,7 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
             // sample
             self.sampling_error += AudioBackend.SamplingRate;
             if (self.sampling_error >= This.ApuTickRate) {
-                self.sampling_error -= AudioBackend.SamplingRate;
+                self.sampling_error -= This.ApuTickRate;
 
                 var results: struct { left: f32 = 0, right: f32 = 0 } = .{};
                 inline for (.{ "left", "right" }) |side| {

@@ -572,7 +572,9 @@ pub const Song = struct {
         var current_tick = start_tick;
         inline for (notes) |note| {
             if (note[0]) |actualNote| {
-                try self.addNoteCh2(allocator, actualNote, current_beat, current_tick, note[1], wave_duty, volume);
+                try self.addNoteCh2(allocator, actualNote, current_beat, current_tick, wave_duty, volume);
+            } else {
+                try self.addRestCh2(allocator, current_beat, current_tick);
             }
             current_tick += note[1];
             current_beat += current_tick / self.metadata.tpb;
@@ -586,14 +588,9 @@ pub const Song = struct {
         comptime note: []const u8,
         start_beat: usize,
         start_tick: usize,
-        duration_ticks: usize,
         wave_duty: WaveDuty,
         volume: u4,
     ) !void {
-        const end_ticks_total = start_beat * self.metadata.tpb + start_tick + duration_ticks;
-        const end_beat = end_ticks_total / self.metadata.tpb;
-        const end_tick = end_ticks_total % self.metadata.tpb;
-
         // Set up the channel
 
         // We don't use the hardware length timer for music
@@ -651,11 +648,18 @@ pub const Song = struct {
                 },
             },
         });
+    }
 
-        // Mute the channel after the note is done playing
+    pub fn addRestCh2(
+        self: *Song,
+        allocator: std.mem.Allocator,
+        start_beat: usize,
+        start_tick: usize,
+    ) !void {
+        // Just mute the channel
         try self.events.append(allocator, SongEvent{
-            .beat = end_beat,
-            .tick = end_tick,
+            .beat = start_beat,
+            .tick = start_tick,
             .channel = .ch2,
             .event = .{
                 .volume = .{
@@ -738,6 +742,11 @@ pub const HardwareEvent = struct {
     }
 };
 
+/// We need to make sure that events with addresses that could be a trigger event happen last. Luckily, the trigger address is always last.
+fn sortTriggerResigsterWritesLast(_: void, a: HardwareEvent, b: HardwareEvent) bool {
+    return a.address < b.address;
+}
+
 pub fn play(song: Song, allocator: std.mem.Allocator) ![][]HardwareEvent {
     var hardware_events = try std.ArrayList(std.ArrayList(HardwareEvent)).initCapacity(allocator, 256);
 
@@ -749,8 +758,7 @@ pub fn play(song: Song, allocator: std.mem.Allocator) ![][]HardwareEvent {
     }
 
     for (song.events.items) |song_event| {
-        std.debug.print("evaluating tracker event: {any}\n", .{song_event});
-        const location = song_event.beat * song.metadata.bpm + song_event.tick;
+        const location = song_event.beat * song.metadata.tpb + song_event.tick;
         {
             const currlen = hardware_events.items.len;
             if (currlen <= location) {
@@ -789,7 +797,9 @@ pub fn play(song: Song, allocator: std.mem.Allocator) ![][]HardwareEvent {
         allocator.free(arr);
     };
     for (hardware_events.items) |*eventlist| {
-        try intermediate.append(allocator, try eventlist.toOwnedSlice(allocator));
+        const writes = try eventlist.toOwnedSlice(allocator);
+        std.sort.pdq(HardwareEvent, writes, {}, sortTriggerResigsterWritesLast);
+        try intermediate.append(allocator, writes);
     }
     return intermediate.toOwnedSlice(allocator);
 }
