@@ -41,6 +41,17 @@ fn tickApu(apu: *Apu, ticks: usize, div_counter: *usize) void {
     }
 }
 
+fn expectIdenticalFiles(comptime expected: []const u8, actual: []const u8, allocator: std.mem.Allocator) !void {
+    const expectedBytes = @embedFile(expected);
+
+    const actualFile = try std.fs.openFileAbsolute(actual, .{});
+    defer actualFile.close();
+    const actualBytes = try actualFile.readToEndAlloc(allocator, expectedBytes.len);
+    defer allocator.free(actualBytes);
+
+    try std.testing.expectEqualSlices(u8, expectedBytes, actualBytes);
+}
+
 test "test_track_1" {
     const allocator = std.testing.allocator;
 
@@ -75,10 +86,9 @@ test "test_track_1" {
     });
 
     const ticks_per_subdivision = ticksPerSubdivision(song.metadata.bpm, song.metadata.tpb);
-    std.debug.print("Ticks per subdivision: {d}\n", .{ticks_per_subdivision});
 
-    const actualBpm = actualBpmFromSubdivisionTicks(ticks_per_subdivision, song.metadata.tpb);
-    std.debug.print("Target BPM: {d}\nActual BPM: {d}\n", .{ song.metadata.bpm, actualBpm });
+    //const actualBpm = actualBpmFromSubdivisionTicks(ticks_per_subdivision, song.metadata.tpb);
+    //std.debug.print("Target BPM: {d}\nActual BPM: {d}\n", .{ song.metadata.bpm, actualBpm });
 
     var backend = try Backend.init("/tmp/test_track_1.wav", allocator);
     defer backend.deinit();
@@ -87,23 +97,25 @@ test "test_track_1" {
     const events = try tracker.play(song, allocator);
     defer allocator.free(events);
 
+    try std.testing.expect(!apu.write(0x16, 0b1000_0000).any());
+    try std.testing.expect(!apu.write(0x15, 0b1111_1111).any());
+    try std.testing.expect(!apu.write(0x14, 0b0111_0111).any());
+
     var div_counter: usize = 0;
-    std.debug.print("Subdivisions: {d}\n", .{events.len});
     for (events) |event| {
         defer allocator.free(event);
 
-        //std.debug.print("event: {any}\n", .{event});
         for (event) |write| {
-            //std.debug.print("write: {any}\n", .{write});
             const read_flags, const val = apu.read(write.address);
             try std.testing.expect(!read_flags.any());
             const write_flags = apu.write(write.address, write.apply(val));
             try std.testing.expect(!write_flags.any());
         }
 
-        //std.debug.print("ticking the apu now :D\n", .{});
         tickApu(&apu, ticks_per_subdivision, &div_counter);
     }
 
     try backend.writeToDisk();
+
+    try expectIdenticalFiles("res/track1.wav", "/tmp/test_track_1.wav", allocator);
 }

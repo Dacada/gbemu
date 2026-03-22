@@ -56,7 +56,7 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
     return struct {
         const This = @This();
 
-        const ApuTickRate = 1_048_576;
+        const ApuTickRate = 2_097_152;
 
         const Accumulator = packed struct {
             sum: f32 = 0,
@@ -195,21 +195,30 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
             }
 
             pub fn read(self: *This, addr: u16) struct { MemoryFlag, u8 } {
-                return .{ .{}, self.peek(addr) };
+                return .{ .{}, Control.peek(self, addr) };
             }
 
             pub fn write(self: *This, addr: u16, val: u8) MemoryFlag {
-                if (self.audio_on == 0 and addr != 2) {
-                    // If audio is off, registers are read-only (except the one to turn it back on)
+                // The register to turn audio on ALWAYS works, the rest depend on whether audio is on
+                // But we can't check if audio is on or off yet because it starts UNDEFINED
+                // So if we're on addr 2 we set it immediately
+                // THEN we can check if audio is off and bail out
+                // And otherwise we do the write
+
+                if (addr == 2) {
+                    Control.poke(self, addr, val);
+                } else if (self.audio_on == 0) {
                     return .{};
+                } else {
+                    Control.poke(self, addr, val);
                 }
 
-                const prev_audio_on = self.audio_on;
-                self.poke(addr, val);
-                if (addr == 2 and (prev_audio_on == 1 and self.audio_on == 0)) {
-                    // Turning the apu off zeroes all registers (except this one)
-                    self.poke(0, 0);
-                    self.poke(1, 0);
+                // If we are setting the audio on bit to 0, zero all registers
+                // If it was already 0, then we zero them again, which should be fine
+
+                if (addr == 2 and val & 0b1000_0000 == 0) {
+                    Control.poke(self, 0, 0);
+                    Control.poke(self, 1, 0);
                     self.channel1.poweroff();
                     self.channel2.poweroff();
                     self.channel3.poweroff();

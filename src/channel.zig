@@ -204,6 +204,7 @@ const ControlUnit = struct {
         return self.active and self.dac_enabled;
     }
 
+    // this is called when APU is turned off, should be idempotent since it can be called multiple times while it's off
     fn poweroff(self: *ControlUnit) void {
         self.active = false;
         self.dac_enabled = false;
