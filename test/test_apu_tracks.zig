@@ -52,6 +52,46 @@ fn expectIdenticalFiles(comptime expected: []const u8, actual: []const u8, alloc
     try std.testing.expectEqualSlices(u8, expectedBytes, actualBytes);
 }
 
+fn testTrack(allocator: std.mem.Allocator, song: tracker.Song, comptime name: []const u8) !void {
+    const ticks_per_subdivision = ticksPerSubdivision(song.metadata.bpm, song.metadata.tpb);
+
+    //const actualBpm = actualBpmFromSubdivisionTicks(ticks_per_subdivision, song.metadata.tpb);
+    //std.debug.print("Target BPM: {d}\nActual BPM: {d}\n", .{ song.metadata.bpm, actualBpm });
+
+    const tmp_file = std.fmt.comptimePrint("/tmp/{s}.wav", .{name});
+    const res_file = std.fmt.comptimePrint("res/{s}.wav", .{name});
+
+    var backend = try Backend.init(tmp_file, allocator);
+    defer backend.deinit();
+    var apu = Apu.init(&backend);
+
+    const events = try tracker.play(song, allocator);
+    defer allocator.free(events);
+
+    // Start sound system
+    try std.testing.expect(!apu.write(0x16, 0b1000_0000).any());
+    try std.testing.expect(!apu.write(0x15, 0b1111_1111).any());
+    try std.testing.expect(!apu.write(0x14, 0b0111_0111).any());
+
+    var div_counter: usize = 0;
+    for (events) |event| {
+        defer allocator.free(event);
+
+        for (event) |write| {
+            const read_flags, const val = apu.read(write.address);
+            try std.testing.expect(!read_flags.any());
+            const write_flags = apu.write(write.address, write.apply(val));
+            try std.testing.expect(!write_flags.any());
+        }
+
+        tickApu(&apu, ticks_per_subdivision, &div_counter);
+    }
+
+    try backend.writeToDisk();
+
+    try expectIdenticalFiles(res_file, tmp_file, allocator);
+}
+
 test "test_track_1" {
     const allocator = std.testing.allocator;
 
@@ -85,37 +125,5 @@ test "test_track_1" {
         .{ "B4", 4 },
     });
 
-    const ticks_per_subdivision = ticksPerSubdivision(song.metadata.bpm, song.metadata.tpb);
-
-    //const actualBpm = actualBpmFromSubdivisionTicks(ticks_per_subdivision, song.metadata.tpb);
-    //std.debug.print("Target BPM: {d}\nActual BPM: {d}\n", .{ song.metadata.bpm, actualBpm });
-
-    var backend = try Backend.init("/tmp/test_track_1.wav", allocator);
-    defer backend.deinit();
-    var apu = Apu.init(&backend);
-
-    const events = try tracker.play(song, allocator);
-    defer allocator.free(events);
-
-    try std.testing.expect(!apu.write(0x16, 0b1000_0000).any());
-    try std.testing.expect(!apu.write(0x15, 0b1111_1111).any());
-    try std.testing.expect(!apu.write(0x14, 0b0111_0111).any());
-
-    var div_counter: usize = 0;
-    for (events) |event| {
-        defer allocator.free(event);
-
-        for (event) |write| {
-            const read_flags, const val = apu.read(write.address);
-            try std.testing.expect(!read_flags.any());
-            const write_flags = apu.write(write.address, write.apply(val));
-            try std.testing.expect(!write_flags.any());
-        }
-
-        tickApu(&apu, ticks_per_subdivision, &div_counter);
-    }
-
-    try backend.writeToDisk();
-
-    try expectIdenticalFiles("res/track1.wav", "/tmp/test_track_1.wav", allocator);
+    try testTrack(allocator, song, "track1");
 }
