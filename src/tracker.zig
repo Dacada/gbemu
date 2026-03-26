@@ -39,427 +39,429 @@ const WaveDuty = enum {
     three_in_four,
 };
 
+const SongEventInternal = union(enum) {
+    pan: struct {
+        left: bool,
+        right: bool,
+
+        fn intoHardwareEvents(self: @This(), channel: ?Channel, allocator: std.mem.Allocator) ![]HardwareEvent {
+            if (channel == null) {
+                return SongPlayError.NullChannel;
+            }
+
+            var res = HardwareEvent.init(0x15);
+            if (self.left) {
+                res.setBit(@as(u3, @intCast(@intFromEnum(channel.?))) + 4);
+            } else {
+                res.clearBit(@as(u3, @intCast(@intFromEnum(channel.?))) + 4);
+            }
+            if (self.right) {
+                res.setBit(@intCast(@intFromEnum(channel.?)));
+            } else {
+                res.clearBit(@intCast(@intFromEnum(channel.?)));
+            }
+
+            return singleElementArray(res, allocator, null);
+        }
+    },
+    master_volume: struct {
+        side: enum {
+            left,
+            right,
+        },
+        value: u3,
+
+        fn intoHardwareEvents(self: @This(), channel: ?Channel, allocator: std.mem.Allocator) ![]HardwareEvent {
+            if (channel != null) {
+                return SongPlayError.NonNullChannel;
+            }
+
+            var res = HardwareEvent.init(0x14);
+            if (self.side == .left) {
+                try res.setValue(4, self.value);
+            } else {
+                try res.setValue(0, self.value);
+            }
+            res.clearBit(7);
+            res.clearBit(3);
+
+            return singleElementArray(res, allocator, null);
+        }
+    },
+    period_sweep_disable: struct {
+        fn intoHardwareEvents(_: @This(), channel: ?Channel, allocator: std.mem.Allocator) ![]HardwareEvent {
+            if (channel == null) {
+                return SongPlayError.NullChannel;
+            }
+
+            if (channel != .ch1) {
+                return SongPlayError.InvalidChannel;
+            }
+
+            var res = HardwareEvent.init(0x00);
+            try res.setValue(4, @as(u3, 0));
+
+            return singleElementArray(res, allocator, channel);
+        }
+    },
+    period_sweep_enable: struct {
+        pace: u3,
+        direction: Direction,
+        individual_step: u3,
+
+        fn intoHardwareEvents(self: @This(), channel: ?Channel, allocator: std.mem.Allocator) ![]HardwareEvent {
+            if (channel == null) {
+                return SongPlayError.NullChannel;
+            }
+
+            if (channel != .ch1) {
+                return SongPlayError.InvalidChannel;
+            }
+
+            if (self.pace == 0) {
+                // This will disable period sweep, should use that event instead
+                return SongPlayError.InvalidValue;
+            }
+
+            var res = HardwareEvent.init(0x00);
+            try res.setValue(0, self.individual_step);
+            if (self.direction == .increase) {
+                res.setBit(3);
+            } else {
+                res.clearBit(3);
+            }
+            try res.setValue(4, self.pace);
+
+            return singleElementArray(res, allocator, channel);
+        }
+    },
+    wave_duty: struct {
+        duty: WaveDuty,
+
+        fn intoHardwareEvents(self: @This(), channel: ?Channel, allocator: std.mem.Allocator) ![]HardwareEvent {
+            if (channel == null) {
+                return SongPlayError.NullChannel;
+            }
+
+            if (channel != .ch1 and channel != .ch2) {
+                return SongPlayError.InvalidChannel;
+            }
+
+            const address: u16 = if (channel == .ch1) 0x01 else 0x06;
+            const val: u2 = switch (self.duty) {
+                .one_in_eight => 0b00,
+                .one_in_four => 0b01,
+                .one_in_two => 0b10,
+                .three_in_four => 0b11,
+            };
+
+            var res = HardwareEvent.init(address);
+            try res.setValue(6, val);
+
+            return singleElementArray(res, allocator, channel);
+        }
+    },
+    length_timer_disable: struct {
+        fn intoHardwareEvents(_: @This(), channel: ?Channel, allocator: std.mem.Allocator) ![]HardwareEvent {
+            if (channel == null) {
+                return SongPlayError.NullChannel;
+            }
+
+            const address: u16 = switch (channel.?) {
+                .ch1 => 0x04,
+                .ch2 => 0x09,
+                .ch3 => 0x0E,
+                .ch4 => 0x13,
+            };
+
+            var res = HardwareEvent.init(address);
+            res.clearBit(6);
+
+            return singleElementArray(res, allocator, channel);
+        }
+    },
+    length_timer_enable: struct {
+        length: union {
+            long: u8,
+            short: u6,
+        },
+
+        fn intoHardwareEvents(self: @This(), channel: ?Channel, allocator: std.mem.Allocator) ![]HardwareEvent {
+            if (channel == null) {
+                return SongPlayError.NullChannel;
+            }
+
+            const address_ctrl: u16, const address_val: u16 = switch (channel.?) {
+                .ch1 => .{ 0x04, 0x01 },
+                .ch2 => .{ 0x09, 0x06 },
+                .ch3 => .{ 0x0E, 0x0B },
+                .ch4 => .{ 0x13, 0x10 },
+            };
+
+            var res_ctrl = HardwareEvent.init(address_ctrl);
+            res_ctrl.setBit(6);
+
+            var res_val = HardwareEvent.init(address_val);
+            if (channel == .ch3) {
+                try res_val.setValue(0, self.length.long);
+            } else {
+                try res_val.setValue(0, self.length.short);
+            }
+
+            var res = try allocator.alloc(HardwareEvent, 3);
+            res[0] = res_ctrl;
+            res[1] = res_val;
+            res[2] = triggerEvent(channel.?);
+            return res;
+        }
+    },
+    dac_disable: struct {
+        fn intoHardwareEvents(_: @This(), channel: ?Channel, allocator: std.mem.Allocator) ![]HardwareEvent {
+            if (channel == null) {
+                return SongPlayError.NullChannel;
+            }
+
+            const address: u16 = switch (channel.?) {
+                .ch1 => 0x02,
+                .ch2 => 0x07,
+                .ch3 => 0x0A,
+                .ch4 => 0x11,
+            };
+
+            var res = HardwareEvent.init(address);
+            if (channel == .ch3) {
+                res.clearBit(7);
+            } else {
+                try res.setValue(3, @as(u5, 0));
+            }
+
+            return singleElementArray(res, allocator, null);
+        }
+    },
+    dac_enable: struct {
+        fn intoHardwareEvents(_: @This(), channel: ?Channel, allocator: std.mem.Allocator) ![]HardwareEvent {
+            if (channel == null) {
+                return SongPlayError.NullChannel;
+            }
+
+            if (channel != .ch3) {
+                return SongPlayError.InvalidChannel;
+            }
+
+            var res = HardwareEvent.init(0x0A);
+            res.setBit(7);
+
+            return singleElementArray(res, allocator, null);
+        }
+    },
+    volume: struct {
+        value: u4,
+
+        fn intoHardwareEvents(self: @This(), channel: ?Channel, allocator: std.mem.Allocator) ![]HardwareEvent {
+            if (channel == null) {
+                return SongPlayError.NullChannel;
+            }
+
+            if (channel == .ch3) {
+                return SongPlayError.InvalidChannel;
+            }
+
+            const address: u16 = switch (channel.?) {
+                .ch1 => 0x02,
+                .ch2 => 0x07,
+                .ch3 => unreachable,
+                .ch4 => 0x11,
+            };
+
+            var res = HardwareEvent.init(address);
+            try res.setValue(4, self.value);
+
+            return singleElementArray(res, allocator, channel);
+        }
+    },
+    envelope_disable: struct {
+        fn intoHardwareEvents(_: @This(), channel: ?Channel, allocator: std.mem.Allocator) ![]HardwareEvent {
+            if (channel == null) {
+                return SongPlayError.NullChannel;
+            }
+
+            if (channel == .ch3) {
+                return SongPlayError.InvalidChannel;
+            }
+
+            const address: u16 = switch (channel.?) {
+                .ch1 => 0x02,
+                .ch2 => 0x07,
+                .ch3 => unreachable,
+                .ch4 => 0x11,
+            };
+
+            var res = HardwareEvent.init(address);
+            try res.setValue(0, @as(u3, 0));
+
+            return singleElementArray(res, allocator, channel);
+        }
+    },
+    envelope_enable: struct {
+        direction: Direction,
+        pace: u3,
+
+        fn intoHardwareEvents(self: @This(), channel: ?Channel, allocator: std.mem.Allocator) ![]HardwareEvent {
+            if (channel == null) {
+                return SongPlayError.NullChannel;
+            }
+
+            if (channel == .ch3) {
+                return SongPlayError.InvalidChannel;
+            }
+
+            const address: u16 = switch (channel.?) {
+                .ch1 => 0x02,
+                .ch2 => 0x07,
+                .ch3 => unreachable,
+                .ch4 => 0x11,
+            };
+
+            var res = HardwareEvent.init(address);
+            try res.setValue(0, self.pace);
+            if (self.direction == .decrease) {
+                res.clearBit(3);
+            } else {
+                res.setBit(3);
+            }
+
+            return singleElementArray(res, allocator, channel);
+        }
+    },
+    period: struct {
+        value: u11,
+
+        fn intoHardwareEvents(self: @This(), channel: ?Channel, allocator: std.mem.Allocator) ![]HardwareEvent {
+            if (channel == null) {
+                return SongPlayError.NullChannel;
+            }
+            if (channel == .ch4) {
+                return SongPlayError.InvalidChannel;
+            }
+
+            const addr_high: u16, const addr_low: u16 = switch (channel.?) {
+                .ch1 => .{ 0x04, 0x03 },
+                .ch2 => .{ 0x09, 0x08 },
+                .ch3 => .{ 0x0E, 0x0D },
+                .ch4 => unreachable,
+            };
+
+            const value_high: u3 = @intCast((self.value & 0x700) >> 8);
+            const value_low: u8 = @intCast(self.value & 0x0FF);
+
+            var res_high = HardwareEvent.init(addr_high);
+            try res_high.setValue(0, value_high);
+
+            var res_low = HardwareEvent.init(addr_low);
+            try res_low.setValue(0, value_low);
+
+            var res = try allocator.alloc(HardwareEvent, 3);
+            res[0] = res_high;
+            res[1] = res_low;
+            res[2] = triggerEvent(channel.?);
+            return res;
+        }
+    },
+    waveform: struct {
+        id: usize,
+
+        fn intoHardwareEvents(self: @This(), channel: ?Channel, allocator: std.mem.Allocator, song: Song) ![]HardwareEvent {
+            if (channel == null) {
+                return SongPlayError.NullChannel;
+            }
+            if (channel != .ch3) {
+                return SongPlayError.InvalidChannel;
+            }
+
+            var res = try allocator.alloc(HardwareEvent, 16);
+            for (song.waveforms.items) |waveform| {
+                if (waveform.id == self.id) {
+                    for (waveform.waveform, 0..) |sample, i| {
+                        if (i % 2 == 0) {
+                            var ev = HardwareEvent.init(0x20 + @as(u16, @intCast(i)) / 2);
+                            try ev.setValue(4, sample);
+                            res[i / 2] = ev;
+                        } else {
+                            try res[i / 2].setValue(0, sample);
+                        }
+                    }
+                    break;
+                }
+            }
+            return res;
+        }
+    },
+    output_level: struct {
+        level: enum {
+            silent,
+            full,
+            half,
+            quart,
+        },
+
+        fn intoHardwareEvents(self: @This(), channel: ?Channel, allocator: std.mem.Allocator) ![]HardwareEvent {
+            if (channel == null) {
+                return SongPlayError.NullChannel;
+            }
+
+            if (channel != .ch3) {
+                return SongPlayError.InvalidChannel;
+            }
+
+            const val: u2 = switch (self.level) {
+                .silent => 0b00,
+                .full => 0b01,
+                .half => 0b10,
+                .quart => 0b11,
+            };
+
+            var res = HardwareEvent.init(0x0C);
+            try res.setValue(5, val);
+
+            return singleElementArray(res, allocator, null);
+        }
+    },
+    lfsr: struct {
+        clock_shift: u4,
+        width: enum {
+            wide,
+            narrow,
+        },
+        clock_divider: u3,
+
+        fn intoHardwareEvents(self: @This(), channel: ?Channel, allocator: std.mem.Allocator) ![]HardwareEvent {
+            if (channel == null) {
+                return SongPlayError.NullChannel;
+            }
+
+            if (channel != .ch4) {
+                return SongPlayError.InvalidChannel;
+            }
+
+            var res = HardwareEvent.init(0x12);
+            try res.setValue(4, self.clock_shift);
+            if (self.width == .wide) {
+                res.clearBit(3);
+            } else {
+                res.setBit(3);
+            }
+            try res.setValue(0, self.clock_divider);
+
+            return singleElementArray(res, allocator, channel);
+        }
+    },
+};
+
 pub const SongEvent = struct {
     beat: usize,
     tick: usize,
     channel: ?Channel,
-    event: union(enum) {
-        pan: struct {
-            left: bool,
-            right: bool,
-
-            fn intoHardwareEvents(self: @This(), channel: ?Channel, allocator: std.mem.Allocator) ![]HardwareEvent {
-                if (channel == null) {
-                    return SongPlayError.NullChannel;
-                }
-
-                var res = HardwareEvent.init(0x15);
-                if (self.left) {
-                    res.setBit(@as(u3, @intCast(@intFromEnum(channel.?))) + 4);
-                } else {
-                    res.clearBit(@as(u3, @intCast(@intFromEnum(channel.?))) + 4);
-                }
-                if (self.right) {
-                    res.setBit(@intCast(@intFromEnum(channel.?)));
-                } else {
-                    res.clearBit(@intCast(@intFromEnum(channel.?)));
-                }
-
-                return singleElementArray(res, allocator, null);
-            }
-        },
-        master_volume: struct {
-            side: enum {
-                left,
-                right,
-            },
-            value: u3,
-
-            fn intoHardwareEvents(self: @This(), channel: ?Channel, allocator: std.mem.Allocator) ![]HardwareEvent {
-                if (channel != null) {
-                    return SongPlayError.NonNullChannel;
-                }
-
-                var res = HardwareEvent.init(0x14);
-                if (self.side == .left) {
-                    try res.setValue(4, self.value);
-                } else {
-                    try res.setValue(0, self.value);
-                }
-                res.clearBit(7);
-                res.clearBit(3);
-
-                return singleElementArray(res, allocator, null);
-            }
-        },
-        period_sweep_disable: struct {
-            fn intoHardwareEvents(_: @This(), channel: ?Channel, allocator: std.mem.Allocator) ![]HardwareEvent {
-                if (channel == null) {
-                    return SongPlayError.NullChannel;
-                }
-
-                if (channel != .ch1) {
-                    return SongPlayError.InvalidChannel;
-                }
-
-                var res = HardwareEvent.init(0x00);
-                try res.setValue(4, @as(u3, 0));
-
-                return singleElementArray(res, allocator, channel);
-            }
-        },
-        period_sweep_enable: struct {
-            pace: u3,
-            direction: Direction,
-            individual_step: u3,
-
-            fn intoHardwareEvents(self: @This(), channel: ?Channel, allocator: std.mem.Allocator) ![]HardwareEvent {
-                if (channel == null) {
-                    return SongPlayError.NullChannel;
-                }
-
-                if (channel != .ch1) {
-                    return SongPlayError.InvalidChannel;
-                }
-
-                if (self.pace == 0) {
-                    // This will disable period sweep, should use that event instead
-                    return SongPlayError.InvalidValue;
-                }
-
-                var res = HardwareEvent.init(0x00);
-                try res.setValue(0, self.individual_step);
-                if (self.direction == .increase) {
-                    res.setBit(3);
-                } else {
-                    res.clearBit(3);
-                }
-                try res.setValue(4, self.pace);
-
-                return singleElementArray(res, allocator, channel);
-            }
-        },
-        wave_duty: struct {
-            duty: WaveDuty,
-
-            fn intoHardwareEvents(self: @This(), channel: ?Channel, allocator: std.mem.Allocator) ![]HardwareEvent {
-                if (channel == null) {
-                    return SongPlayError.NullChannel;
-                }
-
-                if (channel != .ch1 and channel != .ch2) {
-                    return SongPlayError.InvalidChannel;
-                }
-
-                const address: u16 = if (channel == .ch1) 0x01 else 0x06;
-                const val: u2 = switch (self.duty) {
-                    .one_in_eight => 0b00,
-                    .one_in_four => 0b01,
-                    .one_in_two => 0b10,
-                    .three_in_four => 0b11,
-                };
-
-                var res = HardwareEvent.init(address);
-                try res.setValue(6, val);
-
-                return singleElementArray(res, allocator, channel);
-            }
-        },
-        length_timer_disable: struct {
-            fn intoHardwareEvents(_: @This(), channel: ?Channel, allocator: std.mem.Allocator) ![]HardwareEvent {
-                if (channel == null) {
-                    return SongPlayError.NullChannel;
-                }
-
-                const address: u16 = switch (channel.?) {
-                    .ch1 => 0x04,
-                    .ch2 => 0x09,
-                    .ch3 => 0x0E,
-                    .ch4 => 0x13,
-                };
-
-                var res = HardwareEvent.init(address);
-                res.clearBit(6);
-
-                return singleElementArray(res, allocator, channel);
-            }
-        },
-        length_timer_enable: struct {
-            length: union {
-                long: u8,
-                short: u6,
-            },
-
-            fn intoHardwareEvents(self: @This(), channel: ?Channel, allocator: std.mem.Allocator) ![]HardwareEvent {
-                if (channel == null) {
-                    return SongPlayError.NullChannel;
-                }
-
-                const address_ctrl: u16, const address_val: u16 = switch (channel.?) {
-                    .ch1 => .{ 0x04, 0x01 },
-                    .ch2 => .{ 0x09, 0x06 },
-                    .ch3 => .{ 0x0E, 0x0B },
-                    .ch4 => .{ 0x13, 0x10 },
-                };
-
-                var res_ctrl = HardwareEvent.init(address_ctrl);
-                res_ctrl.setBit(6);
-
-                var res_val = HardwareEvent.init(address_val);
-                if (channel == .ch3) {
-                    try res_val.setValue(0, self.length.long);
-                } else {
-                    try res_val.setValue(0, self.length.short);
-                }
-
-                var res = try allocator.alloc(HardwareEvent, 3);
-                res[0] = res_ctrl;
-                res[1] = res_val;
-                res[2] = triggerEvent(channel.?);
-                return res;
-            }
-        },
-        dac_disable: struct {
-            fn intoHardwareEvents(_: @This(), channel: ?Channel, allocator: std.mem.Allocator) ![]HardwareEvent {
-                if (channel == null) {
-                    return SongPlayError.NullChannel;
-                }
-
-                const address: u16 = switch (channel.?) {
-                    .ch1 => 0x02,
-                    .ch2 => 0x07,
-                    .ch3 => 0x0A,
-                    .ch4 => 0x11,
-                };
-
-                var res = HardwareEvent.init(address);
-                if (channel == .ch3) {
-                    res.clearBit(7);
-                } else {
-                    try res.setValue(3, @as(u5, 0));
-                }
-
-                return singleElementArray(res, allocator, null);
-            }
-        },
-        dac_enable: struct {
-            fn intoHardwareEvents(_: @This(), channel: ?Channel, allocator: std.mem.Allocator) ![]HardwareEvent {
-                if (channel == null) {
-                    return SongPlayError.NullChannel;
-                }
-
-                if (channel != .ch3) {
-                    return SongPlayError.InvalidChannel;
-                }
-
-                var res = HardwareEvent.init(0x0A);
-                res.setBit(7);
-
-                return singleElementArray(res, allocator, null);
-            }
-        },
-        volume: struct {
-            value: u4,
-
-            fn intoHardwareEvents(self: @This(), channel: ?Channel, allocator: std.mem.Allocator) ![]HardwareEvent {
-                if (channel == null) {
-                    return SongPlayError.NullChannel;
-                }
-
-                if (channel == .ch3) {
-                    return SongPlayError.InvalidChannel;
-                }
-
-                const address: u16 = switch (channel.?) {
-                    .ch1 => 0x02,
-                    .ch2 => 0x07,
-                    .ch3 => unreachable,
-                    .ch4 => 0x11,
-                };
-
-                var res = HardwareEvent.init(address);
-                try res.setValue(4, self.value);
-
-                return singleElementArray(res, allocator, channel);
-            }
-        },
-        envelope_disable: struct {
-            fn intoHardwareEvents(_: @This(), channel: ?Channel, allocator: std.mem.Allocator) ![]HardwareEvent {
-                if (channel == null) {
-                    return SongPlayError.NullChannel;
-                }
-
-                if (channel == .ch3) {
-                    return SongPlayError.InvalidChannel;
-                }
-
-                const address: u16 = switch (channel.?) {
-                    .ch1 => 0x02,
-                    .ch2 => 0x07,
-                    .ch3 => unreachable,
-                    .ch4 => 0x11,
-                };
-
-                var res = HardwareEvent.init(address);
-                try res.setValue(0, @as(u3, 0));
-
-                return singleElementArray(res, allocator, channel);
-            }
-        },
-        envelope_enable: struct {
-            direction: Direction,
-            pace: u3,
-
-            fn intoHardwareEvents(self: @This(), channel: ?Channel, allocator: std.mem.Allocator) ![]HardwareEvent {
-                if (channel == null) {
-                    return SongPlayError.NullChannel;
-                }
-
-                if (channel == .ch3) {
-                    return SongPlayError.InvalidChannel;
-                }
-
-                const address: u16 = switch (channel.?) {
-                    .ch1 => 0x02,
-                    .ch2 => 0x07,
-                    .ch3 => unreachable,
-                    .ch4 => 0x11,
-                };
-
-                var res = HardwareEvent.init(address);
-                try res.setValue(0, self.pace);
-                if (self.direction == .decrease) {
-                    res.clearBit(3);
-                } else {
-                    res.setBit(3);
-                }
-
-                return singleElementArray(res, allocator, channel);
-            }
-        },
-        period: struct {
-            value: u11,
-
-            fn intoHardwareEvents(self: @This(), channel: ?Channel, allocator: std.mem.Allocator) ![]HardwareEvent {
-                if (channel == null) {
-                    return SongPlayError.NullChannel;
-                }
-                if (channel == .ch4) {
-                    return SongPlayError.InvalidChannel;
-                }
-
-                const addr_high: u16, const addr_low: u16 = switch (channel.?) {
-                    .ch1 => .{ 0x04, 0x03 },
-                    .ch2 => .{ 0x09, 0x08 },
-                    .ch3 => .{ 0x0E, 0x0D },
-                    .ch4 => unreachable,
-                };
-
-                const value_high: u3 = @intCast((self.value & 0x700) >> 8);
-                const value_low: u8 = @intCast(self.value & 0x0FF);
-
-                var res_high = HardwareEvent.init(addr_high);
-                try res_high.setValue(0, value_high);
-
-                var res_low = HardwareEvent.init(addr_low);
-                try res_low.setValue(0, value_low);
-
-                var res = try allocator.alloc(HardwareEvent, 3);
-                res[0] = res_high;
-                res[1] = res_low;
-                res[2] = triggerEvent(channel.?);
-                return res;
-            }
-        },
-        waveform: struct {
-            id: usize,
-
-            fn intoHardwareEvents(self: @This(), channel: ?Channel, allocator: std.mem.Allocator, song: Song) ![]HardwareEvent {
-                if (channel == null) {
-                    return SongPlayError.NullChannel;
-                }
-                if (channel != .ch3) {
-                    return SongPlayError.InvalidChannel;
-                }
-
-                var res = try allocator.alloc(HardwareEvent, 16);
-                for (song.waveforms.items) |waveform| {
-                    if (waveform.id == self.id) {
-                        for (waveform.waveform, 0..) |sample, i| {
-                            if (i % 2 == 0) {
-                                var ev = HardwareEvent.init(0x20 + @as(u16, @intCast(i)) / 2);
-                                try ev.setValue(4, sample);
-                                res[i / 2] = ev;
-                            } else {
-                                try res[i / 2].setValue(0, sample);
-                            }
-                        }
-                        break;
-                    }
-                }
-                return res;
-            }
-        },
-        output_level: struct {
-            level: enum {
-                silent,
-                full,
-                half,
-                quart,
-            },
-
-            fn intoHardwareEvents(self: @This(), channel: ?Channel, allocator: std.mem.Allocator) ![]HardwareEvent {
-                if (channel == null) {
-                    return SongPlayError.NullChannel;
-                }
-
-                if (channel != .ch3) {
-                    return SongPlayError.InvalidChannel;
-                }
-
-                const val: u2 = switch (self.level) {
-                    .silent => 0b00,
-                    .full => 0b01,
-                    .half => 0b10,
-                    .quart => 0b11,
-                };
-
-                var res = HardwareEvent.init(0x0C);
-                try res.setValue(5, val);
-
-                return singleElementArray(res, allocator, null);
-            }
-        },
-        lfsr: struct {
-            clock_shift: u4,
-            width: enum {
-                wide,
-                narrow,
-            },
-            clock_divider: u3,
-
-            fn intoHardwareEvents(self: @This(), channel: ?Channel, allocator: std.mem.Allocator) ![]HardwareEvent {
-                if (channel == null) {
-                    return SongPlayError.NullChannel;
-                }
-
-                if (channel != .ch4) {
-                    return SongPlayError.InvalidChannel;
-                }
-
-                var res = HardwareEvent.init(0x12);
-                try res.setValue(4, self.clock_shift);
-                if (self.width == .wide) {
-                    res.clearBit(3);
-                } else {
-                    res.setBit(3);
-                }
-                try res.setValue(0, self.clock_divider);
-
-                return singleElementArray(res, allocator, channel);
-            }
-        },
-    },
+    event: SongEventInternal,
 
     fn intoHardwareEvents(self: SongEvent, allocator: std.mem.Allocator, song: Song) ![]HardwareEvent {
         return switch (self.event) {
