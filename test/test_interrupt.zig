@@ -136,6 +136,7 @@ test "halt normally: ime=1 and no interrupt pending" {
     cpu.reg.sp.setAll(0xFFFE);
     cpu.reg.ime = 0;
     intr.ie = InterruptKind.vblank.asMask();
+    intr.@"if" = 0;
 
     // execute ei
     cpu.tick(); // fetch ei
@@ -197,6 +198,7 @@ test "halt normally: ime=0 and no interrupt pending" {
     cpu.reg.sp.setAll(0xFFFE);
     cpu.reg.ime = 0;
     intr.ie = InterruptKind.vblank.asMask();
+    intr.@"if" = 0;
 
     // execute nop
     cpu.tick(); // fetch nop
