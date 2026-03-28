@@ -10,9 +10,16 @@ const SongPlayError = error{
     InvalidSetValue,
 };
 
-const SongMetadata = struct {
+pub const SongMetadata = struct {
     bpm: usize,
     tpb: usize,
+
+    pub fn beat(comptime self: SongMetadata, comptime num: usize, comptime den: usize) usize {
+        if (self.tpb % den != 0) {
+            @panic("beat denominator must be able to subdivide song's tpb");
+        }
+        return self.tpb / den * num;
+    }
 };
 
 pub const SongWaveform = struct {
@@ -39,7 +46,66 @@ const WaveDuty = enum {
     three_in_four,
 };
 
+const Side = enum {
+    left,
+    right,
+};
+
+const OutputLevel = enum {
+    silent,
+    full,
+    half,
+    quart,
+};
+
+const LfsrWidth = enum {
+    wide,
+    narrow,
+};
+
 const SongEventInternal = union(enum) {
+    set_apu: struct {
+        state: bool,
+
+        fn intoHardwareEvents(self: @This(), channel: ?Channel, allocator: std.mem.Allocator) ![]HardwareEvent {
+            if (channel != null) {
+                return SongPlayError.NonNullChannel;
+            }
+
+            var res = HardwareEvent.init(0x16);
+            if (self.state) {
+                res.setBit(7);
+            } else {
+                res.clearBit(7);
+            }
+
+            return singleElementArray(res, allocator, null);
+        }
+    },
+    set_vin: struct {
+        left: bool,
+        right: bool,
+
+        fn intoHardwareEvents(self: @This(), channel: ?Channel, allocator: std.mem.Allocator) ![]HardwareEvent {
+            if (channel != null) {
+                return SongPlayError.NonNullChannel;
+            }
+
+            var res = HardwareEvent.init(0x14);
+            if (self.left) {
+                res.setBit(7);
+            } else {
+                res.clearBit(7);
+            }
+            if (self.right) {
+                res.setBit(3);
+            } else {
+                res.clearBit(3);
+            }
+
+            return singleElementArray(res, allocator, null);
+        }
+    },
     pan: struct {
         left: bool,
         right: bool,
@@ -65,10 +131,7 @@ const SongEventInternal = union(enum) {
         }
     },
     master_volume: struct {
-        side: enum {
-            left,
-            right,
-        },
+        side: Side,
         value: u3,
 
         fn intoHardwareEvents(self: @This(), channel: ?Channel, allocator: std.mem.Allocator) ![]HardwareEvent {
@@ -397,12 +460,7 @@ const SongEventInternal = union(enum) {
         }
     },
     output_level: struct {
-        level: enum {
-            silent,
-            full,
-            half,
-            quart,
-        },
+        level: OutputLevel,
 
         fn intoHardwareEvents(self: @This(), channel: ?Channel, allocator: std.mem.Allocator) ![]HardwareEvent {
             if (channel == null) {
@@ -428,10 +486,7 @@ const SongEventInternal = union(enum) {
     },
     lfsr: struct {
         clock_shift: u4,
-        width: enum {
-            wide,
-            narrow,
-        },
+        width: LfsrWidth,
         clock_divider: u3,
 
         fn intoHardwareEvents(self: @This(), channel: ?Channel, allocator: std.mem.Allocator) ![]HardwareEvent {
@@ -465,6 +520,8 @@ pub const SongEvent = struct {
 
     fn intoHardwareEvents(self: SongEvent, allocator: std.mem.Allocator, song: Song) ![]HardwareEvent {
         return switch (self.event) {
+            .set_apu => |event| event.intoHardwareEvents(self.channel, allocator),
+            .set_vin => |event| event.intoHardwareEvents(self.channel, allocator),
             .pan => |event| event.intoHardwareEvents(self.channel, allocator),
             .master_volume => |event| event.intoHardwareEvents(self.channel, allocator),
             .period_sweep_disable => |event| event.intoHardwareEvents(self.channel, allocator),
@@ -540,6 +597,305 @@ test "SongEvent pan" {
     try std.testing.expectEqualSlices(HardwareEvent, &expected_hardware_events, actual_hardware_events);
 }
 
+pub const SongComposer = struct {
+    allocator: std.mem.Allocator,
+    events: *std.ArrayList(SongEvent),
+    tpb: usize,
+
+    cursors: [4]usize,
+    globalCursor: usize,
+
+    volumes: [4]u4,
+
+    selectedChannel: ?Channel,
+
+    pub fn init(allocator: std.mem.Allocator, events: *std.ArrayList(SongEvent), tpb: usize) SongComposer {
+        return SongComposer{
+            .allocator = allocator,
+            .events = events,
+            .tpb = tpb,
+            .cursors = .{ 0, 0, 0, 0 },
+            .globalCursor = 0,
+            .volumes = .{ 15, 15, 15, 15 },
+            .selectedChannel = null,
+        };
+    }
+
+    fn addEvent(self: SongComposer, event: SongEventInternal) void {
+        const cursor = if (self.selectedChannel == null)
+            self.globalCursor
+        else
+            self.cursors[@intFromEnum(self.selectedChannel.?)];
+        const beat = cursor / self.tpb;
+        const tick = cursor % self.tpb;
+
+        self.events.append(self.allocator, .{
+            .beat = beat,
+            .tick = tick,
+            .channel = self.selectedChannel,
+            .event = event,
+        }) catch {
+            @panic("memory error during song construction");
+        };
+    }
+
+    pub fn syncTo(self: SongComposer, whom: ?Channel) SongComposer {
+        const value = if (whom == null)
+            self.globalCursor
+        else
+            self.cursors[@intFromEnum(whom.?)];
+
+        const ref = if (self.selectedChannel == null)
+            *self.globalCursor
+        else
+            *self.cursors[@intFromEnum(self.selectedChannel.?)];
+
+        ref.* = value;
+
+        return self;
+    }
+
+    pub fn enable(self: SongComposer) SongComposer {
+        if (self.selectedChannel == null) {
+            return self.apu(true);
+        } else {
+            return self.dac(true);
+        }
+    }
+
+    pub fn disable(self: SongComposer) SongComposer {
+        if (self.selectedChannel == null) {
+            return self.apu(false);
+        } else {
+            return self.dac(false);
+        }
+    }
+
+    pub fn defaults(self: SongComposer) SongComposer {
+        if (self.selectedChannel == null) {
+            return self
+                .vin(false, false)
+                .masterVolume(.left, 7)
+                .masterVolume(.right, 7);
+        }
+        return switch (self.selectedChannel.?) {
+            .ch1 => self
+                .pan(true, true)
+                .periodSweep(null)
+                .lengthTimer(null)
+                .duty(.one_in_two)
+                .envelope(null)
+                .volume(15),
+            .ch2 => self
+                .pan(true, true)
+                .lengthTimer(null)
+                .duty(.one_in_two)
+                .envelope(null)
+                .volume(15),
+            .ch3 => self
+                .pan(true, true)
+                .lengthTimer(null)
+                .outputLevel(.full),
+            .ch4 => self
+                .pan(true, true)
+                .lengthTimer(null)
+                .envelope(null)
+                .volume(15),
+        };
+    }
+
+    pub fn apu(self: SongComposer, state: bool) SongComposer {
+        self.addEvent(SongEventInternal{
+            .set_apu = .{
+                .state = state,
+            },
+        });
+        return self;
+    }
+
+    pub fn dac(self: SongComposer, state: bool) SongComposer {
+        if (state) {
+            if (self.selectedChannel == .ch3) {
+                self.addEvent(SongEventInternal{
+                    .dac_enable = .{},
+                });
+            } else if (self.selectedChannel != null) {
+                // other channels don't need a specific dac enable, just reset their volume to reenable their dac
+                self.addEvent(SongEventInternal{
+                    .volume = .{
+                        .value = self.volumes[@intFromEnum(self.selectedChannel.?)],
+                    },
+                });
+            } else {
+                @panic("cannot set dac globally, you probably want .apu");
+            }
+        } else {
+            self.addEvent(SongEventInternal{
+                .dac_disable = .{},
+            });
+        }
+        return self;
+    }
+
+    pub fn vin(self: SongComposer, left: bool, right: bool) SongComposer {
+        self.addEvent(SongEventInternal{
+            .set_vin = .{
+                .left = left,
+                .right = right,
+            },
+        });
+        return self;
+    }
+
+    pub fn masterVolume(self: SongComposer, side: Side, value: u3) SongComposer {
+        self.addEvent(SongEventInternal{
+            .master_volume = .{
+                .side = side,
+                .value = value,
+            },
+        });
+        return self;
+    }
+
+    pub fn pan(self: SongComposer, left: bool, right: bool) SongComposer {
+        self.addEvent(SongEventInternal{
+            .pan = .{
+                .left = left,
+                .right = right,
+            },
+        });
+        return self;
+    }
+
+    pub fn periodSweep(self: SongComposer, someParameterIHaventDecidedYet: ?u8) SongComposer {
+        if (someParameterIHaventDecidedYet == null) {
+            self.addEvent(SongEventInternal{
+                .period_sweep_disable = .{},
+            });
+            return self;
+        } else {
+            // TODO
+        }
+        return self;
+    }
+
+    pub fn lengthTimer(self: SongComposer, someParameterIHaventDecidedYet: ?u8) SongComposer {
+        if (someParameterIHaventDecidedYet == null) {
+            self.addEvent(SongEventInternal{
+                .length_timer_disable = .{},
+            });
+        } else {
+            // TODO
+        }
+        return self;
+    }
+
+    pub fn duty(self: SongComposer, value: WaveDuty) SongComposer {
+        self.addEvent(SongEventInternal{
+            .wave_duty = .{
+                .duty = value,
+            },
+        });
+        return self;
+    }
+
+    pub fn envelope(self: SongComposer, someParameterIHaventDecidedYet: ?u8) SongComposer {
+        if (someParameterIHaventDecidedYet == null) {
+            self.addEvent(SongEventInternal{
+                .envelope_disable = .{},
+            });
+        } else {
+            // TODO
+        }
+        return self;
+    }
+
+    pub fn volume(self: SongComposer, value: u4) SongComposer {
+        var next = self;
+        if (self.selectedChannel != null and value > 0) {
+            // remember last nonzero value for when we want to reset the volume (.apu or .note)
+            next.volumes[@intFromEnum(self.selectedChannel.?)] = value;
+        }
+        next.addEvent(SongEventInternal{
+            .volume = .{
+                .value = value,
+            },
+        });
+        return next;
+    }
+
+    pub fn outputLevel(self: SongComposer, value: OutputLevel) SongComposer {
+        self.addEvent(SongEventInternal{
+            .output_level = .{
+                .level = value,
+            },
+        });
+        return self;
+    }
+
+    pub fn channel(self: SongComposer, ch: ?Channel) SongComposer {
+        var next = self;
+        next.selectedChannel = ch;
+        return next;
+    }
+
+    pub fn phrase(
+        self: SongComposer,
+        comptime data: []const struct { ?[]const u8, usize },
+    ) SongComposer {
+        var comp = self;
+        inline for (data) |n| {
+            comp = comp.note(n);
+        }
+        return comp;
+    }
+
+    pub fn note(
+        self: SongComposer,
+        comptime data: struct { ?[]const u8, usize },
+    ) SongComposer {
+        if (self.selectedChannel == null) {
+            @panic("attempt to call .note without a selected channel");
+        }
+        return (if (data.@"0" == null)
+            self.rest(data.@"1")
+        else
+            self
+                // set volume to latest in case previously we did a rest which sets it to 0
+                .volume(self.volumes[@intFromEnum(self.selectedChannel.?)])
+                .pitch(data.@"0".?))
+            .advance(data.@"1");
+    }
+
+    pub fn rest(self: SongComposer, amount: usize) SongComposer {
+        return self.volume(0).advance(amount);
+    }
+
+    pub fn pitch(self: SongComposer, comptime data: []const u8) SongComposer {
+        if (self.selectedChannel == null) {
+            @panic("attempt to set pitch without a selected channel");
+        }
+        self.addEvent(SongEventInternal{
+            .period = .{
+                .value = freqToPeriodValue(noteToFreq(data), self.selectedChannel.?) catch @panic("invalid note"),
+            },
+        });
+        return self;
+    }
+
+    pub fn advance(self: SongComposer, amount: usize) SongComposer {
+        if (self.selectedChannel == null) {
+            @panic("attempt to advance global cursor (use .syncTo instead)");
+        }
+        var next = self;
+        next.cursors[@intFromEnum(self.selectedChannel.?)] += amount;
+        return next;
+    }
+
+    /// this does nothing, it just helps keep the syntax neater
+    pub fn finish(_: SongComposer) void {}
+};
+
 pub const Song = struct {
     metadata: SongMetadata,
     waveforms: std.ArrayList(SongWaveform),
@@ -558,117 +914,8 @@ pub const Song = struct {
         self.events.deinit(allocator);
     }
 
-    pub fn addNotesCh2(
-        self: *Song,
-        allocator: std.mem.Allocator,
-        start_beat: usize,
-        start_tick: usize,
-        wave_duty: WaveDuty,
-        volume: u4,
-        comptime notes: []const struct {
-            ?[]const u8,
-            usize,
-        },
-    ) !void {
-        var current_beat = start_beat;
-        var current_tick = start_tick;
-        inline for (notes) |note| {
-            if (note[0]) |actualNote| {
-                try self.addNoteCh2(allocator, actualNote, current_beat, current_tick, wave_duty, volume);
-            } else {
-                try self.addRestCh2(allocator, current_beat, current_tick);
-            }
-            current_tick += note[1];
-            current_beat += current_tick / self.metadata.tpb;
-            current_tick %= self.metadata.tpb;
-        }
-    }
-
-    pub fn addNoteCh2(
-        self: *Song,
-        allocator: std.mem.Allocator,
-        comptime note: []const u8,
-        start_beat: usize,
-        start_tick: usize,
-        wave_duty: WaveDuty,
-        volume: u4,
-    ) !void {
-        // Set up the channel
-
-        // We don't use the hardware length timer for music
-        try self.events.append(allocator, SongEvent{
-            .beat = start_beat,
-            .tick = start_tick,
-            .channel = .ch2,
-            .event = .{
-                .length_timer_disable = .{},
-            },
-        });
-
-        // We don't use the hardware envelope for melody
-        try self.events.append(allocator, SongEvent{
-            .beat = start_beat,
-            .tick = start_tick,
-            .channel = .ch2,
-            .event = .{
-                .envelope_disable = .{},
-            },
-        });
-
-        // Set up the duty cycle
-        try self.events.append(allocator, SongEvent{
-            .beat = start_beat,
-            .tick = start_tick,
-            .channel = .ch2,
-            .event = .{
-                .wave_duty = .{
-                    .duty = wave_duty,
-                },
-            },
-        });
-
-        // Set the note's frequency
-        try self.events.append(allocator, SongEvent{
-            .beat = start_beat,
-            .tick = start_tick,
-            .channel = .ch2,
-            .event = .{
-                .period = .{
-                    .value = try freqToPeriodValue(noteToFreq(note), .ch2),
-                },
-            },
-        });
-
-        // Set the note's volume
-        try self.events.append(allocator, SongEvent{
-            .beat = start_beat,
-            .tick = start_tick,
-            .channel = .ch2,
-            .event = .{
-                .volume = .{
-                    .value = volume,
-                },
-            },
-        });
-    }
-
-    pub fn addRestCh2(
-        self: *Song,
-        allocator: std.mem.Allocator,
-        start_beat: usize,
-        start_tick: usize,
-    ) !void {
-        // Just mute the channel
-        try self.events.append(allocator, SongEvent{
-            .beat = start_beat,
-            .tick = start_tick,
-            .channel = .ch2,
-            .event = .{
-                .volume = .{
-                    .value = 0,
-                },
-            },
-        });
+    pub fn compose(self: *Song, allocator: std.mem.Allocator) SongComposer {
+        return SongComposer.init(allocator, &self.events, self.metadata.tpb);
     }
 };
 
@@ -746,6 +993,13 @@ pub const HardwareEvent = struct {
 
 /// We need to make sure that events with addresses that could be a trigger event happen last. Luckily, the trigger address is always last.
 fn sortTriggerResigsterWritesLast(_: void, a: HardwareEvent, b: HardwareEvent) bool {
+    // Ensure the audio master control is ALWAYS FIRST
+    if (a.address == 0x16) {
+        return true;
+    } else if (b.address == 0x16) {
+        return false;
+    }
+
     return a.address < b.address;
 }
 

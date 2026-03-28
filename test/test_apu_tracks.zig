@@ -70,8 +70,6 @@ fn testTrack(allocator: std.mem.Allocator, song: tracker.Song, comptime name: []
 
     // Start sound system
     try std.testing.expect(!apu.write(0x16, 0b1000_0000).any());
-    try std.testing.expect(!apu.write(0x15, 0b1111_1111).any());
-    try std.testing.expect(!apu.write(0x14, 0b0111_0111).any());
 
     var div_counter: usize = 0;
     for (events) |event| {
@@ -95,35 +93,49 @@ fn testTrack(allocator: std.mem.Allocator, song: tracker.Song, comptime name: []
 test "test_track_1" {
     const allocator = std.testing.allocator;
 
-    var song = try tracker.Song.init(allocator, .{ .bpm = 110, .tpb = 4 });
+    const meta = tracker.SongMetadata{ .bpm = 110, .tpb = 4 };
+    var song = try tracker.Song.init(allocator, meta);
     defer song.deinit(allocator);
-    try song.addNotesCh2(allocator, 0, 0, .one_in_two, 0b1111, &.{
-        .{ "A4", 1 },
-        .{ "G#4", 1 },
-        .{ "A#4", 1 },
-        .{ "A4", 4 },
-        .{ null, 1 },
 
-        .{ "A4", 1 },
-        .{ "G#4", 1 },
-        .{ "A#4", 1 },
-        .{ "F#4", 4 },
-        .{ null, 1 },
-
-        .{ "A4", 1 },
-        .{ "G#4", 1 },
-        .{ "A#4", 1 },
-        .{ "A4", 1 },
-        .{ "G#4", 1 },
-        .{ "F#4", 1 },
-        .{ "A4", 2 },
-
-        .{ "B4", 1 },
-        .{ null, 1 },
-        .{ "B4", 1 },
-        .{ null, 1 },
-        .{ "B4", 4 },
-    });
+    song
+        .compose(allocator)
+        .channel(null).enable().defaults()
+        .channel(.ch1).disable()
+        .channel(.ch3).disable()
+        .channel(.ch4).disable()
+        .channel(.ch2).enable().defaults()
+        .phrase(&.{
+            .{ "A4", meta.beat(1, 4) },
+            .{ "G#4", meta.beat(1, 4) },
+            .{ "A#4", meta.beat(1, 4) },
+            .{ "A4", meta.beat(1, 1) },
+            .{ null, meta.beat(1, 4) },
+        })
+        .phrase(&.{
+            .{ "A4", meta.beat(1, 4) },
+            .{ "G#4", meta.beat(1, 4) },
+            .{ "A#4", meta.beat(1, 4) },
+            .{ "F#4", meta.beat(1, 1) },
+            .{ null, meta.beat(1, 4) },
+        })
+        .phrase(&.{
+            .{ "A4", meta.beat(1, 4) },
+            .{ "G#4", meta.beat(1, 4) },
+            .{ "A#4", meta.beat(1, 4) },
+            .{ "A4", meta.beat(1, 4) },
+            .{ "G#4", meta.beat(1, 4) },
+            .{ "F#4", meta.beat(1, 4) },
+            .{ "A4", meta.beat(1, 2) },
+        })
+        .phrase(&.{
+            .{ "B4", meta.beat(1, 4) },
+            .{ null, meta.beat(1, 4) },
+            .{ "B4", meta.beat(1, 4) },
+            .{ null, meta.beat(1, 4) },
+            .{ "B4", meta.beat(1, 1) },
+        })
+        .rest(1) // need this to get the last note to sound out completely.
+        .finish();
 
     try testTrack(allocator, song, "track1");
 }
