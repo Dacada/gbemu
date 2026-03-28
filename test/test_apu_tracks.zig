@@ -139,3 +139,58 @@ test "test_track_1" {
 
     try testTrack(allocator, song, "track1");
 }
+
+test "happy birthday" {
+    const allocator = std.testing.allocator;
+
+    // By ChatGPT, from my DSL
+    const meta = tracker.SongMetadata{ .bpm = 32, .tpb = 32 };
+    var song = try tracker.Song.init(allocator, meta);
+    defer song.deinit(allocator);
+
+    song
+        .compose(allocator)
+        .channel(null).enable().defaults()
+        .channel(.ch1).disable()
+        .channel(.ch3).disable()
+        .channel(.ch4).disable()
+        .channel(.ch2).enable().defaults()
+        .phrase(&.{
+            // Happy birthday to you
+            .{ "G4", meta.beat(11, 32) }, .{ null, meta.beat(1, 32) },
+            .{ "G4", meta.beat(3, 32) },  .{ null, meta.beat(1, 32) },
+            .{ "A4", meta.beat(7, 32) },  .{ null, meta.beat(1, 32) },
+            .{ "G4", meta.beat(7, 32) },  .{ null, meta.beat(1, 32) },
+            .{ "C5", meta.beat(7, 32) },  .{ null, meta.beat(1, 32) },
+            .{ "B4", meta.beat(15, 32) }, .{ null, meta.beat(1, 32) },
+
+            // Happy birthday to you
+            .{ "G4", meta.beat(11, 32) }, .{ null, meta.beat(1, 32) },
+            .{ "G4", meta.beat(3, 32) },  .{ null, meta.beat(1, 32) },
+            .{ "A4", meta.beat(7, 32) },  .{ null, meta.beat(1, 32) },
+            .{ "G4", meta.beat(7, 32) },  .{ null, meta.beat(1, 32) },
+            .{ "D5", meta.beat(7, 32) },  .{ null, meta.beat(1, 32) },
+            .{ "C5", meta.beat(15, 32) }, .{ null, meta.beat(1, 32) },
+
+            // Happy birthday dear ___
+            .{ "G4", meta.beat(11, 32) }, .{ null, meta.beat(1, 32) },
+            .{ "G4", meta.beat(3, 32) },  .{ null, meta.beat(1, 32) },
+            .{ "G5", meta.beat(7, 32) },  .{ null, meta.beat(1, 32) },
+            .{ "E5", meta.beat(7, 32) },  .{ null, meta.beat(1, 32) },
+            .{ "C5", meta.beat(7, 32) },  .{ null, meta.beat(1, 32) },
+            .{ "B4", meta.beat(7, 32) },  .{ null, meta.beat(1, 32) },
+            .{ "A4", meta.beat(15, 32) }, .{ null, meta.beat(1, 32) },
+
+            // Happy birthday to you
+            .{ "F5", meta.beat(11, 32) }, .{ null, meta.beat(1, 32) },
+            .{ "F5", meta.beat(3, 32) },  .{ null, meta.beat(1, 32) },
+            .{ "E5", meta.beat(7, 32) },  .{ null, meta.beat(1, 32) },
+            .{ "C5", meta.beat(7, 32) },  .{ null, meta.beat(1, 32) },
+            .{ "D5", meta.beat(7, 32) },  .{ null, meta.beat(1, 32) },
+            .{ "C5", meta.beat(31, 32) },
+        })
+        .rest(1)
+        .finish();
+
+    try testTrack(allocator, song, "birthday");
+}
