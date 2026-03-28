@@ -1106,19 +1106,22 @@ fn noteToFreq(comptime note: []const u8) f64 {
     }
 
     const octave: comptime_int = number - '0';
-    const semitone: comptime_int = switch (letter) {
-        'A' => if (isSharp) 1 else 0,
-        'B' => if (isSharp) @compileError("sharp doesn't apply to this note") else 2,
-        'C' => if (isSharp) 4 else 3,
-        'D' => if (isSharp) 6 else 5,
-        'E' => if (isSharp) @compileError("sharp doesn't apply to this note") else 7,
-        'F' => if (isSharp) 9 else 8,
-        'G' => if (isSharp) 11 else 10,
+    const semitone_from_C = switch (letter) {
+        'C' => if (isSharp) 1 else 0,
+        'D' => if (isSharp) 3 else 2,
+        'E' => if (isSharp) @compileError("invalid sharp") else 4,
+        'F' => if (isSharp) 6 else 5,
+        'G' => if (isSharp) 8 else 7,
+        'A' => if (isSharp) 10 else 9,
+        'B' => if (isSharp) @compileError("invalid sharp") else 11,
         else => @compileError("invalid note"),
     };
 
-    const increment: comptime_float = @floatFromInt((octave - 4) * 12 + semitone);
-    return 440.0 * @exp2(increment / 12.0);
+    const semitone_from_A4 =
+        (octave - 4) * 12 +
+        (semitone_from_C - 9); // because A = 9 in C-based scale
+
+    return 440.0 * @exp2(@as(f64, @floatFromInt(semitone_from_A4)) / 12.0);
 }
 
 fn freqToPeriodValue(freq: f64, ch: Channel) SongPlayError!u11 {
