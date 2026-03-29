@@ -8,7 +8,7 @@ const GenericTargetField = router.TargetField;
 
 const logger = std.log.scoped(.mmio);
 
-pub fn Mmio(Joypad: type, Serial: type, Timer: type, Interrupt: type, Apu: type, Lcd: type, BootRom: type) type {
+pub fn Mmio(Joypad: type, Serial: type, Timer: type, Interrupt: type, Apu: type, Lcd: type, Ppu: type, BootRom: type) type {
     return struct {
         const This = @This();
 
@@ -17,7 +17,7 @@ pub fn Mmio(Joypad: type, Serial: type, Timer: type, Interrupt: type, Apu: type,
         timer: *Timer,
         interrupt: *Interrupt,
         apu: *Apu,
-        lcd: *Lcd,
+        ppu: *Ppu,
         boot_rom: *BootRom,
 
         const Invalid = struct {
@@ -124,7 +124,7 @@ pub fn Mmio(Joypad: type, Serial: type, Timer: type, Interrupt: type, Apu: type,
                 },
                 .{
                     .target = .lcd,
-                    .field = "lcd",
+                    .field = "ppu",
                     .namespace = Lcd,
                 },
                 .{
@@ -146,7 +146,7 @@ pub fn Mmio(Joypad: type, Serial: type, Timer: type, Interrupt: type, Apu: type,
             timer: *Timer,
             interrupt: *Interrupt,
             apu: *Apu,
-            lcd: *Lcd,
+            ppu: *Ppu,
             boot_rom: *BootRom,
         ) This {
             return This{
@@ -155,7 +155,7 @@ pub fn Mmio(Joypad: type, Serial: type, Timer: type, Interrupt: type, Apu: type,
                 .timer = timer,
                 .interrupt = interrupt,
                 .apu = apu,
-                .lcd = lcd,
+                .ppu = ppu,
                 .boot_rom = boot_rom,
             };
         }
@@ -201,7 +201,7 @@ pub const Dummy = struct {
     }
 };
 
-const MockedMmio = Mmio(Dummy, Dummy, Dummy, Dummy, Dummy, Dummy, Dummy);
+const MockedMmio = Mmio(Dummy, Dummy, Dummy, Dummy, Dummy, Dummy, Dummy, Dummy);
 
 test "Mmio unit tests with Dummy" {
     var joypad = Dummy{};

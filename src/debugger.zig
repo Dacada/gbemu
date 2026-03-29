@@ -384,7 +384,7 @@ pub fn Debugger(Cpu: type, Mmu: type) type {
                 var it = std.mem.tokenizeScalar(u8, line, ' ');
                 const command = it.next();
                 if (command) |c| {
-                    if (try self.handleCommand(c, &it, self.output)) |ret| {
+                    if (try self.handleCommand(c, &it, self.writer)) |ret| {
                         return ret;
                     }
                 }

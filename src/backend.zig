@@ -8,6 +8,15 @@ pub const NullAudioBackend = struct {
     pub fn submit(_: *NullAudioBackend, _: f32, _: f32) void {}
 };
 
+pub const NullVideoBackend = struct {
+    const Width = 160;
+    const Height = 144;
+    pub inline fn init() NullVideoBackend {
+        return NullVideoBackend{};
+    }
+    pub fn submit(_: *NullVideoBackend, _: u2) void {}
+};
+
 pub const WavAudioBackendError = error{TrackSizeOverflow};
 
 pub const WavAudioBackend = struct {

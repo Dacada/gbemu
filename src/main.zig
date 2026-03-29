@@ -3,6 +3,7 @@ const lib = @import("lib");
 const cli = @import("cli.zig");
 
 const AudioBackend = lib.backend.NullAudioBackend;
+const VideoBackend = lib.backend.NullVideoBackend;
 const Scheduler = lib.scheduler.Scheduler;
 const Cartridge = lib.cartridge.Cartridge;
 const Interrupt = lib.interrupt.Interrupt;
@@ -10,13 +11,12 @@ const Joypad = lib.joypad.Joypad(Interrupt);
 const Serial = lib.serial.Serial(Scheduler, Interrupt);
 const Apu = lib.apu.Apu(AudioBackend);
 const Timer = lib.timer.Timer(Apu, Interrupt);
-const Lcd = lib.mmio.Dummy;
 const BootRom = lib.mmio.Dummy;
-const Mmio = lib.mmio.Mmio(Joypad, Serial, Timer, Interrupt, Apu, Lcd, BootRom);
-const Ppu = lib.ppu.Ppu;
+const Mmio = lib.mmio.Mmio(Joypad, Serial, Timer, Interrupt, Apu, Ppu.Lcd, Ppu, BootRom);
+const Ppu = lib.ppu.Ppu(VideoBackend);
 const Mmu = lib.mmu.Mmu(Cartridge, Ppu, Mmio);
 const Cpu = lib.cpu.Cpu(Mmu, Interrupt);
-const Debugger = lib.debugger.Debugger(Cpu, Mmu, *std.io.Writer);
+const Debugger = lib.debugger.Debugger(Cpu, Mmu);
 const Emulator = lib.emulator.Emulator(Cpu, Apu, Ppu, Timer, Scheduler, Debugger);
 
 var array = [_]u8{0x00} ** 0x100;
@@ -51,6 +51,7 @@ pub fn main() !void {
     const writer = &stdout_file_writer.interface;
 
     var audio_backend = AudioBackend.init();
+    var video_backend = VideoBackend.init();
 
     var cart = try makeCart();
 
@@ -61,9 +62,8 @@ pub fn main() !void {
     var serial = Serial.init(&sched, &intr);
     var apu = Apu.init(&audio_backend);
     var timer = Timer.init(&apu, &intr);
-    var lcd = Lcd{};
     var boot_rom = BootRom{};
-    var ppu = Ppu.init();
+    var ppu = Ppu.init(&video_backend);
 
     var mmio = Mmio.init(
         &joypad,
@@ -71,7 +71,7 @@ pub fn main() !void {
         &timer,
         &intr,
         &apu,
-        &lcd,
+        &ppu,
         &boot_rom,
     );
 

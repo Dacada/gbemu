@@ -2,6 +2,7 @@ const std = @import("std");
 const lib = @import("lib");
 
 const AudioBackend = lib.backend.NullAudioBackend;
+const VideoBackend = lib.backend.NullVideoBackend;
 const Scheduler = lib.scheduler.Scheduler;
 const Cartridge = lib.cartridge.Cartridge;
 const Interrupt = lib.interrupt.Interrupt;
@@ -9,10 +10,9 @@ const Joypad = lib.joypad.Joypad(Interrupt);
 const Serial = lib.serial.Serial(Scheduler, Interrupt);
 const Apu = lib.apu.Apu(AudioBackend);
 const Timer = lib.timer.Timer(Apu, Interrupt);
-const Lcd = lib.mmio.Dummy;
 const BootRom = lib.mmio.Dummy;
-const Mmio = lib.mmio.Mmio(Joypad, Serial, Timer, Interrupt, Apu, Lcd, BootRom);
-const Ppu = lib.ppu.Ppu;
+const Ppu = lib.ppu.Ppu(VideoBackend);
+const Mmio = lib.mmio.Mmio(Joypad, Serial, Timer, Interrupt, Apu, Ppu.Lcd, Ppu, BootRom);
 const Mmu = lib.mmu.Mmu(Cartridge, Ppu, Mmio);
 const Cpu = lib.cpu.Cpu(Mmu, Interrupt);
 
@@ -48,6 +48,7 @@ const TestResult = enum {
 
 fn run_test(file: std.fs.File, writer: *std.Io.Writer, cfg: std.io.tty.Config) !TestResult {
     var audio_backend = AudioBackend.init();
+    var video_backend = VideoBackend.init();
 
     var cart = lib.cartridge.Cartridge.fromFile(file) catch |e| {
         switch (e) {
@@ -70,10 +71,9 @@ fn run_test(file: std.fs.File, writer: *std.Io.Writer, cfg: std.io.tty.Config) !
     var serial = Serial.init(&sched, &intr);
     var apu = Apu.init(&audio_backend);
     var timer = Timer.init(&apu, &intr);
-    var lcd = Lcd{};
     var boot_rom = BootRom{};
-    var ppu = Ppu.init();
-    var mmio = Mmio.init(&joypad, &serial, &timer, &intr, &apu, &lcd, &boot_rom);
+    var ppu = Ppu.init(&video_backend);
+    var mmio = Mmio.init(&joypad, &serial, &timer, &intr, &apu, &ppu, &boot_rom);
     var mmu = Mmu.init(&cart, &ppu, &mmio);
     var cpu = Cpu.init(&mmu, &intr, 0x40);
     lib.emulator.initializeCpu(Cpu, &cpu, cart.checksum);
