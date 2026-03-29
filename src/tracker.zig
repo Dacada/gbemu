@@ -695,6 +695,7 @@ pub const SongComposer = struct {
             .ch3 => self
                 .pan(true, true)
                 .lengthTimer(null)
+                .dac(true)
                 .outputLevel(.full),
             .ch4 => self
                 .pan(true, true)
@@ -767,25 +768,47 @@ pub const SongComposer = struct {
         return self;
     }
 
-    pub fn periodSweep(self: SongComposer, someParameterIHaventDecidedYet: ?u8) SongComposer {
-        if (someParameterIHaventDecidedYet == null) {
+    pub fn periodSweep(self: SongComposer, params: ?struct { pace: u3, direction: Direction, step: u3 }) SongComposer {
+        if (params) |p| {
+            self.addEvent(SongEventInternal{
+                .period_sweep_enable = .{
+                    .direction = p.direction,
+                    .individual_step = p.step,
+                    .pace = p.pace,
+                },
+            });
+        } else {
             self.addEvent(SongEventInternal{
                 .period_sweep_disable = .{},
             });
             return self;
-        } else {
-            // TODO
         }
         return self;
     }
 
-    pub fn lengthTimer(self: SongComposer, someParameterIHaventDecidedYet: ?u8) SongComposer {
-        if (someParameterIHaventDecidedYet == null) {
+    pub fn lengthTimer(self: SongComposer, value: ?u8) SongComposer {
+        if (value) |v| {
+            if (self.selectedChannel != .ch3) {
+                if (v > std.math.maxInt(u6)) {
+                    @panic("length timer value must fit within 6 bits for channel != 3");
+                } else {
+                    self.addEvent(SongEventInternal{
+                        .length_timer_enable = .{
+                            .length = .{ .short = @intCast(v) },
+                        },
+                    });
+                }
+            } else {
+                self.addEvent(SongEventInternal{
+                    .length_timer_enable = .{
+                        .length = .{ .long = v },
+                    },
+                });
+            }
+        } else {
             self.addEvent(SongEventInternal{
                 .length_timer_disable = .{},
             });
-        } else {
-            // TODO
         }
         return self;
     }
@@ -799,13 +822,18 @@ pub const SongComposer = struct {
         return self;
     }
 
-    pub fn envelope(self: SongComposer, someParameterIHaventDecidedYet: ?u8) SongComposer {
-        if (someParameterIHaventDecidedYet == null) {
+    pub fn envelope(self: SongComposer, params: ?struct { dir: Direction, pace: u3 }) SongComposer {
+        if (params) |p| {
+            self.addEvent(SongEventInternal{
+                .envelope_enable = .{
+                    .direction = p.dir,
+                    .pace = p.pace,
+                },
+            });
+        } else {
             self.addEvent(SongEventInternal{
                 .envelope_disable = .{},
             });
-        } else {
-            // TODO
         }
         return self;
     }
@@ -828,6 +856,15 @@ pub const SongComposer = struct {
         self.addEvent(SongEventInternal{
             .output_level = .{
                 .level = value,
+            },
+        });
+        return self;
+    }
+
+    pub fn waveform(self: SongComposer, id: usize) SongComposer {
+        self.addEvent(SongEventInternal{
+            .waveform = .{
+                .id = id,
             },
         });
         return self;
@@ -878,6 +915,17 @@ pub const SongComposer = struct {
         self.addEvent(SongEventInternal{
             .period = .{
                 .value = freqToPeriodValue(noteToFreq(data), self.selectedChannel.?) catch @panic("invalid note"),
+            },
+        });
+        return self;
+    }
+
+    pub fn lfsr(self: SongComposer, div: u3, shift: u4, width: LfsrWidth) SongComposer {
+        self.addEvent(SongEventInternal{
+            .lfsr = .{
+                .clock_divider = div,
+                .clock_shift = shift,
+                .width = width,
             },
         });
         return self;
@@ -1036,6 +1084,7 @@ pub fn play(song: Song, allocator: std.mem.Allocator) ![][]HardwareEvent {
                         std.debug.print("Failed to merge hardware events: {any}\n", .{e});
                         std.debug.print("Current hardware event: {any}\n", .{hardware_event});
                         std.debug.print("Other hardware event: {any}\n", .{other_event});
+                        std.debug.print("Location: {d}\n", .{location});
                         return e;
                     };
                     added = true;

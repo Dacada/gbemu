@@ -353,7 +353,7 @@ const WaveSamplerUnit = struct {
     const wave_memory_interface = struct {
         fn should_fail(channel: *Channel(3)) bool {
             // DMG ONLY -- Pan Docs says: "On monochrome consoles, wave RAM can only be accessed on the same cycle that CH3 does. Otherwise, reads return $FF, and writes are ignored."
-            return channel.control.active and !channel.period.wouldTick();
+            return channel.control.isActive() and !channel.period.wouldTick();
 
             // TODO: Pan Docs also says: On AGB, reads return $FF, and writes are ignored.
 

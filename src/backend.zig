@@ -31,9 +31,17 @@ pub const WavAudioBackend = struct {
     }
 
     pub fn submit(self: *WavAudioBackend, left: f32, right: f32) void {
+        // if (left > 1.0 or left < -1.0) {
+        //     std.debug.print("left channel out of bounds: {d}\n", .{left});
+        // }
+        // if (right > 1.0 or right < -1.0) {
+        //     std.debug.print("right channel out of bounds: {d}\n", .{right});
+        // }
+        const cleft = @max(@min(1.0, left), -1.0);
+        const cright = @max(@min(1.0, right), -1.0);
         self.samples.append(self.allocator, .{
-            .left = @intFromFloat(left * std.math.maxInt(i16)),
-            .right = @intFromFloat(right * std.math.maxInt(i16)),
+            .left = @intFromFloat(cleft * std.math.maxInt(i16)),
+            .right = @intFromFloat(cright * std.math.maxInt(i16)),
         }) catch @panic("error during submit");
     }
 

@@ -256,11 +256,11 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
                 },
                 .{
                     .start = 0x0A,
-                    .end = 0x0D,
+                    .end = 0x0E,
                     .target = .channel3,
                 },
                 .{
-                    .start = 0x10,
+                    .start = 0xF,
                     .end = 0x13,
                     .target = .channel4,
                 },
