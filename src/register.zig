@@ -51,16 +51,40 @@ pub const Wide = packed struct {
         reg.lo = @intCast(val & 0x00FF);
     }
 
-    pub fn inc(reg: *Wide) void {
+    fn inc(reg: *Wide) void {
         reg.lo, const carry = @addWithOverflow(reg.lo, 1);
         reg.hi, _ = @addWithOverflow(reg.hi, carry);
     }
 
-    pub fn dec(reg: *Wide) void {
+    fn dec(reg: *Wide) void {
         reg.lo, const carry = @subWithOverflow(reg.lo, 1);
         reg.hi, _ = @subWithOverflow(reg.hi, carry);
     }
 };
+
+pub fn IDUBus(Ppu: type, OamInterface: type) type {
+    return struct {
+        const This = @This();
+
+        ppu: *Ppu,
+
+        pub fn init(ppu: *Ppu) This {
+            return This{
+                .ppu = ppu,
+            };
+        }
+
+        pub fn inc(self: *This, reg: *Wide) void {
+            OamInterface.idu_oam(self.ppu, reg.all());
+            reg.inc();
+        }
+
+        pub fn dec(self: *This, reg: *Wide) void {
+            OamInterface.idu_oam(self.ppu, reg.all());
+            reg.dec();
+        }
+    };
+}
 
 test "register with halves" {
     var reg: Wide = undefined;

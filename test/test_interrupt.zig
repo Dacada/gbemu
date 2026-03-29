@@ -4,7 +4,11 @@ const lib = @import("lib");
 const FakeMmu = lib.mmu.MockMmu;
 const InterruptKind = lib.interrupt_kind.InterruptKind;
 const Interrupt = lib.interrupt.Interrupt;
-const Cpu = lib.cpu.Cpu(FakeMmu, Interrupt);
+const MockPpu = struct {};
+const MockPpuOam = struct {
+    pub fn idu_oam(_: *MockPpu, _: u16) void {}
+};
+const Cpu = lib.cpu.Cpu(FakeMmu, MockPpu, MockPpuOam, Interrupt);
 
 fn runInstructions(cpu: *Cpu, num: usize) !void {
     for (0..num) |_| {
@@ -36,7 +40,8 @@ fn testInterrupt(target: InterruptKind, targetAddr: u16) !void {
 
     var intr = Interrupt.init();
     var mmu = FakeMmu{};
-    var cpu = Cpu.init(&mmu, &intr, 0xAA);
+    var ppu = MockPpu{};
+    var cpu = Cpu.init(&mmu, &ppu, &intr, 0xAA);
 
     cpu.reg.pc = 0x100;
     cpu.reg.sp.setAll(0xFFFE);
@@ -128,9 +133,10 @@ test "halt normally: ime=1 and no interrupt pending" {
         FakeMmu.backing_array[0x40] = 0;
     }
 
+    var ppu = MockPpu{};
     var intr = Interrupt.init();
     var mmu = FakeMmu{};
-    var cpu = Cpu.init(&mmu, &intr, 0xAA);
+    var cpu = Cpu.init(&mmu, &ppu, &intr, 0xAA);
 
     cpu.reg.pc = 0;
     cpu.reg.sp.setAll(0xFFFE);
@@ -190,9 +196,10 @@ test "halt normally: ime=0 and no interrupt pending" {
         FakeMmu.backing_array[0x40] = 0;
     }
 
+    var ppu = MockPpu{};
     var intr = Interrupt.init();
     var mmu = FakeMmu{};
-    var cpu = Cpu.init(&mmu, &intr, 0xAA);
+    var cpu = Cpu.init(&mmu, &ppu, &intr, 0xAA);
 
     cpu.reg.pc = 0;
     cpu.reg.sp.setAll(0xFFFE);
@@ -239,9 +246,10 @@ test "halt bug: ei, halt" {
         FakeMmu.backing_array[0x40] = 0xD9; // reti
     }
 
+    var ppu = MockPpu{};
     var intr = Interrupt.init();
     var mmu = FakeMmu{};
-    var cpu = Cpu.init(&mmu, &intr, 0xAA);
+    var cpu = Cpu.init(&mmu, &ppu, &intr, 0xAA);
 
     cpu.reg.pc = 0;
     cpu.reg.sp.setAll(0xFFFE);
@@ -299,9 +307,10 @@ test "halt bug: halt, inc b " {
         @memcpy(FakeMmu.backing_array[0..assembled.len], assembled);
     }
 
+    var ppu = MockPpu{};
     var intr = Interrupt.init();
     var mmu = FakeMmu{};
-    var cpu = Cpu.init(&mmu, &intr, 0xAA);
+    var cpu = Cpu.init(&mmu, &ppu, &intr, 0xAA);
 
     cpu.reg.pc = 0;
     cpu.reg.sp.setAll(0xFFFE);
@@ -338,9 +347,10 @@ test "halt bug: halt, ld B 4" {
         @memcpy(FakeMmu.backing_array[0..assembled.len], assembled);
     }
 
+    var ppu = MockPpu{};
     var intr = Interrupt.init();
     var mmu = FakeMmu{};
-    var cpu = Cpu.init(&mmu, &intr, 0xAA);
+    var cpu = Cpu.init(&mmu, &ppu, &intr, 0xAA);
 
     cpu.reg.pc = 0;
     cpu.reg.sp.setAll(0xFFFE);
@@ -379,9 +389,10 @@ test "halt bug: halt, rst 1" {
         @memcpy(FakeMmu.backing_array[0..assembled.len], assembled);
     }
 
+    var ppu = MockPpu{};
     var intr = Interrupt.init();
     var mmu = FakeMmu{};
-    var cpu = Cpu.init(&mmu, &intr, 0xAA);
+    var cpu = Cpu.init(&mmu, &ppu, &intr, 0xAA);
 
     cpu.reg.pc = 0;
     cpu.reg.sp.setAll(0xFFFE);
@@ -420,9 +431,10 @@ test "halt bug: halt, halt" {
         @memcpy(FakeMmu.backing_array[0..assembled.len], assembled);
     }
 
+    var ppu = MockPpu{};
     var intr = Interrupt.init();
     var mmu = FakeMmu{};
-    var cpu = Cpu.init(&mmu, &intr, 0xAA);
+    var cpu = Cpu.init(&mmu, &ppu, &intr, 0xAA);
 
     cpu.reg.pc = 0;
     cpu.reg.sp.setAll(0xFFFE);

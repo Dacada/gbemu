@@ -4,6 +4,7 @@ const register = @import("register.zig");
 const GeneralRegister = register.General;
 const WideRegister = register.Wide;
 const FlagsRegister = register.Flags;
+const IDUBusFn = register.IDUBus;
 const InterruptKind = @import("interrupt_kind.zig").InterruptKind;
 
 const MemoryReferenceFn = @import("reference.zig").MemoryReference;
@@ -111,10 +112,11 @@ pub const CpuFlag = packed struct {
     double_halt: bool = false,
 };
 
-pub fn Cpu(Mmu: type, Interrupt: type) type {
+pub fn Cpu(Mmu: type, Ppu: type, OamInterface: type, Interrupt: type) type {
     const interrupt_vectors = [_]u16{ 0x40, 0x48, 0x50, 0x58, 0x60 };
 
     const MemoryReference = MemoryReferenceFn(Mmu);
+    const IDUBus = IDUBusFn(Ppu, OamInterface);
 
     const CpuOp1Union = union {
         aux_intermediate: u8,
@@ -152,6 +154,7 @@ pub fn Cpu(Mmu: type, Interrupt: type) type {
 
         mmu: *Mmu,
         intr: *Interrupt,
+        iduBus: IDUBus,
         reg: RegisterBank,
 
         next_tick: SelfRefCpuMethod,
@@ -167,10 +170,11 @@ pub fn Cpu(Mmu: type, Interrupt: type) type {
         flags: CpuFlag,
         halted: bool,
 
-        pub inline fn init(mmu: *Mmu, intr: *Interrupt, breakpoint_instruction: ?u8) This {
+        pub inline fn init(mmu: *Mmu, ppu: *Ppu, intr: *Interrupt, breakpoint_instruction: ?u8) This {
             return This{
                 .mmu = mmu,
                 .intr = intr,
+                .iduBus = IDUBus.init(ppu),
                 .reg = .{
                     .af = undefined,
                     .bc = undefined,
@@ -555,9 +559,9 @@ pub fn Cpu(Mmu: type, Interrupt: type) type {
                 addr = self.reg.hl.all();
                 const is_decrement = (self.reg.ir & 0b00_010_000) != 0;
                 if (is_decrement) {
-                    self.reg.hl.dec();
+                    self.iduBus.dec(&self.reg.hl);
                 } else {
-                    self.reg.hl.inc();
+                    self.iduBus.inc(&self.reg.hl);
                 }
             } else {
                 const reg: u2 = @intCast((self.reg.ir & 0b00_010_000) >> 4);
@@ -679,9 +683,9 @@ pub fn Cpu(Mmu: type, Interrupt: type) type {
             const reg_code: u2 = @intCast((self.reg.ir & 0b00_110_000) >> 4);
             const reg_ptr = self.ptrReg16Bit(reg_code);
             if (is_decrement) {
-                reg_ptr.dec();
+                self.iduBus.dec(reg_ptr);
             } else {
-                reg_ptr.inc();
+                self.iduBus.inc(reg_ptr);
             }
             return SelfRefCpuMethod.init(This.fetchOpcode);
         }
@@ -875,12 +879,12 @@ pub fn Cpu(Mmu: type, Interrupt: type) type {
         }
 
         fn incrementSPAndContinue(self: *This, handler: fn (*This) SelfRefCpuMethod) SelfRefCpuMethod {
-            self.reg.sp.inc();
+            self.iduBus.inc(&self.reg.sp);
             return SelfRefCpuMethod.init(handler);
         }
 
         fn decrementSPAndContinue(self: *This, handler: fn (*This) SelfRefCpuMethod) SelfRefCpuMethod {
-            self.reg.sp.dec();
+            self.iduBus.dec(&self.reg.sp);
             return SelfRefCpuMethod.init(handler);
         }
 
@@ -946,7 +950,7 @@ pub fn Cpu(Mmu: type, Interrupt: type) type {
 
         fn loadStackPointerToTempRegisterIndirect(self: *This) SelfRefCpuMethod {
             self.mmu.write(self.reg.wz.all(), self.reg.sp.lo);
-            self.reg.wz.inc();
+            self.iduBus.inc(&self.reg.wz);
             self.next_op_1 = CpuOp1Union{ .to_8bit = MemoryReference.fromMemory(self.mmu, self.reg.wz.all()) };
             self.next_op_2 = CpuOp2Union{ .from_8bit = MemoryReference.fromPointer(&self.reg.sp.hi) };
             return SelfRefCpuMethod.init(This.load8BitAndFetch);
@@ -1178,12 +1182,17 @@ const MockInterrupt = struct {
         return null;
     }
 };
-const MockedCpu = Cpu(MockMmu, MockInterrupt);
+const MockPpu = struct {};
+const MockPpuOam = struct {
+    pub fn idu_oam(_: *MockPpu, _: u16) void {}
+};
+const MockedCpu = Cpu(MockMmu, MockPpu, MockPpuOam, MockInterrupt);
 
 test "Cpu: ptrReg8Bit maps correctly" {
+    var ppu = MockPpu{};
     var mem = MockMmu{};
     var intr = MockInterrupt{};
-    var cpu = MockedCpu.init(&mem, &intr, null);
+    var cpu = MockedCpu.init(&mem, &ppu, &intr, null);
 
     cpu.reg.bc.hi = 0x10;
     cpu.reg.bc.lo = 0x11;
@@ -1209,9 +1218,10 @@ test "Cpu: ptrReg8Bit maps correctly" {
 }
 
 test "Cpu: ptrReg16Bit maps correctly" {
+    var ppu = MockPpu{};
     var mem = MockMmu{};
     var intr = MockInterrupt{};
-    var cpu = MockedCpu.init(&mem, &intr, null);
+    var cpu = MockedCpu.init(&mem, &ppu, &intr, null);
 
     cpu.reg.bc.setAll(0x1111);
     cpu.reg.de.setAll(0x2222);
@@ -1225,9 +1235,10 @@ test "Cpu: ptrReg16Bit maps correctly" {
 }
 
 test "Cpu: ptrRegStack maps correctly" {
+    var ppu = MockPpu{};
     var mem = MockMmu{};
     var intr = MockInterrupt{};
-    var cpu = MockedCpu.init(&mem, &intr, null);
+    var cpu = MockedCpu.init(&mem, &ppu, &intr, null);
 
     cpu.reg.bc.setAll(0xAAAA);
     cpu.reg.de.setAll(0xBBBB);

@@ -11,7 +11,11 @@ pub const FakeInterrupt = struct {
 };
 
 const Mmu = lib.mmu.MockMmu;
-const Cpu = lib.cpu.Cpu(Mmu, FakeInterrupt);
+const Ppu = struct {};
+const PpuOam = struct {
+    pub fn idu_oam(_: *Ppu, _: u16) void {}
+};
+const Cpu = lib.cpu.Cpu(Mmu, Ppu, PpuOam, FakeInterrupt);
 
 const logger = std.log.scoped(.testutil);
 
@@ -277,9 +281,10 @@ fn zeroizeRegisters(cpu: *Cpu) void {
 
 pub fn runTestCase(name: []const u8, program: []const u8, initial_state: *TestCpuState, ticks: []const *TestCpuState) !void {
     @memset(&Mmu.backing_array, 0);
+    var ppu = Ppu{};
     var mmu = Mmu{};
     var intr = FakeInterrupt{};
-    var cpu = Cpu.init(&mmu, &intr, null);
+    var cpu = Cpu.init(&mmu, &ppu, &intr, null);
     zeroizeRegisters(&cpu);
 
     try mapInitialState(&cpu, &mmu, initial_state, program);
@@ -301,9 +306,10 @@ pub fn runTestCase(name: []const u8, program: []const u8, initial_state: *TestCp
 
 pub fn runProgram(program: []const u8) !Cpu {
     @memset(&Mmu.backing_array, 0);
+    var ppu = Ppu{};
     var mmu = Mmu{};
     var intr = FakeInterrupt{};
-    var cpu = Cpu.init(&mmu, &intr, 0x40);
+    var cpu = Cpu.init(&mmu, &ppu, &intr, 0x40);
     zeroizeRegisters(&cpu);
 
     for (program, 0..) |b, i| {
