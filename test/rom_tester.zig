@@ -14,7 +14,7 @@ const BootRom = lib.mmio.Dummy;
 const Ppu = lib.ppu.Ppu(VideoBackend);
 const Mmio = lib.mmio.Mmio(Joypad, Serial, Timer, Interrupt, Apu, Ppu.Lcd, Ppu, BootRom);
 const Mmu = lib.mmu.Mmu(Cartridge, Ppu, Mmio);
-const Cpu = lib.cpu.Cpu(Mmu, Ppu, Ppu.Oam, Interrupt);
+const Cpu = lib.cpu.Cpu(Mmu, Interrupt);
 
 fn print_test_result(comptime result: []const u8, comptime color: std.io.tty.Color, msg: ?[]const u8, writer: *std.Io.Writer, cfg: std.io.tty.Config) !void {
     try writer.writeAll("  > ");
@@ -75,7 +75,7 @@ fn run_test(file: std.fs.File, writer: *std.Io.Writer, cfg: std.io.tty.Config) !
     var ppu = Ppu.init(&video_backend);
     var mmio = Mmio.init(&joypad, &serial, &timer, &intr, &apu, &ppu, &boot_rom);
     var mmu = Mmu.init(&cart, &ppu, &mmio);
-    var cpu = Cpu.init(&mmu, &ppu, &intr, 0x40);
+    var cpu = Cpu.init(&mmu, &intr, 0x40);
     lib.emulator.initializeCpu(Cpu, &cpu, cart.checksum);
 
     var count: u32 = 0;

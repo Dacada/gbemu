@@ -15,7 +15,7 @@ const BootRom = lib.mmio.Dummy;
 const Mmio = lib.mmio.Mmio(Joypad, Serial, Timer, Interrupt, Apu, Ppu.Lcd, Ppu, BootRom);
 const Ppu = lib.ppu.Ppu(VideoBackend);
 const Mmu = lib.mmu.Mmu(Cartridge, Ppu, Mmio);
-const Cpu = lib.cpu.Cpu(Mmu, Ppu, Ppu.Oam, Interrupt);
+const Cpu = lib.cpu.Cpu(Mmu, Interrupt);
 const Debugger = lib.debugger.Debugger(Cpu, Mmu);
 const Emulator = lib.emulator.Emulator(Cpu, Apu, Ppu, Timer, Scheduler, Debugger);
 
@@ -78,7 +78,7 @@ pub fn main() !void {
     var mmu = Mmu.init(&cart, &ppu, &mmio);
     lib.emulator.initializeMemory(Mmu, &mmu);
 
-    var cpu = Cpu.init(&mmu, &ppu, &intr, args.@"breakpoint-instruction");
+    var cpu = Cpu.init(&mmu, &intr, args.@"breakpoint-instruction");
     lib.emulator.initializeCpu(Cpu, &cpu, cart.checksum);
 
     // This executes a nop and fetches the first instruction of the ROM
