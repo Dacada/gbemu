@@ -222,6 +222,10 @@ pub fn Mmu(Cartridge: type, Ppu: type, Mmio: type) type {
                 buff[i] = self.peek(start + @as(u16, @intCast(i)));
             }
         }
+
+        pub inline fn incDec16Bit(self: *This) void {
+            self.ppu.checkForOamBug();
+        }
     };
 }
 
@@ -246,6 +250,8 @@ pub const MockMmu = struct {
     pub inline fn write(self: *MockMmu, addr: u16, val: u8) void {
         return self.poke(addr, val);
     }
+
+    pub inline fn incDec16Bit(_: *MockMmu) void {}
 };
 
 /// Uses anytype for self's type, allowing these to be called on other Dummy-like types

@@ -555,9 +555,9 @@ pub fn Cpu(Mmu: type, Interrupt: type) type {
                 addr = self.reg.hl.all();
                 const is_decrement = (self.reg.ir & 0b00_010_000) != 0;
                 if (is_decrement) {
-                    self.reg.hl.dec();
+                    self.dec16Bit(&self.reg.hl);
                 } else {
-                    self.reg.hl.inc();
+                    self.inc16Bit(&self.reg.hl);
                 }
             } else {
                 const reg: u2 = @intCast((self.reg.ir & 0b00_010_000) >> 4);
@@ -679,9 +679,9 @@ pub fn Cpu(Mmu: type, Interrupt: type) type {
             const reg_code: u2 = @intCast((self.reg.ir & 0b00_110_000) >> 4);
             const reg_ptr = self.ptrReg16Bit(reg_code);
             if (is_decrement) {
-                reg_ptr.dec();
+                self.dec16Bit(reg_ptr);
             } else {
-                reg_ptr.inc();
+                self.inc16Bit(reg_ptr);
             }
             return SelfRefCpuMethod.init(This.fetchOpcode);
         }
@@ -864,6 +864,16 @@ pub fn Cpu(Mmu: type, Interrupt: type) type {
 
         // HELPERS //
 
+        fn inc16Bit(self: *This, reg: *WideRegister) void {
+            self.mmu.incDec16Bit();
+            reg.inc();
+        }
+
+        fn dec16Bit(self: *This, reg: *WideRegister) void {
+            self.mmu.incDec16Bit();
+            reg.dec();
+        }
+
         fn fetchImmediateAndContinue(self: *This, handler: fn (*This) SelfRefCpuMethod) SelfRefCpuMethod {
             self.reg.wz.lo = self.fetchPC();
             return SelfRefCpuMethod.init(handler);
@@ -875,12 +885,12 @@ pub fn Cpu(Mmu: type, Interrupt: type) type {
         }
 
         fn incrementSPAndContinue(self: *This, handler: fn (*This) SelfRefCpuMethod) SelfRefCpuMethod {
-            self.reg.sp.inc();
+            self.inc16Bit(&self.reg.sp);
             return SelfRefCpuMethod.init(handler);
         }
 
         fn decrementSPAndContinue(self: *This, handler: fn (*This) SelfRefCpuMethod) SelfRefCpuMethod {
-            self.reg.sp.dec();
+            self.dec16Bit(&self.reg.sp);
             return SelfRefCpuMethod.init(handler);
         }
 
@@ -946,7 +956,7 @@ pub fn Cpu(Mmu: type, Interrupt: type) type {
 
         fn loadStackPointerToTempRegisterIndirect(self: *This) SelfRefCpuMethod {
             self.mmu.write(self.reg.wz.all(), self.reg.sp.lo);
-            self.reg.wz.inc();
+            self.inc16Bit(&self.reg.wz);
             self.next_op_1 = CpuOp1Union{ .to_8bit = MemoryReference.fromMemory(self.mmu, self.reg.wz.all()) };
             self.next_op_2 = CpuOp2Union{ .from_8bit = MemoryReference.fromPointer(&self.reg.sp.hi) };
             return SelfRefCpuMethod.init(This.load8BitAndFetch);

@@ -89,6 +89,9 @@ pub fn Ppu(VideoBackend: type) type {
         pub fn peek(_: *This, _: u16) u8 {
             return 0xFF;
         }
+
         pub fn poke(_: *This, _: u16, _: u8) void {}
+
+        pub fn checkForOamBug(_: *This) void {}
     };
 }
