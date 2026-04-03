@@ -254,7 +254,6 @@ const BaseDummy = struct {
     pub const Vram = Dummy;
     pub const Oam = Dummy;
     pub const Forbidden = Dummy;
-    pub const Lcd = Dummy;
     pub const Rom = Dummy;
     pub const Ram = Dummy;
 

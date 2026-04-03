@@ -9,7 +9,6 @@ const Container = lib.dependency_container.Container(.{
     .cpu = .mock,
     .interrupt = .mock,
     .joypad = .dummy,
-    .lcd = .dummy,
     .ppu = .dummy,
     .timer = .dummy,
     .video_backend = .mock_nil,

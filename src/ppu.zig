@@ -72,25 +72,23 @@ pub fn Ppu(VideoBackend: type) type {
             pub fn poke(_: *This, _: u16, _: u8) void {}
         };
 
-        pub const Lcd = struct {
-            pub fn read(_: *This, _: u16) struct { MemoryFlag, u8 } {
-                return .{ MemoryFlag{ .illegal = true }, 0xFF };
-            }
-
-            pub fn write(_: *This, _: u16, _: u8) MemoryFlag {
-                return .{ .illegal = true };
-            }
-
-            pub fn peek(_: *This, _: u16) u8 {
-                return 0xFF;
-            }
-            pub fn poke(_: *This, _: u16, _: u8) void {}
-        };
-
         pub fn init(_: *VideoBackend) This {
             return This{};
         }
 
         pub fn tick(_: *const This) void {}
+
+        pub fn read(_: *This, _: u16) struct { MemoryFlag, u8 } {
+            return .{ MemoryFlag{ .illegal = true }, 0xFF };
+        }
+
+        pub fn write(_: *This, _: u16, _: u8) MemoryFlag {
+            return .{ .illegal = true };
+        }
+
+        pub fn peek(_: *This, _: u16) u8 {
+            return 0xFF;
+        }
+        pub fn poke(_: *This, _: u16, _: u8) void {}
     };
 }

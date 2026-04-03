@@ -54,10 +54,6 @@ pub const ContainerConfig = struct {
         mock,
         dummy,
     } = .real,
-    lcd: enum {
-        real,
-        dummy,
-    } = .real,
     ppu: enum {
         real,
         dummy,
@@ -153,13 +149,8 @@ pub fn Container(comptime cfg: ContainerConfig) type {
         .dummy => Dummy,
     };
 
-    const c_Lcd = switch (cfg.ppu) {
-        .real => c_Ppu.Lcd,
-        .dummy => Dummy,
-    };
-
     const c_Mmio = switch (cfg.mmio) {
-        .real => mmio.Mmio(c_Joypad, c_Serial, c_Timer, c_Interrupt, c_Apu, c_Lcd, c_Ppu, c_BootRom),
+        .real => mmio.Mmio(c_Joypad, c_Serial, c_Timer, c_Interrupt, c_Apu, c_Ppu, c_BootRom),
         .dummy => Dummy,
     };
 

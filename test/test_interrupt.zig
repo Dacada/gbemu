@@ -103,8 +103,8 @@ test "interrupt vblank" {
     try testInterrupt(.vblank, 0x40);
 }
 
-test "interrupt lcd" {
-    try testInterrupt(.lcd, 0x48);
+test "interrupt ppu" {
+    try testInterrupt(.ppu, 0x48);
 }
 
 test "interrupt timer" {

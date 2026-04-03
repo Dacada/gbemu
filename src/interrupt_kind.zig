@@ -1,6 +1,6 @@
 pub const InterruptKind = enum(u3) {
     vblank = 0,
-    lcd = 1,
+    ppu = 1,
     timer = 2,
     serial = 3,
     joypad = 4,

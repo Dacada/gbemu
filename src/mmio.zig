@@ -8,7 +8,7 @@ const GenericTargetField = router.TargetField;
 
 const logger = std.log.scoped(.mmio);
 
-pub fn Mmio(Joypad: type, Serial: type, Timer: type, Interrupt: type, Apu: type, Lcd: type, Ppu: type, BootRom: type) type {
+pub fn Mmio(Joypad: type, Serial: type, Timer: type, Interrupt: type, Apu: type, Ppu: type, BootRom: type) type {
     return struct {
         const This = @This();
 
@@ -41,7 +41,7 @@ pub fn Mmio(Joypad: type, Serial: type, Timer: type, Interrupt: type, Apu: type,
             timer,
             interrupt,
             apu,
-            lcd,
+            ppu,
             boot_rom,
             invalid,
         };
@@ -79,7 +79,7 @@ pub fn Mmio(Joypad: type, Serial: type, Timer: type, Interrupt: type, Apu: type,
                 .{
                     .start = 0x40,
                     .end = 0x4B,
-                    .target = .lcd,
+                    .target = .ppu,
                 },
                 .{
                     .start = 0x50,
@@ -123,9 +123,9 @@ pub fn Mmio(Joypad: type, Serial: type, Timer: type, Interrupt: type, Apu: type,
                     .namespace = Apu,
                 },
                 .{
-                    .target = .lcd,
+                    .target = .ppu,
                     .field = "ppu",
-                    .namespace = Lcd,
+                    .namespace = Ppu,
                 },
                 .{
                     .target = .boot_rom,
@@ -184,7 +184,6 @@ const TestContainer = @import("dependency_container.zig").Container(.{
     .apu = .dummy,
     .boot_rom = .dummy,
     .joypad = .dummy,
-    .lcd = .dummy,
     .ppu = .dummy,
     .serial = .dummy,
     .timer = .dummy,
@@ -229,7 +228,7 @@ test "Mmio unit tests with Dummy" {
     _ = mmio.write(0x3F, 0x9A);
     try std.testing.expectEqual(.{ MemoryFlag{}, 0x9A }, mmio.read(0x3F));
 
-    // Test writing and reading lcd
+    // Test writing and reading ppu
     _ = mmio.write(0x40, 0xBC);
     try std.testing.expectEqual(.{ MemoryFlag{}, 0xBC }, mmio.read(0x40));
 
