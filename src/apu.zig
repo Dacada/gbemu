@@ -52,6 +52,10 @@ pub fn Apu(AudioBackend: type) type {
     return ApuGeneric(Channel(1), Channel(2), Channel(3), Channel(4), AudioBackend);
 }
 
+pub fn MockApu(AudioBackend: type) type {
+    return ApuGeneric(MockChannel, MockChannel, MockChannel, MockChannel, AudioBackend);
+}
+
 fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, AudioBackend: type) type {
     return struct {
         const This = @This();

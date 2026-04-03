@@ -1172,18 +1172,43 @@ pub fn Cpu(Mmu: type, Interrupt: type) type {
     };
 }
 
-const MockMmu = @import("mmu.zig").MockMmu;
-const MockInterrupt = struct {
-    fn pending(_: *MockInterrupt) ?InterruptKind {
-        return null;
-    }
-};
-const MockedCpu = Cpu(MockMmu, MockInterrupt);
+pub fn MockCpu(Mmu: type) type {
+    return struct {
+        const This = @This();
+
+        reg: struct {
+            pc: u16 = 0,
+        } = .{},
+        flags: struct {
+            illegal: bool = false,
+            breakpoint: bool = false,
+        } = .{},
+        mmu: *Mmu,
+
+        pub fn init(mmu: *Mmu) This {
+            return This{
+                .mmu = mmu,
+            };
+        }
+
+        pub fn isInstructionBoundary(_: *This) bool {
+            return true;
+        }
+
+        pub fn clearBreakpoint(_: *This) void {}
+
+        pub fn tick(_: *This) void {}
+    };
+}
+
+const TestContainer = @import("dependency_container.zig").Container(.{
+    .interrupt = .mock,
+    .mmu = .mock,
+});
 
 test "Cpu: ptrReg8Bit maps correctly" {
-    var mem = MockMmu{};
-    var intr = MockInterrupt{};
-    var cpu = MockedCpu.init(&mem, &intr, null);
+    var container = TestContainer.init(.{});
+    var cpu = try container.get_cpu();
 
     cpu.reg.bc.hi = 0x10;
     cpu.reg.bc.lo = 0x11;
@@ -1209,9 +1234,8 @@ test "Cpu: ptrReg8Bit maps correctly" {
 }
 
 test "Cpu: ptrReg16Bit maps correctly" {
-    var mem = MockMmu{};
-    var intr = MockInterrupt{};
-    var cpu = MockedCpu.init(&mem, &intr, null);
+    var container = TestContainer.init(.{});
+    var cpu = try container.get_cpu();
 
     cpu.reg.bc.setAll(0x1111);
     cpu.reg.de.setAll(0x2222);
@@ -1225,9 +1249,8 @@ test "Cpu: ptrReg16Bit maps correctly" {
 }
 
 test "Cpu: ptrRegStack maps correctly" {
-    var mem = MockMmu{};
-    var intr = MockInterrupt{};
-    var cpu = MockedCpu.init(&mem, &intr, null);
+    var container = TestContainer.init(.{});
+    var cpu = try container.get_cpu();
 
     cpu.reg.bc.setAll(0xAAAA);
     cpu.reg.de.setAll(0xBBBB);

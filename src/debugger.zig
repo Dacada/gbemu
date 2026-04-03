@@ -415,40 +415,38 @@ pub fn Debugger(Cpu: type, Mmu: type) type {
     };
 }
 
-const MockMmu = struct {
-    flags: MemoryFlag = .{},
-    pub fn poke(_: *MockMmu, _: u16, _: u8) void {}
-};
-
-const MockCpu = struct {
-    const This = @This();
-
-    reg: struct {
-        pc: u16 = 0,
-    } = .{},
-    flags: struct {
-        illegal: bool = false,
-        breakpoint: bool = false,
-    } = .{},
-    mmu: *MockMmu,
-
-    pub fn isInstructionBoundary(_: *This) bool {
-        return true;
+pub const MockDebugger = struct {
+    pub fn enterDebuggerIfNeeded(_: *MockDebugger) !DebuggerResult {
+        return .should_continue;
     }
-
-    pub fn clearBreakpoint(_: *This) void {}
 };
 
-const MockedDebugger = Debugger(MockCpu, MockMmu);
-const Cmds = Commands(MockedDebugger);
+const TestContainer = @import("dependency_container.zig").Container(.{
+    .mmu = .mock,
+    .cpu = .mock,
+});
+const TestDebugger = TestContainer.Debugger;
+const Cmds = Commands(TestDebugger);
+
+const TestHelper = struct {
+    buffer: [0]u8,
+    discarding: std.Io.Writer,
+    container: TestContainer,
+
+    fn init() TestHelper {
+        var self: TestHelper = undefined;
+        self.buffer = undefined;
+        self.discarding = std.Io.Writer.Discarding.init(&self.buffer).writer;
+        self.container = TestContainer.init(.{
+            .debugger_writer = &self.discarding,
+        });
+        return self;
+    }
+};
 
 test "Debugger add and remove breakpoints" {
-    var fake_mmu = MockMmu{};
-    var fake_cpu = MockCpu{ .mmu = &fake_mmu };
-
-    var buffer: [0]u8 = undefined;
-    var discarding = std.Io.Writer.Discarding.init(&buffer).writer;
-    var dbg = MockedDebugger.init(&fake_cpu, &fake_mmu, &discarding);
+    var helper = TestHelper.init();
+    var dbg = try helper.container.get_debugger();
 
     try std.testing.expect(dbg.addBreakpoint(0x1234));
     try std.testing.expect(dbg.addBreakpoint(0x5678));
@@ -464,12 +462,8 @@ test "Debugger add and remove breakpoints" {
 }
 
 test "Debugger clears flags correctly" {
-    var fake_mmu = MockMmu{};
-    var fake_cpu = MockCpu{ .mmu = &fake_mmu };
-
-    var buffer: [0]u8 = undefined;
-    var discarding = std.Io.Writer.Discarding.init(&buffer).writer;
-    var dbg = MockedDebugger.init(&fake_cpu, &fake_mmu, &discarding);
+    var helper = TestHelper.init();
+    var dbg = try helper.container.get_debugger();
 
     dbg.stepping = true;
     dbg.stepping_cycles = true;
@@ -483,12 +477,8 @@ test "Debugger clears flags correctly" {
 }
 
 test "Debugger should_enter triggers on stepping" {
-    var fake_mmu = MockMmu{};
-    var fake_cpu = MockCpu{ .mmu = &fake_mmu };
-
-    var buffer: [0]u8 = undefined;
-    var discarding = std.Io.Writer.Discarding.init(&buffer).writer;
-    var dbg = MockedDebugger.init(&fake_cpu, &fake_mmu, &discarding);
+    var helper = TestHelper.init();
+    var dbg = try helper.container.get_debugger();
 
     dbg.stepping = true;
 
@@ -496,12 +486,8 @@ test "Debugger should_enter triggers on stepping" {
 }
 
 test "Debugger should_enter triggers on stepping_cycles" {
-    var fake_mmu = MockMmu{};
-    var fake_cpu = MockCpu{ .mmu = &fake_mmu };
-
-    var buffer: [0]u8 = undefined;
-    var discarding = std.Io.Writer.Discarding.init(&buffer).writer;
-    var dbg = MockedDebugger.init(&fake_cpu, &fake_mmu, &discarding);
+    var helper = TestHelper.init();
+    var dbg = try helper.container.get_debugger();
 
     dbg.stepping_cycles = true;
 
@@ -509,12 +495,9 @@ test "Debugger should_enter triggers on stepping_cycles" {
 }
 
 test "Debugger should_enter triggers on breakpoint match" {
-    var fake_mmu = MockMmu{};
-    var fake_cpu = MockCpu{ .mmu = &fake_mmu };
-
-    var buffer: [0]u8 = undefined;
-    var discarding = std.Io.Writer.Discarding.init(&buffer).writer;
-    var dbg = MockedDebugger.init(&fake_cpu, &fake_mmu, &discarding);
+    var helper = TestHelper.init();
+    var dbg = try helper.container.get_debugger();
+    var fake_cpu = try helper.container.get_cpu();
 
     try std.testing.expect(dbg.addBreakpoint(0x0042));
 
@@ -524,12 +507,8 @@ test "Debugger should_enter triggers on breakpoint match" {
 }
 
 test "Debugger should_enter triggers on memory flags" {
-    var fake_mmu = MockMmu{};
-    var fake_cpu = MockCpu{ .mmu = &fake_mmu };
-
-    var buffer: [0]u8 = undefined;
-    var discarding = std.Io.Writer.Discarding.init(&buffer).writer;
-    var dbg = MockedDebugger.init(&fake_cpu, &fake_mmu, &discarding);
+    var helper = TestHelper.init();
+    var dbg = try helper.container.get_debugger();
 
     dbg.mmu.flags = .{ .uninitialized = true };
 
@@ -537,12 +516,8 @@ test "Debugger should_enter triggers on memory flags" {
 }
 
 test "Commands: help command outputs text" {
-    var fake_mmu = MockMmu{};
-    var fake_cpu = MockCpu{ .mmu = &fake_mmu };
-
-    var dbuffer: [0]u8 = undefined;
-    var discarding = std.Io.Writer.Discarding.init(&dbuffer).writer;
-    var dbg = MockedDebugger.init(&fake_cpu, &fake_mmu, &discarding);
+    var helper = TestHelper.init();
+    const dbg = try helper.container.get_debugger();
 
     var buffer: [1024]u8 = undefined;
     var writer = std.Io.Writer.fixed(&buffer);
@@ -550,65 +525,49 @@ test "Commands: help command outputs text" {
     const input = "help";
     var it = std.mem.tokenizeScalar(u8, input, ' ');
 
-    const result = try Cmds.help(&dbg, &it, &writer);
+    const result = try Cmds.help(dbg, &it, &writer);
     try std.testing.expectEqual(null, result);
     try std.testing.expect(std.mem.indexOf(u8, writer.buffered(), "continue") != null);
 }
 
 test "Commands: step command sets stepping flag" {
-    var fake_mmu = MockMmu{};
-    var fake_cpu = MockCpu{ .mmu = &fake_mmu };
-
-    var dbuffer: [0]u8 = undefined;
-    var discarding = std.Io.Writer.Discarding.init(&dbuffer).writer;
-    var dbg = MockedDebugger.init(&fake_cpu, &fake_mmu, &discarding);
+    var helper = TestHelper.init();
+    const dbg = try helper.container.get_debugger();
 
     const input = "step";
     var it = std.mem.tokenizeScalar(u8, input, ' ');
 
-    const result = try Cmds.step(&dbg, &it, &discarding);
+    const result = try Cmds.step(dbg, &it, &helper.discarding);
     try std.testing.expectEqual(DebuggerResult.should_continue, result.?);
     try std.testing.expect(dbg.stepping);
 }
 
 test "Commands: stepc command sets stepping_cycles flag" {
-    var fake_mmu = MockMmu{};
-    var fake_cpu = MockCpu{ .mmu = &fake_mmu };
-
-    var dbuffer: [0]u8 = undefined;
-    var discarding = std.Io.Writer.Discarding.init(&dbuffer).writer;
-    var dbg = MockedDebugger.init(&fake_cpu, &fake_mmu, &discarding);
+    var helper = TestHelper.init();
+    const dbg = try helper.container.get_debugger();
 
     const input = "stepc";
     var it = std.mem.tokenizeScalar(u8, input, ' ');
 
-    const result = try Cmds.stepc(&dbg, &it, &discarding);
+    const result = try Cmds.stepc(dbg, &it, &helper.discarding);
     try std.testing.expectEqual(DebuggerResult.should_continue, result.?);
     try std.testing.expect(dbg.stepping_cycles);
 }
 
 test "Commands: quit command returns should_stop" {
-    var fake_mmu = MockMmu{};
-    var fake_cpu = MockCpu{ .mmu = &fake_mmu };
-
-    var dbuffer: [0]u8 = undefined;
-    var discarding = std.Io.Writer.Discarding.init(&dbuffer).writer;
-    var dbg = MockedDebugger.init(&fake_cpu, &fake_mmu, &discarding);
+    var helper = TestHelper.init();
+    const dbg = try helper.container.get_debugger();
 
     const input = "quit";
     var it = std.mem.tokenizeScalar(u8, input, ' ');
 
-    const result = try Cmds.quit(&dbg, &it, &discarding);
+    const result = try Cmds.quit(dbg, &it, &helper.discarding);
     try std.testing.expectEqual(DebuggerResult.should_stop, result.?);
 }
 
 test "Commands: break add, list, and del" {
-    var fake_mmu = MockMmu{};
-    var fake_cpu = MockCpu{ .mmu = &fake_mmu };
-
-    var dbuffer: [0]u8 = undefined;
-    var discarding = std.Io.Writer.Discarding.init(&dbuffer).writer;
-    var dbg = MockedDebugger.init(&fake_cpu, &fake_mmu, &discarding);
+    var helper = TestHelper.init();
+    const dbg = try helper.container.get_debugger();
 
     // Add breakpoint
     const add_input = "add 0x0042";
@@ -616,7 +575,7 @@ test "Commands: break add, list, and del" {
 
     var buffer: [256]u8 = undefined;
 
-    const add_result = try Cmds.b(&dbg, &add_it, &discarding);
+    const add_result = try Cmds.b(dbg, &add_it, &helper.discarding);
     try std.testing.expectEqual(null, add_result);
     try std.testing.expect(dbg.breakpoints[0] != null);
 
@@ -626,7 +585,7 @@ test "Commands: break add, list, and del" {
 
     var writer = std.Io.Writer.fixed(&buffer);
 
-    const list_result = try Cmds.b(&dbg, &list_it, &writer);
+    const list_result = try Cmds.b(dbg, &list_it, &writer);
     try std.testing.expectEqual(null, list_result);
     try std.testing.expect(std.mem.indexOf(u8, writer.buffered(), "0042") != null);
 
@@ -634,7 +593,7 @@ test "Commands: break add, list, and del" {
     const del_input = "del 0";
     var del_it = std.mem.tokenizeScalar(u8, del_input, ' ');
 
-    const del_result = try Cmds.b(&dbg, &del_it, &discarding);
+    const del_result = try Cmds.b(dbg, &del_it, &helper.discarding);
     try std.testing.expectEqual(null, del_result);
     try std.testing.expect(dbg.breakpoints[0] == null);
 }

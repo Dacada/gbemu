@@ -3,15 +3,14 @@ const lib = @import("lib");
 
 const InterruptKind = lib.interrupt_kind.InterruptKind;
 
-pub const FakeInterrupt = struct {
-    pub fn pending(_: *FakeInterrupt) ?InterruptKind {
-        return null;
-    }
-    pub fn acknowledge(_: *FakeInterrupt, _: InterruptKind) void {}
-};
+const Container = lib.dependency_container.Container(.{
+    .interrupt = .mock,
+    .mmu = .mock,
+    .debugger = .mock,
+});
 
-const Mmu = lib.mmu.MockMmu;
-const Cpu = lib.cpu.Cpu(Mmu, FakeInterrupt);
+const Cpu = Container.Cpu;
+const Mmu = Container.Mmu;
 
 const logger = std.log.scoped(.testutil);
 
@@ -277,12 +276,12 @@ fn zeroizeRegisters(cpu: *Cpu) void {
 
 pub fn runTestCase(name: []const u8, program: []const u8, initial_state: *TestCpuState, ticks: []const *TestCpuState) !void {
     @memset(&Mmu.backing_array, 0);
-    var mmu = Mmu{};
-    var intr = FakeInterrupt{};
-    var cpu = Cpu.init(&mmu, &intr, null);
-    zeroizeRegisters(&cpu);
+    var container = Container.init(.{});
+    var cpu = try container.get_cpu();
+    const mmu = try container.get_mmu();
+    zeroizeRegisters(cpu);
 
-    try mapInitialState(&cpu, &mmu, initial_state, program);
+    try mapInitialState(cpu, mmu, initial_state, program);
 
     defer for (ticks) |state| {
         state.deinit();
@@ -292,7 +291,7 @@ pub fn runTestCase(name: []const u8, program: []const u8, initial_state: *TestCp
         cpu.tick();
         try std.testing.expect(!mmu.flags.illegal);
         try std.testing.expect(!cpu.flags.illegal);
-        expectCpuState(&cpu, state, program) catch |err| {
+        expectCpuState(cpu, state, program) catch |err| {
             logger.debug("{s}: Failed on tick {d}", .{ name, idx });
             return err;
         };
@@ -301,10 +300,12 @@ pub fn runTestCase(name: []const u8, program: []const u8, initial_state: *TestCp
 
 pub fn runProgram(program: []const u8) !Cpu {
     @memset(&Mmu.backing_array, 0);
-    var mmu = Mmu{};
-    var intr = FakeInterrupt{};
-    var cpu = Cpu.init(&mmu, &intr, 0x40);
-    zeroizeRegisters(&cpu);
+    var container = Container.init(.{
+        .breakpoint_instruction = 0x40,
+    });
+    var cpu = try container.get_cpu();
+    const mmu = try container.get_mmu();
+    zeroizeRegisters(cpu);
 
     for (program, 0..) |b, i| {
         mmu.write(@intCast(i), b);
@@ -320,5 +321,5 @@ pub fn runProgram(program: []const u8) !Cpu {
         try std.testing.expect(!mmu.flags.illegal);
     }
 
-    return cpu;
+    return cpu.*;
 }

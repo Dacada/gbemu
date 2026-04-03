@@ -2,32 +2,11 @@ const std = @import("std");
 const lib = @import("lib");
 const cli = @import("cli.zig");
 
-const AudioBackend = lib.backend.NullAudioBackend;
-const VideoBackend = lib.backend.NullVideoBackend;
-const Scheduler = lib.scheduler.Scheduler;
-const Cartridge = lib.cartridge.Cartridge;
-const Interrupt = lib.interrupt.Interrupt;
-const Joypad = lib.joypad.Joypad(Interrupt);
-const Serial = lib.serial.Serial(Scheduler, Interrupt);
-const Apu = lib.apu.Apu(AudioBackend);
-const Timer = lib.timer.Timer(Apu, Interrupt);
-const BootRom = lib.mmio.Dummy;
-const Mmio = lib.mmio.Mmio(Joypad, Serial, Timer, Interrupt, Apu, Ppu.Lcd, Ppu, BootRom);
-const Ppu = lib.ppu.Ppu(VideoBackend);
-const Mmu = lib.mmu.Mmu(Cartridge, Ppu, Mmio);
-const Cpu = lib.cpu.Cpu(Mmu, Interrupt);
-const Debugger = lib.debugger.Debugger(Cpu, Mmu);
-const Emulator = lib.emulator.Emulator(Cpu, Apu, Ppu, Timer, Scheduler, Debugger);
-
 var array = [_]u8{0x00} ** 0x100;
 
-fn makeCart() !Cartridge {
-    var dir = try std.fs.openDirAbsolute("/home/dacada/Downloads/testroms/mooneye-test-suite/acceptance", .{});
-    defer dir.close();
-    const file = try dir.openFile("call_timing.gb", .{});
-    defer file.close();
-    return Cartridge.fromFile(file);
-}
+const Container = lib.dependency_container.Container(.{});
+const Mmu = Container.Mmu;
+const Cpu = Container.Cpu;
 
 pub fn main() !void {
     const parser = cli.ArgParser(.{
@@ -50,42 +29,28 @@ pub fn main() !void {
     var stdout_file_writer = stdout_fileno.writer(&stdout_buffer);
     const writer = &stdout_file_writer.interface;
 
-    var audio_backend = AudioBackend.init();
-    var video_backend = VideoBackend.init();
+    var container = Container.init(.{
+        .debugger_writer = writer,
+        .breakpoint_instruction = args.@"breakpoint-instruction",
+        .cartridge = .{
+            .by_path = .{
+                .absolute_path = "/home/dacada/Downloads/testroms/mooneye-test-suite/acceptance",
+                .filename = "call_timing.gb",
+            },
+        },
+    });
 
-    var cart = try makeCart();
+    const cart = try container.get_cartridge();
 
-    var sched = Scheduler.init();
+    const mmu = try container.get_mmu();
+    lib.emulator.initializeMemory(Mmu, mmu);
 
-    var intr = Interrupt.init();
-    var joypad = Joypad.init(&intr);
-    var serial = Serial.init(&sched, &intr);
-    var apu = Apu.init(&audio_backend);
-    var timer = Timer.init(&apu, &intr);
-    var boot_rom = BootRom{};
-    var ppu = Ppu.init(&video_backend);
-
-    var mmio = Mmio.init(
-        &joypad,
-        &serial,
-        &timer,
-        &intr,
-        &apu,
-        &ppu,
-        &boot_rom,
-    );
-
-    var mmu = Mmu.init(&cart, &ppu, &mmio);
-    lib.emulator.initializeMemory(Mmu, &mmu);
-
-    var cpu = Cpu.init(&mmu, &intr, args.@"breakpoint-instruction");
-    lib.emulator.initializeCpu(Cpu, &cpu, cart.checksum);
+    var cpu = try container.get_cpu();
+    lib.emulator.initializeCpu(Cpu, cpu, cart.checksum);
 
     // This executes a nop and fetches the first instruction of the ROM
     cpu.tick();
 
-    var dbg = Debugger.init(&cpu, &mmu, writer);
-
-    var emu = Emulator.init(&cpu, &apu, &ppu, &timer, &sched, &dbg);
+    var emu = try container.get_emulator();
     try emu.run(true);
 }

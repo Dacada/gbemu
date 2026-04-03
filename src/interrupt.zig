@@ -2,6 +2,45 @@ const std = @import("std");
 const MemoryFlag = @import("memory_flag.zig").MemoryFlag;
 const InterruptKind = @import("interrupt_kind.zig").InterruptKind;
 
+pub const MockInterrupt = struct {
+    requested: ?InterruptKind,
+    vals: [2]u8,
+
+    pub fn init() MockInterrupt {
+        return MockInterrupt{
+            .requested = null,
+            .vals = .{ 0, 0 },
+        };
+    }
+
+    pub fn pending(_: *MockInterrupt) ?InterruptKind {
+        return null;
+    }
+
+    pub fn request(self: *MockInterrupt, kind: InterruptKind) void {
+        self.requested = kind;
+    }
+
+    pub fn acknowledge(_: *MockInterrupt, _: InterruptKind) void {}
+
+    pub fn peek(self: *MockInterrupt, addr: u16) u8 {
+        return self.vals[addr];
+    }
+
+    pub fn poke(self: *MockInterrupt, addr: u16, val: u8) void {
+        self.vals[addr] = val;
+    }
+
+    pub fn read(self: *MockInterrupt, addr: u16) struct { MemoryFlag, u8 } {
+        return .{ .{}, self.peek(addr) };
+    }
+
+    pub fn write(self: *MockInterrupt, addr: u16, val: u8) MemoryFlag {
+        self.poke(addr, val);
+        return .{};
+    }
+};
+
 pub const Interrupt = packed struct {
     ie: u8,
     @"if": u8,

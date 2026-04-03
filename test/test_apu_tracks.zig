@@ -1,8 +1,12 @@
 const std = @import("std");
 const lib = @import("lib");
 const tracker = lib.tracker;
-const Backend = lib.backend.WavAudioBackend;
-const Apu = lib.apu.Apu(Backend);
+
+const Container = lib.dependency_container.Container(.{
+    .audio_backend = .mock_wav,
+    .debugger = .mock,
+});
+const Apu = Container.Apu;
 
 const cpu_freq_hz = 4_194_304;
 const apu_freq_hz = cpu_freq_hz / 2;
@@ -61,9 +65,16 @@ fn testTrack(allocator: std.mem.Allocator, song: tracker.Song, comptime name: []
     const tmp_file = std.fmt.comptimePrint("/tmp/{s}.wav", .{name});
     const res_file = std.fmt.comptimePrint("res/{s}.wav", .{name});
 
-    var backend = try Backend.init(tmp_file, allocator);
+    var container = Container.init(.{
+        .audio_wav_filename = tmp_file,
+        .allocator = allocator,
+    });
+
+    var apu = try container.get_apu();
+    var backend = try container.get_audio_backend();
+
+    // container won't deinit stuff for us
     defer backend.deinit();
-    var apu = Apu.init(&backend);
 
     const events = try tracker.play(song, allocator);
     defer allocator.free(events);
@@ -84,7 +95,7 @@ fn testTrack(allocator: std.mem.Allocator, song: tracker.Song, comptime name: []
             try std.testing.expect(!write_flags.any());
         }
 
-        tickApu(&apu, ticks_per_subdivision, &div_counter);
+        tickApu(apu, ticks_per_subdivision, &div_counter);
         total_ticks += ticks_per_subdivision;
     }
 

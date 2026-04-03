@@ -43,6 +43,10 @@ pub const Scheduler = struct {
     }
 };
 
+pub const MockScheduler = struct {
+    pub fn schedule(_: *MockScheduler, _: struct { context: *anyopaque, callback: *const fn (*anyopaque) void }, _: usize) void {}
+};
+
 const LogContext = struct {
     log: *[4]u8,
     index: *usize,
@@ -58,7 +62,7 @@ test "single event fires after correct number of ticks" {
         .context = &fired,
         .callback = struct {
             fn fire(ctx: *anyopaque) void {
-                const flag: *bool = @alignCast(@ptrCast(ctx));
+                const flag: *bool = @ptrCast(@alignCast(ctx));
                 flag.* = true;
             }
         }.fire,
@@ -76,7 +80,7 @@ test "single event fires after correct number of ticks" {
 }
 
 fn record(ctx: *anyopaque) void {
-    const log_ctx: *LogContext = @alignCast(@ptrCast(ctx));
+    const log_ctx: *LogContext = @ptrCast(@alignCast(ctx));
     log_ctx.log[log_ctx.index.*] = log_ctx.value;
     log_ctx.index.* += 1;
 }
@@ -105,7 +109,7 @@ test "multiple events fire in correct order" {
 }
 
 fn increment(ctx: *anyopaque) void {
-    const c: *u8 = @alignCast(@ptrCast(ctx));
+    const c: *u8 = @ptrCast(@alignCast(ctx));
     c.* += 1;
 }
 

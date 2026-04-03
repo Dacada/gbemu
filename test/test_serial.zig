@@ -1,57 +1,28 @@
 const std = @import("std");
 const lib = @import("lib");
 
-const MockMemory = lib.mmu.MockMemory;
-const InterruptKind = lib.interrupt_kind.InterruptKind;
+const Container = lib.dependency_container.Container(.{
+    .apu = .mock,
+    .audio_backend = .mock_nil,
+    .boot_rom = .dummy,
+    .cartridge = .dummy,
+    .cpu = .mock,
+    .interrupt = .mock,
+    .joypad = .dummy,
+    .lcd = .dummy,
+    .ppu = .dummy,
+    .timer = .dummy,
+    .video_backend = .mock_nil,
+    .debugger = .mock,
 
-pub const FakeScheduler = struct {};
+    // almost everything gets mocked, so making the real components explicit too
+    .mmio = .real,
+    .mmu = .real,
+    .scheduler = .real,
+    .serial = .real,
+});
 
-pub const FakeCartridge = struct {
-    last_write: u8 = 0x00,
-
-    pub const Rom = MockMemory;
-    pub const Ram = MockMemory;
-};
-
-pub const FakePpu = struct {
-    last_write: u8 = 0x00,
-
-    pub const Vram = MockMemory;
-    pub const Oam = MockMemory;
-    pub const Forbidden = MockMemory;
-
-    pub fn tick(_: *FakePpu) void {}
-};
-
-pub const FakeApu = struct {
-    pub fn tick(_: FakeApu) void {}
-};
-
-pub const FakeTimer = struct {
-    pub fn tick(_: *FakeTimer) void {}
-};
-
-pub const FakeDebugger = struct {
-    pub fn enterDebuggerIfNeeded(_: *const FakeDebugger) !?lib.debugger.DebuggerResult {
-        return null;
-    }
-};
-
-pub const FakeInterrupt = struct {
-    pub fn request(_: *FakeInterrupt, _: InterruptKind) void {}
-};
-
-pub const FakeCpu = struct {
-    pub fn tick(_: FakeCpu) void {}
-};
-
-const Scheduler = lib.scheduler.Scheduler;
-const Serial = lib.serial.Serial(Scheduler, FakeInterrupt);
-const Dummy = lib.mmio.Dummy;
-const Mmio = lib.mmio.Mmio(Dummy, Serial, Dummy, Dummy, Dummy, Dummy, Dummy, Dummy);
-const Mmu = lib.mmu.Mmu(FakeCartridge, FakePpu, Mmio);
-const Cpu = FakeCpu;
-const Emulator = lib.emulator.Emulator(Cpu, FakeApu, FakePpu, FakeTimer, Scheduler, FakeDebugger);
+const Emulator = Container.Emulator;
 
 fn spin(emu: *Emulator, ticks: usize) !void {
     for (0..ticks) |_| {
@@ -61,37 +32,14 @@ fn spin(emu: *Emulator, ticks: usize) !void {
 }
 
 test "serial transfer" {
-    var cart = FakeCartridge{};
-
-    var sched = Scheduler.init();
-
-    var dummy = Dummy{};
-    var intr = FakeInterrupt{};
-    var serial = Serial.init(&sched, &intr);
-    var ppu = FakePpu{};
-    var apu = FakeApu{};
-
-    var mmio = Mmio.init(
-        &dummy,
-        &serial,
-        &dummy,
-        &dummy,
-        &dummy,
-        &dummy,
-        &dummy,
-    );
-
-    var mmu = Mmu.init(&cart, &ppu, &mmio);
-    lib.emulator.initializeMemory(Mmu, &mmu);
-
-    var cpu = FakeCpu{};
-    var timer = FakeTimer{};
-
-    var dbg = FakeDebugger{};
-    var emu = Emulator.init(&cpu, &apu, &ppu, &timer, &sched, &dbg);
+    var container = Container.init(.{});
+    const emu = try container.get_emulator();
+    var mmu = try container.get_mmu();
+    const serial = try container.get_serial();
+    const sched = try container.get_scheduler();
 
     // Wait a few cycles
-    try spin(&emu, 100);
+    try spin(emu, 100);
 
     // Start transfer
     mmu.write(0xFF01, 0xAA);
@@ -103,10 +51,10 @@ test "serial transfer" {
     try std.testing.expectEqual(0b10101010, serial.data);
 
     // Run the cycle where the transfer supposedly started
-    try spin(&emu, 1);
+    try spin(emu, 1);
 
     // Changes should happen after 512 cycles, run 511 of them
-    try spin(&emu, 511);
+    try spin(emu, 511);
 
     // Still no changes
     try std.testing.expect(serial.running);
@@ -114,7 +62,7 @@ test "serial transfer" {
     try std.testing.expectEqual(0b10101010, serial.data);
 
     // One more cycle
-    try spin(&emu, 1);
+    try spin(emu, 1);
 
     // First bit shifted
     try std.testing.expect(serial.running);
@@ -122,7 +70,7 @@ test "serial transfer" {
     try std.testing.expectEqual(0b01010101, serial.data);
 
     // Run one cycle
-    try spin(&emu, 1);
+    try spin(emu, 1);
 
     // No changes
     try std.testing.expect(serial.running);
@@ -130,7 +78,7 @@ test "serial transfer" {
     try std.testing.expectEqual(0b01010101, serial.data);
 
     // Run the other 511 cycles
-    try spin(&emu, 511);
+    try spin(emu, 511);
 
     // Another bit shift
     try std.testing.expect(serial.running);
@@ -138,7 +86,7 @@ test "serial transfer" {
     try std.testing.expectEqual(0b10101011, serial.data);
 
     // Do 512*6-1 more cycles to be one shift away from being done
-    try spin(&emu, 512 * 6 - 1);
+    try spin(emu, 512 * 6 - 1);
 
     // One shift left
     try std.testing.expect(serial.running);
@@ -146,7 +94,7 @@ test "serial transfer" {
     try std.testing.expectEqual(0b01111111, serial.data);
 
     // Last cycle
-    try spin(&emu, 1);
+    try spin(emu, 1);
 
     // We're done
     try std.testing.expect(!serial.running);

@@ -1,10 +1,13 @@
 const std = @import("std");
 const lib = @import("lib");
 
-const FakeMmu = lib.mmu.MockMmu;
+const Container = lib.dependency_container.Container(.{
+    .mmu = .mock,
+    .debugger = .mock,
+});
 const InterruptKind = lib.interrupt_kind.InterruptKind;
-const Interrupt = lib.interrupt.Interrupt;
-const Cpu = lib.cpu.Cpu(FakeMmu, Interrupt);
+const Cpu = Container.Cpu;
+const Mmu = Container.Mmu;
 
 fn runInstructions(cpu: *Cpu, num: usize) !void {
     for (0..num) |_| {
@@ -25,18 +28,21 @@ fn testInterrupt(target: InterruptKind, targetAddr: u16) !void {
         const assembled1 = try lib.assembler.translate(program, std.testing.allocator, 0x100);
         defer std.testing.allocator.free(assembled1);
 
-        @memset(&FakeMmu.backing_array, 0xAA);
-        @memcpy(FakeMmu.backing_array[0x100 .. 0x100 + assembled1.len], assembled1);
+        @memset(&Mmu.backing_array, 0xAA);
+        @memcpy(Mmu.backing_array[0x100 .. 0x100 + assembled1.len], assembled1);
 
         const assembled2 = try lib.assembler.translate(program, std.testing.allocator, targetAddr);
         defer std.testing.allocator.free(assembled2);
 
-        @memcpy(FakeMmu.backing_array[targetAddr .. targetAddr + assembled2.len], assembled2);
+        @memcpy(Mmu.backing_array[targetAddr .. targetAddr + assembled2.len], assembled2);
     }
 
-    var intr = Interrupt.init();
-    var mmu = FakeMmu{};
-    var cpu = Cpu.init(&mmu, &intr, 0xAA);
+    var container = Container.init(.{
+        .breakpoint_instruction = 0xAA,
+    });
+    var cpu = try container.get_cpu();
+    var intr = try container.get_interrupt();
+    var mmu = try container.get_mmu();
 
     cpu.reg.pc = 0x100;
     cpu.reg.sp.setAll(0xFFFE);
@@ -45,19 +51,19 @@ fn testInterrupt(target: InterruptKind, targetAddr: u16) !void {
     // When IME is disabled and IE is disabled, interrupt is not serviced
     cpu.reg.ime = 0;
     intr.ie = ~target.asMask();
-    try runInstructions(&cpu, 100);
+    try runInstructions(cpu, 100);
     try std.testing.expectEqual(0x101, cpu.reg.pc);
 
     // When IME is enabled and IE is disabled, interrupt is not serviced
     cpu.reg.ime = 1;
     intr.ie = ~target.asMask();
-    try runInstructions(&cpu, 100);
+    try runInstructions(cpu, 100);
     try std.testing.expectEqual(0x101, cpu.reg.pc);
 
     // When IME is disabled and IE is enabled, interrupt is not serviced
     cpu.reg.ime = 0;
     intr.ie = target.asMask();
-    try runInstructions(&cpu, 100);
+    try runInstructions(cpu, 100);
     try std.testing.expectEqual(0x101, cpu.reg.pc);
 
     // When IME is enabled and IE is enabled, interrupt is serviced
@@ -89,7 +95,7 @@ fn testInterrupt(target: InterruptKind, targetAddr: u16) !void {
     try std.testing.expectEqual(mmu.read(targetAddr), cpu.reg.ir);
 
     // And we're still here after a while
-    try runInstructions(&cpu, 100);
+    try runInstructions(cpu, 100);
     try std.testing.expectEqual(targetAddr + 1, cpu.reg.pc);
 }
 
@@ -123,14 +129,16 @@ test "halt normally: ime=1 and no interrupt pending" {
     {
         const assembled = try lib.assembler.translate(program, std.testing.allocator, 0);
         defer std.testing.allocator.free(assembled);
-        @memset(&FakeMmu.backing_array, 0xAA);
-        @memcpy(FakeMmu.backing_array[0..assembled.len], assembled);
-        FakeMmu.backing_array[0x40] = 0;
+        @memset(&Mmu.backing_array, 0xAA);
+        @memcpy(Mmu.backing_array[0..assembled.len], assembled);
+        Mmu.backing_array[0x40] = 0;
     }
 
-    var intr = Interrupt.init();
-    var mmu = FakeMmu{};
-    var cpu = Cpu.init(&mmu, &intr, 0xAA);
+    var container = Container.init(.{
+        .breakpoint_instruction = 0xAA,
+    });
+    var cpu = try container.get_cpu();
+    var intr = try container.get_interrupt();
 
     cpu.reg.pc = 0;
     cpu.reg.sp.setAll(0xFFFE);
@@ -171,8 +179,8 @@ test "halt normally: ime=1 and no interrupt pending" {
     try std.testing.expectEqual(0, cpu.reg.ir);
 
     // we stored the correct PC
-    try std.testing.expectEqual(0, FakeMmu.backing_array[0xFFFD]);
-    try std.testing.expectEqual(3, FakeMmu.backing_array[0xFFFC]);
+    try std.testing.expectEqual(0, Mmu.backing_array[0xFFFD]);
+    try std.testing.expectEqual(3, Mmu.backing_array[0xFFFC]);
 }
 
 test "halt normally: ime=0 and no interrupt pending" {
@@ -185,14 +193,16 @@ test "halt normally: ime=0 and no interrupt pending" {
     {
         const assembled = try lib.assembler.translate(program, std.testing.allocator, 0);
         defer std.testing.allocator.free(assembled);
-        @memset(&FakeMmu.backing_array, 0xAA);
-        @memcpy(FakeMmu.backing_array[0..assembled.len], assembled);
-        FakeMmu.backing_array[0x40] = 0;
+        @memset(&Mmu.backing_array, 0xAA);
+        @memcpy(Mmu.backing_array[0..assembled.len], assembled);
+        Mmu.backing_array[0x40] = 0;
     }
 
-    var intr = Interrupt.init();
-    var mmu = FakeMmu{};
-    var cpu = Cpu.init(&mmu, &intr, 0xAA);
+    var container = Container.init(.{
+        .breakpoint_instruction = 0xAA,
+    });
+    var cpu = try container.get_cpu();
+    var intr = try container.get_interrupt();
 
     cpu.reg.pc = 0;
     cpu.reg.sp.setAll(0xFFFE);
@@ -234,14 +244,16 @@ test "halt bug: ei, halt" {
     {
         const assembled = try lib.assembler.translate(program, std.testing.allocator, 0);
         defer std.testing.allocator.free(assembled);
-        @memset(&FakeMmu.backing_array, 0xAA);
-        @memcpy(FakeMmu.backing_array[0..assembled.len], assembled);
-        FakeMmu.backing_array[0x40] = 0xD9; // reti
+        @memset(&Mmu.backing_array, 0xAA);
+        @memcpy(Mmu.backing_array[0..assembled.len], assembled);
+        Mmu.backing_array[0x40] = 0xD9; // reti
     }
 
-    var intr = Interrupt.init();
-    var mmu = FakeMmu{};
-    var cpu = Cpu.init(&mmu, &intr, 0xAA);
+    var container = Container.init(.{
+        .breakpoint_instruction = 0xAA,
+    });
+    var cpu = try container.get_cpu();
+    var intr = try container.get_interrupt();
 
     cpu.reg.pc = 0;
     cpu.reg.sp.setAll(0xFFFE);
@@ -295,13 +307,15 @@ test "halt bug: halt, inc b " {
     {
         const assembled = try lib.assembler.translate(program, std.testing.allocator, 0);
         defer std.testing.allocator.free(assembled);
-        @memset(&FakeMmu.backing_array, 0xAA);
-        @memcpy(FakeMmu.backing_array[0..assembled.len], assembled);
+        @memset(&Mmu.backing_array, 0xAA);
+        @memcpy(Mmu.backing_array[0..assembled.len], assembled);
     }
 
-    var intr = Interrupt.init();
-    var mmu = FakeMmu{};
-    var cpu = Cpu.init(&mmu, &intr, 0xAA);
+    var container = Container.init(.{
+        .breakpoint_instruction = 0xAA,
+    });
+    var cpu = try container.get_cpu();
+    var intr = try container.get_interrupt();
 
     cpu.reg.pc = 0;
     cpu.reg.sp.setAll(0xFFFE);
@@ -334,13 +348,15 @@ test "halt bug: halt, ld B 4" {
     {
         const assembled = try lib.assembler.translate(program, std.testing.allocator, 0);
         defer std.testing.allocator.free(assembled);
-        @memset(&FakeMmu.backing_array, 0xAA);
-        @memcpy(FakeMmu.backing_array[0..assembled.len], assembled);
+        @memset(&Mmu.backing_array, 0xAA);
+        @memcpy(Mmu.backing_array[0..assembled.len], assembled);
     }
 
-    var intr = Interrupt.init();
-    var mmu = FakeMmu{};
-    var cpu = Cpu.init(&mmu, &intr, 0xAA);
+    var container = Container.init(.{
+        .breakpoint_instruction = 0xAA,
+    });
+    var cpu = try container.get_cpu();
+    var intr = try container.get_interrupt();
 
     cpu.reg.pc = 0;
     cpu.reg.sp.setAll(0xFFFE);
@@ -375,13 +391,15 @@ test "halt bug: halt, rst 1" {
     {
         const assembled = try lib.assembler.translate(program, std.testing.allocator, 0);
         defer std.testing.allocator.free(assembled);
-        @memset(&FakeMmu.backing_array, 0xAA);
-        @memcpy(FakeMmu.backing_array[0..assembled.len], assembled);
+        @memset(&Mmu.backing_array, 0xAA);
+        @memcpy(Mmu.backing_array[0..assembled.len], assembled);
     }
 
-    var intr = Interrupt.init();
-    var mmu = FakeMmu{};
-    var cpu = Cpu.init(&mmu, &intr, 0xAA);
+    var container = Container.init(.{
+        .breakpoint_instruction = 0xAA,
+    });
+    var cpu = try container.get_cpu();
+    var intr = try container.get_interrupt();
 
     cpu.reg.pc = 0;
     cpu.reg.sp.setAll(0xFFFE);
@@ -403,8 +421,8 @@ test "halt bug: halt, rst 1" {
     try std.testing.expect(!cpu.flags.breakpoint);
 
     // we would return back to rst
-    try std.testing.expectEqual(0x00, FakeMmu.backing_array[0xFFFD]);
-    try std.testing.expectEqual(0x01, FakeMmu.backing_array[0xFFFC]);
+    try std.testing.expectEqual(0x00, Mmu.backing_array[0xFFFD]);
+    try std.testing.expectEqual(0x01, Mmu.backing_array[0xFFFC]);
 }
 
 test "halt bug: halt, halt" {
@@ -416,13 +434,15 @@ test "halt bug: halt, halt" {
     {
         const assembled = try lib.assembler.translate(program, std.testing.allocator, 0);
         defer std.testing.allocator.free(assembled);
-        @memset(&FakeMmu.backing_array, 0xAA);
-        @memcpy(FakeMmu.backing_array[0..assembled.len], assembled);
+        @memset(&Mmu.backing_array, 0xAA);
+        @memcpy(Mmu.backing_array[0..assembled.len], assembled);
     }
 
-    var intr = Interrupt.init();
-    var mmu = FakeMmu{};
-    var cpu = Cpu.init(&mmu, &intr, 0xAA);
+    var container = Container.init(.{
+        .breakpoint_instruction = 0xAA,
+    });
+    var cpu = try container.get_cpu();
+    var intr = try container.get_interrupt();
 
     cpu.reg.pc = 0;
     cpu.reg.sp.setAll(0xFFFE);

@@ -248,51 +248,50 @@ pub const MockMmu = struct {
     }
 };
 
-/// To emulate any memory region where we don't care beyond being able to retrieve the last write
-pub const MockMemory = struct {
-    last_write: u8 = 0x00,
+/// Uses anytype for self's type, allowing these to be called on other Dummy-like types
+const BaseDummy = struct {
+    // adding these so the Dummy has all the fields we expect of one of these things for testing
+    pub const Vram = Dummy;
+    pub const Oam = Dummy;
+    pub const Forbidden = Dummy;
+    pub const Lcd = Dummy;
+    pub const Rom = Dummy;
+    pub const Ram = Dummy;
 
-    pub fn read(self: anytype, _: u16) struct { MemoryFlag, u8 } {
-        return .{ .{}, self.last_write };
+    lastval: u8 = 0,
+
+    pub fn peek(self: anytype, _: u16) u8 {
+        return self.lastval;
     }
 
-    pub fn write(self: anytype, _: u16, val: u8) MemoryFlag {
-        self.last_write = val;
+    pub fn poke(self: anytype, _: u16, val: u8) void {
+        self.lastval = val;
+    }
+
+    pub fn read(self: anytype, addr: u16) struct { MemoryFlag, u8 } {
+        return .{ .{}, self.peek(addr) };
+    }
+
+    pub fn write(self: anytype, addr: u16, val: u8) MemoryFlag {
+        self.poke(addr, val);
         return .{};
     }
 
-    pub fn peek(self: anytype, addr: u16) u8 {
-        _, const res = read(self, addr);
-        return res;
-    }
-
-    pub fn poke(self: anytype, addr: u16, val: u8) void {
-        _ = write(self, addr, val);
-    }
+    /// for the ones that need to be ticked
+    pub fn tick(_: anytype) void {}
 };
 
-const MockCartridge = struct {
-    last_write: u8 = 0x00,
+pub const Dummy = BaseDummy;
 
-    const Rom = MockMemory;
-    const Ram = MockMemory;
-};
-
-const MockPpu = struct {
-    last_write: u8 = 0x00,
-
-    const Vram = MockMemory;
-    const Oam = MockMemory;
-    const Forbidden = MockMemory;
-};
-
-const MockedMmu = Mmu(MockCartridge, MockPpu, MockMemory);
+const TestContainer = @import("dependency_container.zig").Container(.{
+    .cartridge = .dummy,
+    .ppu = .dummy,
+    .mmio = .dummy,
+});
 
 test "Mmu: write and read to all mapped memory regions" {
-    var cart = MockCartridge{};
-    var ppu = MockPpu{};
-    var mmio = MockMemory{};
-    var mmu = MockedMmu.init(&cart, &ppu, &mmio);
+    var container = TestContainer.init(.{});
+    var mmu = try container.get_mmu();
 
     for (0..0x10000) |addr| {
         const val = 0xAB;

@@ -154,24 +154,15 @@ pub fn Timer(Apu: type, Interrupt: type) type {
 
 const std = @import("std");
 
-const DummyInterrupt = struct {
-    requested: ?InterruptKind = null,
-
-    fn request(self: *DummyInterrupt, kind: InterruptKind) void {
-        self.requested = kind;
-    }
-};
-
-const DummyApu = struct {
-    fn divtick(_: DummyApu) void {}
-};
-
-const MockedTimer = Timer(DummyApu, DummyInterrupt);
+const TestContainer = @import("dependency_container.zig").Container(.{
+    .apu = .mock,
+    .interrupt = .mock,
+});
+const TestTimer = TestContainer.Timer;
 
 test "timer increments TIMA when enabled and selected DIV bit falls" {
-    var apu = DummyApu{};
-    var intr = DummyInterrupt{};
-    var timer = MockedTimer.init(&apu, &intr);
+    var container = TestContainer.init(.{});
+    var timer = try container.get_timer();
     timer.div = 0b00000001111111111; // bit 9 set
     timer.enable = 1; // enable
     timer.clock_select = 0; // select bit 9
@@ -182,11 +173,11 @@ test "timer increments TIMA when enabled and selected DIV bit falls" {
 }
 
 test "timer does not increment TIMA when disabled" {
-    var apu = DummyApu{};
-    var intr = DummyInterrupt{};
-    var timer = MockedTimer.init(&apu, &intr);
+    var container = TestContainer.init(.{});
+    var timer = try container.get_timer();
     timer.div = 0b00000001111111111; // bit 9 set
     timer.enable = 0; // disabled
+    timer.clock_select = 0; // bit 9
 
     const startTima = timer.tima;
     timer.tick();
@@ -194,9 +185,9 @@ test "timer does not increment TIMA when disabled" {
 }
 
 test "TIMA overflows and sets interrupt on next tick" {
-    var apu = DummyApu{};
-    var intr = DummyInterrupt{};
-    var timer = MockedTimer.init(&apu, &intr);
+    var container = TestContainer.init(.{});
+    const intr = try container.get_interrupt();
+    var timer = try container.get_timer();
     timer.enable = 1; // enabled
     timer.clock_select = 0; // bit 9
     timer.tma = 0xAB;
@@ -214,9 +205,9 @@ test "TIMA overflows and sets interrupt on next tick" {
 }
 
 test "writing to TIMA cancels overflow latching" {
-    var apu = DummyApu{};
-    var intr = DummyInterrupt{};
-    var timer = MockedTimer.init(&apu, &intr);
+    var container = TestContainer.init(.{});
+    const intr = try container.get_interrupt();
+    var timer = try container.get_timer();
     timer.enable = 1;
     timer.clock_select = 0;
     timer.tma = 0x55;
@@ -231,9 +222,8 @@ test "writing to TIMA cancels overflow latching" {
 }
 
 test "writing to DIV causes TIMA tick if falling edge is triggered" {
-    var apu = DummyApu{};
-    var intr = DummyInterrupt{};
-    var timer = MockedTimer.init(&apu, &intr);
+    var container = TestContainer.init(.{});
+    var timer = try container.get_timer();
     timer.enable = 1; // enabled
     timer.clock_select = 0; // bit 9
     timer.div = 0b00000001111111111; // bit 9 set
@@ -244,9 +234,8 @@ test "writing to DIV causes TIMA tick if falling edge is triggered" {
 }
 
 test "writing to TAC can cause immediate TIMA increment if falling edge is triggered" {
-    var apu = DummyApu{};
-    var intr = DummyInterrupt{};
-    var timer = MockedTimer.init(&apu, &intr);
+    var container = TestContainer.init(.{});
+    var timer = try container.get_timer();
     timer.div = 0b00000001111111111; // bit 9 set
     timer.enable = 1;
     timer.clock_select = 0;
@@ -257,9 +246,8 @@ test "writing to TAC can cause immediate TIMA increment if falling edge is trigg
 }
 
 test "writing to TMA during pending overflow updates TIMA correctly" {
-    var apu = DummyApu{};
-    var intr = DummyInterrupt{};
-    var timer = MockedTimer.init(&apu, &intr);
+    var container = TestContainer.init(.{});
+    var timer = try container.get_timer();
     timer.div = 0b00000001111111111; // bit 9 set
     timer.enable = 1; // enabled
     timer.clock_select = 0; // bit 9
@@ -272,9 +260,8 @@ test "writing to TMA during pending overflow updates TIMA correctly" {
 }
 
 test "no tick occurs when no falling edge on selected bit" {
-    var apu = DummyApu{};
-    var intr = DummyInterrupt{};
-    var timer = MockedTimer.init(&apu, &intr);
+    var container = TestContainer.init(.{});
+    var timer = try container.get_timer();
     timer.div = 0b0000000000000000;
     timer.enable = 1;
     timer.clock_select = 0;
@@ -285,8 +272,8 @@ test "no tick occurs when no falling edge on selected bit" {
 }
 
 test "correct bit selected for various TAC inputs" {
-    try std.testing.expectEqual(@as(u16, 1 << 9), MockedTimer.getBitMaskForDiv(0b00000000));
-    try std.testing.expectEqual(@as(u16, 1 << 3), MockedTimer.getBitMaskForDiv(0b00000001));
-    try std.testing.expectEqual(@as(u16, 1 << 5), MockedTimer.getBitMaskForDiv(0b00000010));
-    try std.testing.expectEqual(@as(u16, 1 << 7), MockedTimer.getBitMaskForDiv(0b00000011));
+    try std.testing.expectEqual(@as(u16, 1 << 9), TestTimer.getBitMaskForDiv(0b00000000));
+    try std.testing.expectEqual(@as(u16, 1 << 3), TestTimer.getBitMaskForDiv(0b00000001));
+    try std.testing.expectEqual(@as(u16, 1 << 5), TestTimer.getBitMaskForDiv(0b00000010));
+    try std.testing.expectEqual(@as(u16, 1 << 7), TestTimer.getBitMaskForDiv(0b00000011));
 }

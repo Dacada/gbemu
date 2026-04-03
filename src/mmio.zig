@@ -180,39 +180,19 @@ pub fn Mmio(Joypad: type, Serial: type, Timer: type, Interrupt: type, Apu: type,
     };
 }
 
-pub const Dummy = struct {
-    lastval: u8 = 0,
-
-    pub fn peek(self: *Dummy, _: u16) u8 {
-        return self.lastval;
-    }
-
-    pub fn poke(self: *Dummy, _: u16, val: u8) void {
-        self.lastval = val;
-    }
-
-    pub fn read(self: *Dummy, addr: u16) struct { MemoryFlag, u8 } {
-        return .{ .{}, self.peek(addr) };
-    }
-
-    pub fn write(self: *Dummy, addr: u16, val: u8) MemoryFlag {
-        self.poke(addr, val);
-        return .{};
-    }
-};
-
-const MockedMmio = Mmio(Dummy, Dummy, Dummy, Dummy, Dummy, Dummy, Dummy, Dummy);
+const TestContainer = @import("dependency_container.zig").Container(.{
+    .apu = .dummy,
+    .boot_rom = .dummy,
+    .joypad = .dummy,
+    .lcd = .dummy,
+    .ppu = .dummy,
+    .serial = .dummy,
+    .timer = .dummy,
+});
 
 test "Mmio unit tests with Dummy" {
-    var joypad = Dummy{};
-    var serial = Dummy{};
-    var timer = Dummy{};
-    var interrupts = Dummy{};
-    var apu = Dummy{};
-    var lcd = Dummy{};
-    var boot_rom = Dummy{};
-
-    var mmio = MockedMmio.init(&joypad, &serial, &timer, &interrupts, &apu, &lcd, &boot_rom);
+    var container = TestContainer.init(.{});
+    var mmio = try container.get_mmio();
 
     // Test writing and reading joypad
     _ = mmio.write(0x00, 0xAA);

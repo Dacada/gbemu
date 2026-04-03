@@ -74,13 +74,13 @@ pub fn Serial(Scheduler: type, Interrupt: type) type {
         }
 
         fn doShift(selfptr: *anyopaque) void {
-            const self: *This = @alignCast(@ptrCast(selfptr));
+            const self: *This = @ptrCast(@alignCast(selfptr));
             self.data <<= 1;
             self.data |= 1; // only 1s coming in, simulating open bus
         }
 
         fn finishTransfer(selfptr: *anyopaque) void {
-            const self: *This = @alignCast(@ptrCast(selfptr));
+            const self: *This = @ptrCast(@alignCast(selfptr));
             doShift(selfptr);
             self.running = false;
             self.transfer_enable = 0;
@@ -91,20 +91,15 @@ pub fn Serial(Scheduler: type, Interrupt: type) type {
 
 const std = @import("std");
 
-const MockScheduler = struct {
-    fn schedule(_: *MockScheduler, _: struct { context: *anyopaque, callback: *const fn (*anyopaque) void }, _: usize) void {}
-};
-
-const MockInterrupt = struct {
-    fn request(_: *MockInterrupt, _: InterruptKind) void {}
-};
-
-const MockedSerial = Serial(MockScheduler, MockInterrupt);
+const TestContainer = @import("dependency_container.zig").Container(.{
+    .scheduler = .mock,
+    .interrupt = .mock,
+});
+const TestSerial = TestContainer.Serial;
 
 test "Serial register read/write" {
-    var sched = MockScheduler{};
-    var intr = MockInterrupt{};
-    var serial = MockedSerial.init(&sched, &intr);
+    var container = TestContainer.init(.{});
+    var serial = try container.get_serial();
 
     // Test writing to and reading from data register (0)
     serial.poke(0, 0xA5);
@@ -117,9 +112,8 @@ test "Serial register read/write" {
 }
 
 test "Serial transfer initiation conditions" {
-    var sched = MockScheduler{};
-    var intr = MockInterrupt{};
-    var serial = MockedSerial.init(&sched, &intr);
+    var container = TestContainer.init(.{});
+    var serial = try container.get_serial();
 
     // Initially not running
     try std.testing.expect(!serial.running);
@@ -134,22 +128,22 @@ test "Serial transfer initiation conditions" {
 }
 
 test "Serial bit shift behavior" {
-    var sched = MockScheduler{};
-    var intr = MockInterrupt{};
-    var serial = MockedSerial.init(&sched, &intr);
+    var container = TestContainer.init(.{});
+    var serial = try container.get_serial();
+
     serial.data = 0b1010_0000;
 
-    MockedSerial.doShift(&serial);
+    TestSerial.doShift(serial);
     try std.testing.expectEqual(serial.data, 0b0100_0001); // Shift left, bring in '1'
 
-    MockedSerial.doShift(&serial);
+    TestSerial.doShift(serial);
     try std.testing.expectEqual(serial.data, 0b1000_0011);
 }
 
 test "Serial transfer completion" {
-    var sched = MockScheduler{};
-    var intr = MockInterrupt{};
-    var serial = MockedSerial.init(&sched, &intr);
+    var container = TestContainer.init(.{});
+    var serial = try container.get_serial();
+
     serial.data = 0x00;
     serial.transfer_enable = 1;
     serial.clock_select = 1;
@@ -159,10 +153,10 @@ test "Serial transfer completion" {
 
     // Simulate scheduled shifts
     for (1..7) |_| {
-        MockedSerial.doShift(&serial);
+        TestSerial.doShift(serial);
     }
 
-    MockedSerial.finishTransfer(&serial);
+    TestSerial.finishTransfer(serial);
     try std.testing.expect(!serial.running);
     try std.testing.expectEqual(serial.transfer_enable, 0);
 }
