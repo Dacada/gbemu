@@ -5,6 +5,7 @@ import re
 import sys
 
 TEST_START_RE = re.compile(r'\btest\b[^{]*{', re.MULTILINE)
+TOOLING_FILENAMES = ["build.zig", "assembler.zig", "tracker.zig"]
 
 def strip_test_blocks(text: str) -> str:
     """
@@ -72,7 +73,7 @@ def count_lines(s: str) -> int:
 def should_skip_path_component(name: str) -> bool:
     return name.startswith('.')  # hidden on Linux
 
-def file_should_be_included(path: str, include_tests: bool) -> bool:
+def file_should_be_included(path: str, include_tests: bool, include_tooling: bool) -> bool:
     base = os.path.basename(path)
     if should_skip_path_component(base):
         return False
@@ -80,9 +81,11 @@ def file_should_be_included(path: str, include_tests: bool) -> bool:
         return False
     if not include_tests and ('test' in base):
         return False
+    if not include_tooling and base in TOOLING_FILENAMES:
+        return False
     return True
 
-def main() -> None:
+def main() -> int:
     parser = argparse.ArgumentParser(
         description="Count lines in .zig files recursively (similar to wc)."
     )
@@ -90,6 +93,11 @@ def main() -> None:
         "--include-tests",
         action="store_true",
         help="Include test files and test blocks (default: exclude).",
+    )
+    parser.add_argument(
+        "--include-tooling",
+        action="store_true",
+        help="Include tooling that isn't directly used for emulation (default: exclude).",
     )
     args = parser.parse_args()
 
@@ -110,7 +118,7 @@ def main() -> None:
                 continue
 
             fpath = os.path.join(dirpath, fname)
-            if not file_should_be_included(fpath, args.include_tests):
+            if not file_should_be_included(fpath, args.include_tests, args.include_tooling):
                 continue
 
             try:
@@ -132,7 +140,9 @@ def main() -> None:
             any_output = True
 
     # Print total like wc
-    print(f"{total}\ttotal" if any_output else f"0\ttotal")
+    print(f"{total}\ttotal" if any_output else "0\ttotal")
+
+    return 0
 
 if __name__ == "__main__":
     sys.exit(main())
