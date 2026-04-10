@@ -865,12 +865,12 @@ pub fn Cpu(Mmu: type, Interrupt: type) type {
         // HELPERS //
 
         fn inc16Bit(self: *This, reg: *WideRegister) void {
-            self.mmu.incDec16Bit();
+            self.mmu.incDec16Bit(reg.all());
             reg.inc();
         }
 
         fn dec16Bit(self: *This, reg: *WideRegister) void {
-            self.mmu.incDec16Bit();
+            self.mmu.incDec16Bit(reg.all());
             reg.dec();
         }
 

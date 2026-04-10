@@ -223,8 +223,15 @@ pub fn Mmu(Cartridge: type, Ppu: type, Mmio: type) type {
             }
         }
 
-        pub inline fn incDec16Bit(self: *This) void {
-            self.ppu.checkForOamBug();
+        pub inline fn incDec16Bit(self: *This, prev: u16) void {
+            if (prev < 0xFE00) {
+                return;
+            }
+            if (prev > 0xFEFF) {
+                return;
+            }
+            const addr = prev - 0xFE00;
+            Ppu.Oam.fake_write(self.ppu, addr);
         }
     };
 }
@@ -251,7 +258,7 @@ pub const MockMmu = struct {
         return self.poke(addr, val);
     }
 
-    pub inline fn incDec16Bit(_: *MockMmu) void {}
+    pub inline fn incDec16Bit(_: *MockMmu, _: u16) void {}
 };
 
 /// Uses anytype for self's type, allowing these to be called on other Dummy-like types

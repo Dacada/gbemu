@@ -31,6 +31,7 @@ pub fn Ppu(VideoBackend: type) type {
             pub fn peek(_: *This, addr: u16) u8 {
                 return static_vram[addr];
             }
+
             pub fn poke(_: *This, addr: u16, val: u8) void {
                 static_vram[addr] = val;
             }
@@ -52,9 +53,13 @@ pub fn Ppu(VideoBackend: type) type {
             pub fn peek(_: *This, addr: u16) u8 {
                 return static_oam[addr];
             }
+
             pub fn poke(_: *This, addr: u16, val: u8) void {
                 static_oam[addr] = val;
             }
+
+            /// For OAM corruption triggered by 16bit register increment/decrement
+            pub fn fake_write(_: *This, _: u16) void {}
         };
 
         pub const Forbidden = struct {
@@ -69,6 +74,7 @@ pub fn Ppu(VideoBackend: type) type {
             pub fn peek(_: *This, _: u16) u8 {
                 return 0xFF;
             }
+
             pub fn poke(_: *This, _: u16, _: u8) void {}
         };
 
@@ -91,7 +97,5 @@ pub fn Ppu(VideoBackend: type) type {
         }
 
         pub fn poke(_: *This, _: u16, _: u8) void {}
-
-        pub fn checkForOamBug(_: *This) void {}
     };
 }
