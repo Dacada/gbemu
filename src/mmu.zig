@@ -230,8 +230,7 @@ pub fn Mmu(Cartridge: type, Ppu: type, Mmio: type) type {
             if (prev > 0xFEFF) {
                 return;
             }
-            const addr = prev - 0xFE00;
-            Ppu.Oam.fake_write(self.ppu, addr);
+            Ppu.Oam.fake_write(self.ppu);
         }
     };
 }
