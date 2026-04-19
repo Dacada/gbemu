@@ -92,31 +92,36 @@ pub fn Ppu(VideoBackend: type) type {
                 return false;
             }
 
-            fn get_row(addr: u5) Row {
-                const start: u16 = addr;
+            fn get_row(ppu: *This, addr: u5) Row {
+                var start: u16 = addr;
                 start *= 8;
 
                 var ret: Row = undefined;
-                for (0..4) |i| {
-                    ret[i] = Oam.peek(start + i * 2 + 1);
+                inline for (0..4) |i| {
+                    var a: u16 = start;
+                    a += i * 2;
+                    ret[i] = Oam.peek(ppu, a + 1);
                     ret[i] <<= 8;
-                    ret[i] |= Oam.peek(start + i * 2);
+                    ret[i] |= Oam.peek(ppu, a);
                 }
                 return ret;
             }
 
-            fn set_row(addr: u5, row: Row) void {
-                const start: u16 = addr;
+            fn set_row(ppu: *This, addr: u5, row: Row) void {
+                var start: u16 = addr;
                 start *= 8;
 
-                for (0..4) |i| {
+                inline for (0..4) |i| {
+                    var a: u16 = start;
+                    a += i * 2;
+
                     const val = row[i];
-                    Oam.poke(start + i * 2 + 1, (val & 0xFF00) >> 8);
-                    Oam.poke(start + i * 2, val & 0xFF);
+                    Oam.poke(ppu, a + 1, @intCast((val & 0xFF00) >> 8));
+                    Oam.poke(ppu, a, @intCast(val & 0xFF));
                 }
             }
 
-            fn execute_regular_corruption(addr: u5, comptime which: enum { read, write }) void {
+            fn execute_regular_corruption(ppu: *This, addr: u5, comptime which: enum { read, write }) void {
                 // https://gbdev.io/pandocs/OAM_Corruption_Bug.html#write-corruption
                 // https://gbdev.io/pandocs/OAM_Corruption_Bug.html#read-corruption
 
@@ -125,43 +130,43 @@ pub fn Ppu(VideoBackend: type) type {
                     return;
                 }
 
-                const a, _, _, _ = Oam.get_row(addr);
-                const b, const r1, const c, const r3 = Oam.get_row(addr - 1);
+                const a, _, _, _ = Oam.get_row(ppu, addr);
+                const b, const r1, const c, const r3 = Oam.get_row(ppu, addr - 1);
 
                 const new = switch (which) {
                     .write => ((a ^ c) & (b ^ c)) ^ c,
                     .read => b | (a & c),
                 };
 
-                Oam.set_row(addr, .{ new, r1, c, r3 });
+                Oam.set_row(ppu, addr, .{ new, r1, c, r3 });
             }
 
-            fn execute_write_corruption(addr: u5) void {
-                Oam.execute_regular_corruption(addr, .write);
+            fn execute_write_corruption(ppu: *This, addr: u5) void {
+                Oam.execute_regular_corruption(ppu, addr, .write);
             }
 
-            fn execute_read_corruption(addr: u5) void {
-                Oam.execute_regular_corruption(addr, .read);
+            fn execute_read_corruption(ppu: *This, addr: u5) void {
+                Oam.execute_regular_corruption(ppu, addr, .read);
             }
 
-            fn execute_read_write_corruption(addr: u5) void {
+            fn execute_read_write_corruption(ppu: *This, addr: u5) void {
                 // https://gbdev.io/pandocs/OAM_Corruption_Bug.html#read-during-increasedecrease
 
                 if (addr > 3 and addr < 19) {
-                    const a, _, _, _ = Oam.get_row(addr - 2);
-                    const b, const r1, const d, const r3 = Oam.get_row(addr - 1);
-                    const c, _, _, _ = Oam.get_row(addr);
+                    const a, _, _, _ = Oam.get_row(ppu, addr - 2);
+                    const b, const r1, const d, const r3 = Oam.get_row(ppu, addr - 1);
+                    const c, _, _, _ = Oam.get_row(ppu, addr);
 
                     const new = (b & (a | c | d)) | (a & c & d);
 
                     const row: Row = .{ new, r1, d, r3 };
-                    Oam.set_row(addr - 1, row);
+                    Oam.set_row(ppu, addr - 1, row);
 
-                    Oam.set_row(addr, row);
-                    Oam.set_row(addr - 2, row);
+                    Oam.set_row(ppu, addr, row);
+                    Oam.set_row(ppu, addr - 2, row);
                 }
 
-                Oam.execute_read_corruption(addr);
+                Oam.execute_read_corruption(ppu, addr);
             }
         };
 
@@ -215,11 +220,11 @@ pub fn Ppu(VideoBackend: type) type {
 
         fn apply_oam_corruption(self: *This) void {
             if (self.corrupting_oam_read and self.corrupting_oam_write) {
-                Oam.execute_read_write_corruption(self.current_oam_row);
+                Oam.execute_read_write_corruption(self, self.current_oam_row);
             } else if (self.corrupting_oam_read) {
-                Oam.execute_read_corruption(self.current_oam_row);
+                Oam.execute_read_corruption(self, self.current_oam_row);
             } else if (self.corrupting_oam_write) {
-                Oam.execute_write_corruption(self.current_oam_row);
+                Oam.execute_write_corruption(self, self.current_oam_row);
             }
             self.corrupting_oam_read = false;
             self.corrupting_oam_write = false;

@@ -45,6 +45,7 @@ pub const Scheduler = struct {
 
 pub const MockScheduler = struct {
     pub fn schedule(_: *MockScheduler, _: struct { context: *anyopaque, callback: *const fn (*anyopaque) void }, _: usize) void {}
+    pub fn tick(_: *MockScheduler) void {}
 };
 
 const LogContext = struct {

@@ -30,6 +30,7 @@ pub const ContainerConfig = struct {
     } = .real,
     cartridge: enum {
         real,
+        mock,
         dummy,
     } = .real,
     joypad: enum {
@@ -92,7 +93,8 @@ pub fn Container(comptime cfg: ContainerConfig) type {
     const timer = @import("timer.zig");
     const ppu = @import("ppu.zig");
     const debugger = @import("debugger.zig");
-    const Dummy = mmu.Dummy;
+    const Dummy = mmu.Dummy(false);
+    const DummyWithTickArgument = mmu.Dummy(true);
 
     const c_AudioBackend = switch (cfg.audio_backend) {
         .mock_wav => backend.WavAudioBackend,
@@ -110,6 +112,7 @@ pub fn Container(comptime cfg: ContainerConfig) type {
 
     const c_Cartridge = switch (cfg.cartridge) {
         .dummy => Dummy,
+        .mock => cartridge.MockCartridge,
         .real => cartridge.Cartridge,
     };
 
@@ -146,7 +149,7 @@ pub fn Container(comptime cfg: ContainerConfig) type {
 
     const c_Ppu = switch (cfg.ppu) {
         .real => ppu.Ppu(c_VideoBackend),
-        .dummy => Dummy,
+        .dummy => DummyWithTickArgument,
     };
 
     const c_Mmio = switch (cfg.mmio) {
@@ -260,6 +263,7 @@ pub fn Container(comptime cfg: ContainerConfig) type {
                     },
                     .by_file => |f| Cartridge.fromFile(f.file),
                 },
+                .mock => Cartridge{},
                 .dummy => Cartridge{},
             };
         }
@@ -310,7 +314,7 @@ pub fn Container(comptime cfg: ContainerConfig) type {
         fn make_ppu(self: *This) !Ppu {
             return switch (cfg.ppu) {
                 .real => Ppu.init(try self.get_video_backend()),
-                .dummy => Dummy{},
+                .dummy => DummyWithTickArgument{},
             };
         }
 

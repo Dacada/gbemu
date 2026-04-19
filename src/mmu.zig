@@ -260,39 +260,48 @@ pub const MockMmu = struct {
     pub inline fn incDec16Bit(_: *MockMmu, _: u16) void {}
 };
 
-/// Uses anytype for self's type, allowing these to be called on other Dummy-like types
-const BaseDummy = struct {
-    // adding these so the Dummy has all the fields we expect of one of these things for testing
-    pub const Vram = Dummy;
-    pub const Oam = Dummy;
-    pub const Forbidden = Dummy;
-    pub const Rom = Dummy;
-    pub const Ram = Dummy;
+pub fn Dummy(comptime tick_receives_arg: bool) type {
+    const WithArg = struct {
+        pub fn tick(_: anytype, _: u2) void {}
+    };
 
-    lastval: u8 = 0,
+    const WithoutArg = struct {
+        pub fn tick(_: anytype) void {}
+    };
 
-    pub fn peek(self: anytype, _: u16) u8 {
-        return self.lastval;
-    }
+    return struct {
+        const This = @This();
 
-    pub fn poke(self: anytype, _: u16, val: u8) void {
-        self.lastval = val;
-    }
+        // adding these so the Dummy has all the fields we expect of one of these things for testing
+        pub const Vram = This;
+        pub const Oam = This;
+        pub const Forbidden = This;
+        pub const Rom = This;
+        pub const Ram = This;
 
-    pub fn read(self: anytype, addr: u16) struct { MemoryFlag, u8 } {
-        return .{ .{}, self.peek(addr) };
-    }
+        lastval: u8 = 0,
 
-    pub fn write(self: anytype, addr: u16, val: u8) MemoryFlag {
-        self.poke(addr, val);
-        return .{};
-    }
+        pub fn peek(self: anytype, _: u16) u8 {
+            return self.lastval;
+        }
 
-    /// for the ones that need to be ticked
-    pub fn tick(_: anytype) void {}
-};
+        pub fn poke(self: anytype, _: u16, val: u8) void {
+            self.lastval = val;
+        }
 
-pub const Dummy = BaseDummy;
+        pub fn read(self: anytype, addr: u16) struct { MemoryFlag, u8 } {
+            return .{ .{}, self.peek(addr) };
+        }
+
+        pub fn write(self: anytype, addr: u16, val: u8) MemoryFlag {
+            self.poke(addr, val);
+            return .{};
+        }
+
+        /// for the ones that need to be ticked
+        pub const tick = if (tick_receives_arg) WithArg.tick else WithoutArg.tick;
+    };
+}
 
 const TestContainer = @import("dependency_container.zig").Container(.{
     .cartridge = .dummy,

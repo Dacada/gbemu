@@ -4,6 +4,7 @@ pub const serial = @import("test_serial.zig");
 pub const interrupt = @import("test_interrupt.zig");
 pub const channels = @import("test_apu_channels.zig");
 pub const tracks = @import("test_apu_tracks.zig");
+pub const oam_corruption = @import("test_oam_corruption.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());

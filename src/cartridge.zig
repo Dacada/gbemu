@@ -141,6 +141,50 @@ pub const Cartridge = struct {
     }
 };
 
+var mock_static_memory = [_]u8{0xAA} ** 0xA000;
+
+pub const MockCartridge = struct {
+    pub const Rom = struct {
+        pub fn read(_: *MockCartridge, addr: u16) struct { MemoryFlag, u8 } {
+            const val = mock_static_memory[addr];
+            return .{ .{}, val };
+        }
+
+        pub fn write(_: *MockCartridge, addr: u16, val: u8) MemoryFlag {
+            mock_static_memory[addr] = val;
+            return .{};
+        }
+
+        pub fn peek(_: *Cartridge, addr: u16) u8 {
+            return mock_static_memory[addr];
+        }
+
+        pub fn poke(_: *Cartridge, addr: u16, val: u8) void {
+            mock_static_memory[addr] = val;
+        }
+    };
+
+    pub const Ram = struct {
+        pub fn read(_: *MockCartridge, addr: u16) struct { MemoryFlag, u8 } {
+            const val = mock_static_memory[addr + 0x8000];
+            return .{ .{}, val };
+        }
+
+        pub fn write(_: *MockCartridge, addr: u16, val: u8) MemoryFlag {
+            mock_static_memory[addr + 0x8000] = val;
+            return .{};
+        }
+
+        pub fn peek(_: *Cartridge, addr: u16) u8 {
+            return mock_static_memory[addr + 0x8000];
+        }
+
+        pub fn poke(_: *Cartridge, addr: u16, val: u8) void {
+            mock_static_memory[addr + 0x8000] = val;
+        }
+    };
+};
+
 fn writeBuffAndReturnFileForReading(buff: []const u8) !struct { std.fs.File, std.testing.TmpDir } {
     var tmp_dir = std.testing.tmpDir(.{});
     const file = try tmp_dir.dir.createFile("test.gb", .{});

@@ -27,7 +27,7 @@ pub fn Emulator(Cpu: type, Apu: type, Ppu: type, Timer: type, Scheduler: type, D
 
         /// Emulate a T-cycle
         pub fn tick(self: *This) !bool {
-            // Step the PPU first thing on the T-cycle. It needs to know which T-cycle it's on so it can accurately trigger the effects of the OAM bug at the end of the current M-cycle
+            // Step the PPU first thing on the T-cycle. It needs to know which T-cycle it's on so it can accurately trigger the effects of the OAM bug at the start of the next M-cycle
             self.ppu.tick(self.divider);
 
             if (self.divider == 0) {
