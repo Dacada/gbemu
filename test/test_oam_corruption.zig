@@ -18,9 +18,11 @@ const Container = lib.dependency_container.Container(.{
 });
 const Ppu = Container.Ppu;
 const Cpu = Container.Cpu;
+const Mmu = Container.Mmu;
+const Emulator = Container.Emulator;
 
 // LLM generated from documentation as a blackboxish kind of test
-fn testCorruptOam(arr: []u8, row: u8, comptime _: enum { write }) void {
+fn testCorruptOam(arr: []u8, row: u8, comptime operation: enum { write, read }) void {
     const row_size = 8; // 4 words * 2 bytes
     const row_index: usize = row;
 
@@ -48,7 +50,10 @@ fn testCorruptOam(arr: []u8, row: u8, comptime _: enum { write }) void {
     const c: u16 = (@as(u16, c_hi) << 8) | c_lo;
 
     // --- Apply corruption formula to first word ---
-    const result: u16 = ((a ^ c) & (b ^ c)) ^ c;
+    const result: u16 = switch (operation) {
+        .write => ((a ^ c) & (b ^ c)) ^ c,
+        .read => b | (a & c),
+    };
 
     arr[cur_base + 0] = @intCast(result & 0xFF);
     arr[cur_base + 1] = @intCast((result >> 8) & 0xFF);
@@ -64,49 +69,34 @@ fn testCorruptOam(arr: []u8, row: u8, comptime _: enum { write }) void {
     }
 }
 
-test "oam corruption normal write" {
-    var container = Container.init(.{
-        .breakpoint_instruction = 0x40,
-    });
-
+fn setup_for_test(cpu: *Cpu, ppu: *Ppu, mmu: *Mmu, code: []const u8, oam_row: u5, oam_buffer: []u8) !void {
     // write a random pattern for oam
-    var expected_oam: [0xA0]u8 = undefined;
     var prng = std.Random.DefaultPrng.init(0x4242);
     var rand = prng.random();
-    rand.bytes(&expected_oam);
+    rand.bytes(oam_buffer);
 
     // copy it into oam
-    const ppu = try container.get_ppu();
     for (0..0xA0) |addr| {
-        Ppu.Oam.poke(ppu, @intCast(addr), expected_oam[addr]);
+        Ppu.Oam.poke(ppu, @intCast(addr), oam_buffer[addr]);
     }
 
     // set the ppu as if it was in mode 2 reading from oam
     ppu.mode = .Mode2;
-    ppu.current_oam_row = 8;
+    ppu.current_oam_row = oam_row;
 
-    // alter the expected oam so it holds our expected pattern
-    testCorruptOam(&expected_oam, ppu.current_oam_row, .write);
-
-    // write a program that executes a write into OAM
-    const code =
-        \\ LD A, 42
-        \\ LD (0xFE50), A
-        \\ LD B, B  ;; triggers breakpoint
-    ;
+    // assemble and write the program to memory
     const program = try lib.assembler.translate(code, std.testing.allocator, 0x100);
     defer std.testing.allocator.free(program);
-    const mmu = try container.get_mmu();
     for (program, 0..) |b, i| {
         mmu.write(@intCast(i + 0x100), b);
     }
 
     // initialize the cpu
-    const cpu = try container.get_cpu();
     lib.emulator.initializeCpu(Cpu, cpu, 0);
+}
 
+fn run_until_breakpoint(cpu: *Cpu, ppu: *Ppu, emulator: *Emulator, dumped_oam: []u8) !void {
     // get the emulator and run it until we reach a breakpoint
-    const emulator = try container.get_emulator();
     var count: usize = 0;
     while (!cpu.getFlags().breakpoint) {
         try std.testing.expect(!try emulator.tick());
@@ -117,11 +107,59 @@ test "oam corruption normal write" {
     }
 
     // dump oam
-    var dumped_oam: [0xA0]u8 = undefined;
     for (0..0xA0) |addr| {
         dumped_oam[addr] = Ppu.Oam.peek(ppu, @intCast(addr));
     }
+}
 
-    // compare dumped oam with expected oam
-    try std.testing.expectEqualSlices(u8, &expected_oam, &dumped_oam);
+fn normalMemoryAccess(which: enum { read, write }) !void {
+    // a program that executes a read/write into OAM
+    const code = switch (which) {
+        .write =>
+        \\ LD A, 42
+        \\ LD (0xFE50), A
+        \\ LD B, B  ;; breakpoint
+        ,
+        .read =>
+        \\ LD A, (0xFE50)
+        \\ LD B, B  ;; breakpoint
+        ,
+    };
+
+    var expected_oam: [0xA0]u8 = undefined;
+    var result_oam: [0xA0]u8 = undefined;
+
+    for (0..20) |oam_row_iter| {
+        var container = Container.init(.{
+            .breakpoint_instruction = 0x40,
+        });
+
+        const cpu = try container.get_cpu();
+        const ppu = try container.get_ppu();
+        const mmu = try container.get_mmu();
+        const emulator = try container.get_emulator();
+
+        const oam_row: u5 = @intCast(oam_row_iter);
+
+        try setup_for_test(cpu, ppu, mmu, code, oam_row, &expected_oam);
+
+        // alter the expected oam so it holds our expected pattern
+        switch (which) {
+            .read => testCorruptOam(&expected_oam, oam_row, .read),
+            .write => testCorruptOam(&expected_oam, oam_row, .write),
+        }
+
+        try run_until_breakpoint(cpu, ppu, emulator, &result_oam);
+
+        // compare dumped oam with expected oam
+        try std.testing.expectEqualSlices(u8, &expected_oam, &result_oam);
+    }
+}
+
+test "normal write" {
+    try normalMemoryAccess(.write);
+}
+
+test "normal read" {
+    try normalMemoryAccess(.read);
 }
