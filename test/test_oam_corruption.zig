@@ -22,21 +22,78 @@ const Mmu = Container.Mmu;
 const Emulator = Container.Emulator;
 
 // LLM generated from documentation as a blackboxish kind of test
-fn testCorruptOam(arr: []u8, row: u8, comptime operation: enum { write, read }) void {
+fn testCorruptOam(
+    arr: []u8,
+    row: u5,
+    comptime operation: enum {
+        write,
+        read,
+        read_during_inc_dec,
+    },
+) void {
     const row_size = 8; // 4 words * 2 bytes
     const row_index: usize = row;
 
-    // First row (row 0) is not corrupted
+    // First row (row 0) is not corrupted by normal read/write corruption.
     if (row_index == 0) return;
+
+    const row_count = arr.len / row_size;
 
     const cur_base = row_index * row_size;
     const prev_base = (row_index - 1) * row_size;
 
-    // Safety (only for tests, but still useful)
+    // Safety
     if (cur_base + row_size > arr.len) return;
     if (prev_base + row_size > arr.len) return;
 
-    // --- Load words (little endian) ---
+    if (operation == .read_during_inc_dec) {
+        // Extra corruption does not happen for the first four rows or the last row.
+        if (row_index >= 4 and row_index + 1 < row_count) {
+            const two_rows_before_base = (row_index - 2) * row_size;
+
+            if (two_rows_before_base + row_size > arr.len) return;
+
+            // a = first word two rows before current row
+            const a_lo = arr[two_rows_before_base + 0];
+            const a_hi = arr[two_rows_before_base + 1];
+            const a: u16 = (@as(u16, a_hi) << 8) | a_lo;
+
+            // b = first word in previous row, the word being corrupted
+            const b_lo = arr[prev_base + 0];
+            const b_hi = arr[prev_base + 1];
+            const b: u16 = (@as(u16, b_hi) << 8) | b_lo;
+
+            // c = first word in current row
+            const c_lo = arr[cur_base + 0];
+            const c_hi = arr[cur_base + 1];
+            const c: u16 = (@as(u16, c_hi) << 8) | c_lo;
+
+            // d = third word in previous row
+            const d_lo = arr[prev_base + 4];
+            const d_hi = arr[prev_base + 5];
+            const d: u16 = (@as(u16, d_hi) << 8) | d_lo;
+
+            const corrupted_prev_first_word: u16 =
+                (b & (a | c | d)) | (a & c & d);
+
+            arr[prev_base + 0] = @intCast(corrupted_prev_first_word & 0xFF);
+            arr[prev_base + 1] = @intCast((corrupted_prev_first_word >> 8) & 0xFF);
+
+            // Copy the corrupted previous row to:
+            // - the current row
+            // - two rows before the current row
+            for (0..row_size) |i| {
+                const value = arr[prev_base + i];
+                arr[cur_base + i] = value;
+                arr[two_rows_before_base + i] = value;
+            }
+        }
+
+        // Regardless of whether the extra corruption happened,
+        // a normal read corruption is then applied.
+    }
+
+    // --- Load words for normal write/read corruption ---
     const a_lo = arr[cur_base + 0];
     const a_hi = arr[cur_base + 1];
     const a: u16 = (@as(u16, a_hi) << 8) | a_lo;
@@ -52,7 +109,9 @@ fn testCorruptOam(arr: []u8, row: u8, comptime operation: enum { write, read }) 
     // --- Apply corruption formula to first word ---
     const result: u16 = switch (operation) {
         .write => ((a ^ c) & (b ^ c)) ^ c,
-        .read => b | (a & c),
+        .read,
+        .read_during_inc_dec,
+        => b | (a & c),
     };
 
     arr[cur_base + 0] = @intCast(result & 0xFF);
