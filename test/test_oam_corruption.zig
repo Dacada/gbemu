@@ -171,20 +171,7 @@ fn run_until_breakpoint(cpu: *Cpu, ppu: *Ppu, emulator: *Emulator, dumped_oam: [
     }
 }
 
-fn normalMemoryAccess(which: enum { read, write }) !void {
-    // a program that executes a read/write into OAM
-    const code = switch (which) {
-        .write =>
-        \\ LD A, 42
-        \\ LD (0xFE50), A
-        \\ LD B, B  ;; breakpoint
-        ,
-        .read =>
-        \\ LD A, (0xFE50)
-        \\ LD B, B  ;; breakpoint
-        ,
-    };
-
+fn runOamCorruptionTestCases(code: []const u8, corruptOam: *const fn ([]u8, u5) void) !void {
     var expected_oam: [0xA0]u8 = undefined;
     var result_oam: [0xA0]u8 = undefined;
 
@@ -203,10 +190,7 @@ fn normalMemoryAccess(which: enum { read, write }) !void {
         try setup_for_test(cpu, ppu, mmu, code, oam_row, &expected_oam);
 
         // alter the expected oam so it holds our expected pattern
-        switch (which) {
-            .read => testCorruptOam(&expected_oam, oam_row, .read),
-            .write => testCorruptOam(&expected_oam, oam_row, .write),
-        }
+        corruptOam(&expected_oam, oam_row);
 
         try run_until_breakpoint(cpu, ppu, emulator, &result_oam);
 
@@ -215,10 +199,45 @@ fn normalMemoryAccess(which: enum { read, write }) !void {
     }
 }
 
+fn testCorruptOamWrite(expected_oam: []u8, row: u5) void {
+    testCorruptOam(expected_oam, row, .write);
+}
+
+fn testCorruptOamRead(expected_oam: []u8, row: u5) void {
+    testCorruptOam(expected_oam, row, .read);
+}
+
+fn testCorruptOamDoNothing(_: []u8, _: u5) void {}
+
 test "normal write" {
-    try normalMemoryAccess(.write);
+    const code =
+        \\ LD A, 42
+        \\ LD (0xFE50), A
+        \\ LD B, B  ;; breakpoint
+    ;
+
+    try runOamCorruptionTestCases(code, testCorruptOamWrite);
 }
 
 test "normal read" {
-    try normalMemoryAccess(.read);
+    const code =
+        \\ LD A, (0xFE50)
+        \\ LD B, B  ;; breakpoint
+    ;
+
+    try runOamCorruptionTestCases(code, testCorruptOamRead);
+}
+
+test "inc dec tests" {
+    inline for (.{ "INC", "DEC" }) |op| {
+        inline for (.{ "BC", "DE", "HL", "SP" }) |reg| {
+            const code = std.fmt.comptimePrint(
+                \\ {s} {s}
+                \\ LD B, B
+            , .{ op, reg });
+
+            std.debug.print("{s} {s}\n", .{ op, reg });
+            try runOamCorruptionTestCases(code, testCorruptOamWrite);
+        }
+    }
 }
