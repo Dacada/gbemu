@@ -54,7 +54,7 @@ pub const WavAudioBackend = struct {
         }) catch @panic("error during submit");
     }
 
-    pub fn writeToDisk(self: *WavAudioBackend) !void {
+    pub fn writeToDisk(self: *WavAudioBackend, io: std.Io) !void {
         const sampling_rate: u32 = @intFromFloat(SamplingRate);
         const num_channels: u16 = 2;
         const bits_per_sample: u16 = 16;
@@ -114,8 +114,8 @@ pub const WavAudioBackend = struct {
         const size: u32 = @intCast(content.items.len - 8);
         std.mem.writeInt(u32, content.items[4..8], size, .little);
 
-        const file = try std.fs.createFileAbsolute(self.filename, .{});
-        try file.writeAll(content.items);
-        file.close();
+        const file = try std.Io.Dir.createFileAbsolute(io, self.filename, .{});
+        try file.writePositionalAll(io, content.items, 0);
+        file.close(io);
     }
 };

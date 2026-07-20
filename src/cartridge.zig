@@ -71,37 +71,39 @@ pub const Cartridge = struct {
             static_ram[addr] = val;
         }
     };
-
-    pub fn fromFile(file: std.fs.File) !Cartridge {
+    pub fn fromBuffer(rom: []const u8) !Cartridge {
         const offset = 0x0100;
-        const header = static_rom[offset..(offset + 0x50)];
-        try file.seekTo(offset);
-        const read_size = try file.readAll(header);
-        if (read_size < header.len) {
-            logger.err("could not find a header in the rom: could only read 0x{X} bytes at offset 0x{X}", .{ read_size, offset });
+
+        if (rom.len < offset + 0x50) {
+            logger.err(
+                "could not find a header in the rom: rom is only 0x{X} bytes",
+                .{rom.len},
+            );
             return CartridgeHeaderParseError.NoHeader;
         }
 
+        const header = rom[offset..][0..0x50];
+
         if (!std.mem.eql(u8, &logo, header[0x0004..0x0034])) {
-            logger.warn("could not find expected logo in cartridege header", .{});
+            logger.warn("could not find expected logo in cartridge header", .{});
         }
 
         const title = try Cartridge.getTitleFromHeader(header);
 
         const rom_type = header[0x47];
-        if (rom_type != 0x00) { // TODO: support other types
+        if (rom_type != 0x00) {
             logger.err("unsupported cartridge type: 0x{X}", .{rom_type});
             return CartridgeHeaderParseError.UnsupportedCartridgeType;
         }
 
         const rom_size_code = header[0x48];
-        if (rom_size_code != 0x00) { // TODO: support other sizes
+        if (rom_size_code != 0x00) {
             logger.err("unsupported rom size code: 0x{X}", .{rom_size_code});
             return CartridgeHeaderParseError.UnsupportedCartridgeType;
         }
 
         const ram_size_code = header[0x49];
-        if (ram_size_code != 0x00) { // TODO: support other sizes
+        if (ram_size_code != 0x00) {
             logger.err("unsupported ram size code: 0x{X}", .{ram_size_code});
             return CartridgeHeaderParseError.UnsupportedCartridgeType;
         }
@@ -110,17 +112,23 @@ pub const Cartridge = struct {
         for (0x34..0x4D) |idx| {
             checksum = checksum -% header[idx] -% 1;
         }
+
         if (checksum != header[0x4D]) {
-            logger.warn("header checksum does not match (0x{X} vs 0x{X})", .{ checksum, header[0x4D] });
+            logger.warn(
+                "header checksum does not match (0x{X} vs 0x{X})",
+                .{ checksum, header[0x4D] },
+            );
         }
 
-        try file.seekTo(0);
-        const read_size_rom = try file.readAll(&static_rom);
-        if (read_size_rom != static_rom.len) {
-            logger.err("unexpected cartridge file size, could only read 0x{X} bytes for rom but wanted to read 0x{X}", .{ read_size_rom, static_rom.len });
+        if (rom.len != static_rom.len) {
+            logger.err(
+                "unexpected cartridge size: got 0x{X} bytes but expected 0x{X}",
+                .{ rom.len, static_rom.len },
+            );
             return CartridgeHeaderParseError.NoRom;
         }
 
+        @memcpy(&static_rom, rom);
         @memset(&static_init_ram, false);
 
         return Cartridge{
@@ -185,14 +193,6 @@ pub const MockCartridge = struct {
     };
 };
 
-fn writeBuffAndReturnFileForReading(buff: []const u8) !struct { std.fs.File, std.testing.TmpDir } {
-    var tmp_dir = std.testing.tmpDir(.{});
-    const file = try tmp_dir.dir.createFile("test.gb", .{});
-    defer file.close();
-    try file.writeAll(buff);
-    return .{ try tmp_dir.dir.openFile("test.gb", .{}), tmp_dir };
-}
-
 fn craftValidRomBuffer(buff: []u8, title: []const u8, checksum: u8) void {
     std.mem.copyForwards(u8, buff[0x104..], &logo);
     std.mem.copyForwards(u8, buff[0x134..0x144], &([_]u8{0} ** 0x10));
@@ -203,7 +203,7 @@ fn craftValidRomBuffer(buff: []u8, title: []const u8, checksum: u8) void {
     buff[0x14D] = checksum;
 }
 
-test "Cartridge fromFile loads valid ROM successfully" {
+test "Cartridge fromBuffer loads valid ROM successfully" {
     var rom_buffer = [_]u8{0} ** 0x8000;
 
     // Calculate a correct header checksum
@@ -215,16 +215,12 @@ test "Cartridge fromFile loads valid ROM successfully" {
         break :blk sum;
     });
 
-    var tmp = try writeBuffAndReturnFileForReading(&rom_buffer);
-    defer tmp[0].close();
-    defer tmp[1].cleanup();
-
-    const cartridge = try Cartridge.fromFile(tmp[0]);
+    const cartridge = try Cartridge.fromBuffer(&rom_buffer);
 
     try std.testing.expectEqualStrings("VALID", cartridge.title);
 }
 
-test "Cartridge fromFile rejects invalid logo" {
+test "Cartridge fromBuffer rejects invalid logo" {
     var rom_buffer = [_]u8{0} ** 0x8000;
 
     // Corrupt the logo
@@ -239,16 +235,12 @@ test "Cartridge fromFile rejects invalid logo" {
         break :blk sum;
     });
 
-    var tmp = try writeBuffAndReturnFileForReading(&rom_buffer);
-    defer tmp[0].close();
-    defer tmp[1].cleanup();
-
     // The logo warning is not fatal, so loading should still succeed
-    const cartridge = try Cartridge.fromFile(tmp[0]);
+    const cartridge = try Cartridge.fromBuffer(&rom_buffer);
     try std.testing.expectEqualStrings("INVALID", cartridge.title);
 }
 
-test "Cartridge fromFile rejects unsupported cartridge type" {
+test "Cartridge fromBuffer rejects unsupported cartridge type" {
     var rom_buffer = [_]u8{0} ** 0x8000;
 
     craftValidRomBuffer(&rom_buffer, "BADTYPE", blk: {
@@ -261,14 +253,10 @@ test "Cartridge fromFile rejects unsupported cartridge type" {
 
     rom_buffer[0x147] = 0x01; // Unsupported type
 
-    var tmp = try writeBuffAndReturnFileForReading(&rom_buffer);
-    defer tmp[0].close();
-    defer tmp[1].cleanup();
-
-    try std.testing.expectError(CartridgeHeaderParseError.UnsupportedCartridgeType, Cartridge.fromFile(tmp[0]));
+    try std.testing.expectError(CartridgeHeaderParseError.UnsupportedCartridgeType, Cartridge.fromBuffer(&rom_buffer));
 }
 
-test "Cartridge fromFile rejects unsupported rom size" {
+test "Cartridge fromBuffer rejects unsupported rom size" {
     var rom_buffer = [_]u8{0} ** 0x8000;
 
     craftValidRomBuffer(&rom_buffer, "BADSIZE", blk: {
@@ -281,14 +269,10 @@ test "Cartridge fromFile rejects unsupported rom size" {
 
     rom_buffer[0x148] = 0x01; // Unsupported rom size
 
-    var tmp = try writeBuffAndReturnFileForReading(&rom_buffer);
-    defer tmp[0].close();
-    defer tmp[1].cleanup();
-
-    try std.testing.expectError(CartridgeHeaderParseError.UnsupportedCartridgeType, Cartridge.fromFile(tmp[0]));
+    try std.testing.expectError(CartridgeHeaderParseError.UnsupportedCartridgeType, Cartridge.fromBuffer(&rom_buffer));
 }
 
-test "Cartridge fromFile rejects unsupported ram size" {
+test "Cartridge fromBuffer rejects unsupported ram size" {
     var rom_buffer = [_]u8{0} ** 0x8000;
 
     craftValidRomBuffer(&rom_buffer, "BADRAM", blk: {
@@ -301,22 +285,14 @@ test "Cartridge fromFile rejects unsupported ram size" {
 
     rom_buffer[0x149] = 0x01; // Unsupported ram size
 
-    var tmp = try writeBuffAndReturnFileForReading(&rom_buffer);
-    defer tmp[0].close();
-    defer tmp[1].cleanup();
-
-    try std.testing.expectError(CartridgeHeaderParseError.UnsupportedCartridgeType, Cartridge.fromFile(tmp[0]));
+    try std.testing.expectError(CartridgeHeaderParseError.UnsupportedCartridgeType, Cartridge.fromBuffer(&rom_buffer));
 }
 
-test "Cartridge fromFile warns on bad header checksum but still loads" {
+test "Cartridge fromBuffer warns on bad header checksum but still loads" {
     var rom_buffer = [_]u8{0} ** 0x8000;
 
     craftValidRomBuffer(&rom_buffer, "BADCHK", 0x00); // Wrong checksum on purpose
 
-    var tmp = try writeBuffAndReturnFileForReading(&rom_buffer);
-    defer tmp[0].close();
-    defer tmp[1].cleanup();
-
-    const cartridge = try Cartridge.fromFile(tmp[0]);
+    const cartridge = try Cartridge.fromBuffer(&rom_buffer);
     try std.testing.expectEqualStrings("BADCHK", cartridge.title);
 }

@@ -7,7 +7,7 @@ pub const Flags = packed struct {
     c: u1,
     rest: u4,
 
-    pub fn all(reg: *const Flags) u8 {
+    pub fn all(reg: Flags) u8 {
         return (@as(u8, reg.z) << 7) | (@as(u8, reg.n) << 6) | (@as(u8, reg.h) << 5) | (@as(u8, reg.c) << 4) | reg.rest;
     }
 
@@ -38,7 +38,7 @@ test "register flags" {
     try std.testing.expectEqual(0x55, reg.all());
 }
 
-pub const Wide = packed struct {
+pub const Wide = struct {
     hi: u8,
     lo: u8,
 
@@ -74,7 +74,7 @@ test "register with halves" {
     try std.testing.expectEqual(0x1234, reg.all());
 }
 
-pub const General = packed struct {
+pub const General = struct {
     hi: u8,
     lo: Flags,
 

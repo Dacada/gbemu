@@ -45,12 +45,14 @@ fn tickApu(apu: *Apu, ticks: usize, div_counter: *usize) void {
     }
 }
 
-fn expectIdenticalFiles(comptime expected: []const u8, actual: []const u8, allocator: std.mem.Allocator) !void {
+fn expectIdenticalFiles(comptime expected: []const u8, io: std.Io, actual: []const u8, allocator: std.mem.Allocator) !void {
     const expectedBytes = @embedFile(expected);
 
-    const actualFile = try std.fs.openFileAbsolute(actual, .{});
-    defer actualFile.close();
-    const actualBytes = try actualFile.readToEndAlloc(allocator, expectedBytes.len);
+    const actualFile = try std.Io.Dir.openFileAbsolute(io, actual, .{});
+    defer actualFile.close(io);
+    var buff: [0x1000]u8 = undefined;
+    var reader = actualFile.reader(io, &buff);
+    const actualBytes = try reader.interface.readAlloc(allocator, expectedBytes.len);
     defer allocator.free(actualBytes);
 
     try std.testing.expectEqualSlices(u8, expectedBytes, actualBytes);
@@ -99,9 +101,9 @@ fn testTrack(allocator: std.mem.Allocator, song: tracker.Song, comptime name: []
         total_ticks += ticks_per_subdivision;
     }
 
-    try backend.writeToDisk();
+    try backend.writeToDisk(std.testing.io);
 
-    try expectIdenticalFiles(res_file, tmp_file, allocator);
+    try expectIdenticalFiles(res_file, std.testing.io, tmp_file, allocator);
 }
 
 test "test_track_1" {

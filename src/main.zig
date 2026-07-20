@@ -1,6 +1,5 @@
 const std = @import("std");
 const lib = @import("lib");
-const cli = @import("cli.zig");
 
 var array = [_]u8{0x00} ** 0x100;
 
@@ -8,35 +7,29 @@ const Container = lib.dependency_container.Container(.{});
 const Mmu = Container.Mmu;
 const Cpu = Container.Cpu;
 
-pub fn main() !void {
-    const parser = cli.ArgParser(.{
-        .error_exit_code = 1,
-        .optional = &.{
-            cli.ArgParserParamDefinition.init(
-                "breakpoint-instruction",
-                "This opcode will be treated like a software breakpoint.",
-                ?u8,
-                null,
-            ),
-        },
-    });
-
-    var argiter = std.process.args();
-    const args = parser.parse(&argiter);
+pub fn main(init: std.process.Init) !void {
+    const breakpoint_instruction: ?u8 = null;
 
     var stdout_buffer: [1024]u8 = undefined;
-    const stdout_fileno = std.fs.File.stdout();
-    var stdout_file_writer = stdout_fileno.writer(&stdout_buffer);
+    const stdout_fileno = std.Io.File.stdout();
+    var stdout_file_writer = stdout_fileno.writer(init.io, &stdout_buffer);
     const writer = &stdout_file_writer.interface;
+
+    const romDir = try std.Io.Dir.openDirAbsolute(init.io, "/home/dacada/Downloads/testroms/mooneye-test-suite/acceptance", .{});
+    defer romDir.close(init.io);
+    const romFile = try romDir.openFile(init.io, "call_timing.gb", .{});
+    defer romFile.close(init.io);
+    var romBuffer: [32 * 1024]u8 = undefined;
+    const read = try romFile.readPositionalAll(init.io, &romBuffer, 0);
+    if (read != romBuffer.len) {
+        @panic("invalid rom?");
+    }
 
     var container = Container.init(.{
         .debugger_writer = writer,
-        .breakpoint_instruction = args.@"breakpoint-instruction",
+        .breakpoint_instruction = breakpoint_instruction,
         .cartridge = .{
-            .by_path = .{
-                .absolute_path = "/home/dacada/Downloads/testroms/mooneye-test-suite/acceptance",
-                .filename = "call_timing.gb",
-            },
+            .by_buffer = .{ .buffer = &romBuffer },
         },
     });
 

@@ -1,15 +1,12 @@
 const std = @import("std");
 
 const RuntimeCfg = struct {
-    debugger_writer: ?*std.io.Writer = null,
+    io: ?std.Io = null,
+    debugger_writer: ?*std.Io.Writer = null,
     breakpoint_instruction: ?u8 = null,
     cartridge: ?union(enum) {
-        by_path: struct {
-            absolute_path: []const u8,
-            filename: []const u8,
-        },
-        by_file: struct {
-            file: std.fs.File,
+        by_buffer: struct {
+            buffer: []const u8,
         },
     } = null,
     audio_wav_filename: ?[]const u8 = null,
@@ -254,14 +251,7 @@ pub fn Container(comptime cfg: ContainerConfig) type {
         fn make_cartridge(self: *This) !Cartridge {
             return switch (cfg.cartridge) {
                 .real => switch (self.runtime_cfg.cartridge.?) {
-                    .by_path => |p| blk: {
-                        var dir = try std.fs.openDirAbsolute(p.absolute_path, .{});
-                        defer dir.close();
-                        const file = try dir.openFile(p.filename, .{});
-                        defer file.close();
-                        break :blk Cartridge.fromFile(file);
-                    },
-                    .by_file => |f| Cartridge.fromFile(f.file),
+                    .by_buffer => |f| Cartridge.fromBuffer(f.buffer),
                 },
                 .mock => Cartridge{},
                 .dummy => Cartridge{},

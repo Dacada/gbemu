@@ -81,9 +81,9 @@ test "test channel 2" {
     var samples = try waitAndCollectUntil(&channel, nsamples);
     defer samples.deinit(std.testing.allocator);
 
-    const output_file = try std.fs.createFileAbsolute("/tmp/out_ch2.raw", .{});
-    defer output_file.close();
-    try output_file.writeAll(std.mem.sliceAsBytes(samples.items));
+    const output_file = try std.Io.Dir.createFileAbsolute(std.testing.io, "/tmp/out_ch2.raw", .{});
+    defer output_file.close(std.testing.io);
+    try output_file.writePositionalAll(std.testing.io, std.mem.sliceAsBytes(samples.items), 0);
 
     const expected: []const f32 = try getExpectedArray("res/ch2.raw");
     defer std.testing.allocator.free(expected);
@@ -126,9 +126,9 @@ test "test channel 1" {
     var samples = try waitAndCollectUntil(&channel, nsamples);
     defer samples.deinit(std.testing.allocator);
 
-    const output_file = try std.fs.createFileAbsolute("/tmp/out_ch1.raw", .{});
-    defer output_file.close();
-    try output_file.writeAll(std.mem.sliceAsBytes(samples.items));
+    const output_file = try std.Io.Dir.createFileAbsolute(std.testing.io, "/tmp/out_ch1.raw", .{});
+    defer output_file.close(std.testing.io);
+    try output_file.writePositionalAll(std.testing.io, std.mem.sliceAsBytes(samples.items), 0);
 
     const expected: []const f32 = try getExpectedArray("res/ch1.raw");
     defer std.testing.allocator.free(expected);
@@ -173,10 +173,10 @@ test "test channel 4" {
     var samples_2 = try waitAndCollectUntil(&channel, nsamples);
     defer samples_2.deinit(std.testing.allocator);
 
-    const output_file = try std.fs.createFileAbsolute("/tmp/out_ch4.raw", .{});
-    defer output_file.close();
-    try output_file.writeAll(std.mem.sliceAsBytes(samples.items));
-    try output_file.writeAll(std.mem.sliceAsBytes(samples_2.items));
+    const output_file = try std.Io.Dir.createFileAbsolute(std.testing.io, "/tmp/out_ch4.raw", .{});
+    defer output_file.close(std.testing.io);
+    try output_file.writePositionalAll(std.testing.io, std.mem.sliceAsBytes(samples.items), 0);
+    try output_file.writePositionalAll(std.testing.io, std.mem.sliceAsBytes(samples_2.items), 0);
 
     const expected: []const f32 = try getExpectedArray("res/ch4.raw");
     defer std.testing.allocator.free(expected);
@@ -237,9 +237,9 @@ test "test channel 3" {
     var samples = try waitAndCollectUntil(&channel, nsamples);
     defer samples.deinit(std.testing.allocator);
 
-    const output_file = try std.fs.createFileAbsolute("/tmp/out_ch3.raw", .{});
-    defer output_file.close();
-    try output_file.writeAll(std.mem.sliceAsBytes(samples.items));
+    const output_file = try std.Io.Dir.createFileAbsolute(std.testing.io, "/tmp/out_ch3.raw", .{});
+    defer output_file.close(std.testing.io);
+    try output_file.writePositionalAll(std.testing.io, std.mem.sliceAsBytes(samples.items), 0);
 
     const expected: []const f32 = try getExpectedArray("res/ch3.raw");
     defer std.testing.allocator.free(expected);
