@@ -287,21 +287,25 @@ pub fn Debugger(Cpu: type, Mmu: type) type {
 
         cpu: *Cpu,
         mmu: *Mmu,
-        writer: *std.Io.Writer,
+        writer: ?*std.Io.Writer,
 
         stepping_cycles: bool,
         stepping: bool,
         breakpoints: [0x10]?u16,
 
-        pub inline fn init(cpu: *Cpu, mmu: *Mmu, writer: *std.Io.Writer) This {
+        pub inline fn init(cpu: *Cpu, mmu: *Mmu) This {
             return This{
                 .cpu = cpu,
                 .mmu = mmu,
-                .writer = writer,
+                .writer = null,
                 .stepping_cycles = false,
                 .stepping = false,
                 .breakpoints = [_]?u16{null} ** 0x10,
             };
+        }
+
+        pub fn setWriter(self: *This, writer: ?*std.Io.Writer) void {
+            self.writer = writer;
         }
 
         fn addBreakpoint(self: *This, addr: u16) bool {
@@ -368,6 +372,9 @@ pub fn Debugger(Cpu: type, Mmu: type) type {
         }
 
         pub fn enter(self: *This) !DebuggerResult {
+            // Use std.Io.Writer.Discarding for a writer that outputs nothing
+            std.debug.assert(self.writer != null);
+
             var prompt_buff = [_]u8{undefined} ** 256;
             // show pc - 1 as that is the currently fetched opcode's location
             const prompt = try std.fmt.bufPrintZ(&prompt_buff, "[0x{X:0>4}] dbg> ", .{self.cpu.reg.pc - 1});
@@ -384,7 +391,7 @@ pub fn Debugger(Cpu: type, Mmu: type) type {
                 var it = std.mem.tokenizeScalar(u8, line, ' ');
                 const command = it.next();
                 if (command) |c| {
-                    if (try self.handleCommand(c, &it, self.writer)) |ret| {
+                    if (try self.handleCommand(c, &it, self.writer.?)) |ret| {
                         return ret;
                     }
                 }
@@ -429,24 +436,22 @@ const TestDebugger = TestContainer.Debugger;
 const Cmds = Commands(TestDebugger);
 
 const TestHelper = struct {
-    buffer: [0]u8,
-    discarding: std.Io.Writer,
-    container: TestContainer,
+    buffer: [0]u8 = undefined,
+    discarding: std.Io.Writer = undefined,
+    container: TestContainer = undefined,
 
-    fn init() TestHelper {
-        var self: TestHelper = undefined;
-        self.buffer = undefined;
+    fn setup(self: *TestHelper) void {
         self.discarding = std.Io.Writer.Discarding.init(&self.buffer).writer;
-        self.container = TestContainer.init(.{
-            .debugger_writer = &self.discarding,
-        });
-        return self;
+        self.container = TestContainer.init();
+        var dbg = self.container.get_debugger();
+        dbg.setWriter(&self.discarding);
     }
 };
 
 test "Debugger add and remove breakpoints" {
-    var helper = TestHelper.init();
-    var dbg = try helper.container.get_debugger();
+    var helper = TestHelper{};
+    helper.setup();
+    var dbg = helper.container.get_debugger();
 
     try std.testing.expect(dbg.addBreakpoint(0x1234));
     try std.testing.expect(dbg.addBreakpoint(0x5678));
@@ -462,8 +467,9 @@ test "Debugger add and remove breakpoints" {
 }
 
 test "Debugger clears flags correctly" {
-    var helper = TestHelper.init();
-    var dbg = try helper.container.get_debugger();
+    var helper = TestHelper{};
+    helper.setup();
+    var dbg = helper.container.get_debugger();
 
     dbg.stepping = true;
     dbg.stepping_cycles = true;
@@ -477,8 +483,9 @@ test "Debugger clears flags correctly" {
 }
 
 test "Debugger should_enter triggers on stepping" {
-    var helper = TestHelper.init();
-    var dbg = try helper.container.get_debugger();
+    var helper = TestHelper{};
+    helper.setup();
+    var dbg = helper.container.get_debugger();
 
     dbg.stepping = true;
 
@@ -486,8 +493,9 @@ test "Debugger should_enter triggers on stepping" {
 }
 
 test "Debugger should_enter triggers on stepping_cycles" {
-    var helper = TestHelper.init();
-    var dbg = try helper.container.get_debugger();
+    var helper = TestHelper{};
+    helper.setup();
+    var dbg = helper.container.get_debugger();
 
     dbg.stepping_cycles = true;
 
@@ -495,9 +503,10 @@ test "Debugger should_enter triggers on stepping_cycles" {
 }
 
 test "Debugger should_enter triggers on breakpoint match" {
-    var helper = TestHelper.init();
-    var dbg = try helper.container.get_debugger();
-    var fake_cpu = try helper.container.get_cpu();
+    var helper = TestHelper{};
+    helper.setup();
+    var dbg = helper.container.get_debugger();
+    var fake_cpu = helper.container.get_cpu();
 
     try std.testing.expect(dbg.addBreakpoint(0x0042));
 
@@ -507,8 +516,9 @@ test "Debugger should_enter triggers on breakpoint match" {
 }
 
 test "Debugger should_enter triggers on memory flags" {
-    var helper = TestHelper.init();
-    var dbg = try helper.container.get_debugger();
+    var helper = TestHelper{};
+    helper.setup();
+    var dbg = helper.container.get_debugger();
 
     dbg.mmu.flags = .{ .uninitialized = true };
 
@@ -516,8 +526,9 @@ test "Debugger should_enter triggers on memory flags" {
 }
 
 test "Commands: help command outputs text" {
-    var helper = TestHelper.init();
-    const dbg = try helper.container.get_debugger();
+    var helper = TestHelper{};
+    helper.setup();
+    const dbg = helper.container.get_debugger();
 
     var buffer: [1024]u8 = undefined;
     var writer = std.Io.Writer.fixed(&buffer);
@@ -531,8 +542,9 @@ test "Commands: help command outputs text" {
 }
 
 test "Commands: step command sets stepping flag" {
-    var helper = TestHelper.init();
-    const dbg = try helper.container.get_debugger();
+    var helper = TestHelper{};
+    helper.setup();
+    const dbg = helper.container.get_debugger();
 
     const input = "step";
     var it = std.mem.tokenizeScalar(u8, input, ' ');
@@ -543,8 +555,9 @@ test "Commands: step command sets stepping flag" {
 }
 
 test "Commands: stepc command sets stepping_cycles flag" {
-    var helper = TestHelper.init();
-    const dbg = try helper.container.get_debugger();
+    var helper = TestHelper{};
+    helper.setup();
+    const dbg = helper.container.get_debugger();
 
     const input = "stepc";
     var it = std.mem.tokenizeScalar(u8, input, ' ');
@@ -555,8 +568,9 @@ test "Commands: stepc command sets stepping_cycles flag" {
 }
 
 test "Commands: quit command returns should_stop" {
-    var helper = TestHelper.init();
-    const dbg = try helper.container.get_debugger();
+    var helper = TestHelper{};
+    helper.setup();
+    const dbg = helper.container.get_debugger();
 
     const input = "quit";
     var it = std.mem.tokenizeScalar(u8, input, ' ');
@@ -566,8 +580,9 @@ test "Commands: quit command returns should_stop" {
 }
 
 test "Commands: break add, list, and del" {
-    var helper = TestHelper.init();
-    const dbg = try helper.container.get_debugger();
+    var helper = TestHelper{};
+    helper.setup();
+    const dbg = helper.container.get_debugger();
 
     // Add breakpoint
     const add_input = "add 0x0042";

@@ -276,9 +276,9 @@ fn zeroizeRegisters(cpu: *Cpu) void {
 
 pub fn runTestCase(name: []const u8, program: []const u8, initial_state: *TestCpuState, ticks: []const *TestCpuState) !void {
     @memset(&Mmu.backing_array, 0);
-    var container = Container.init(.{});
-    var cpu = try container.get_cpu();
-    const mmu = try container.get_mmu();
+    var container = Container.init();
+    var cpu = container.get_cpu();
+    const mmu = container.get_mmu();
     zeroizeRegisters(cpu);
 
     try mapInitialState(cpu, mmu, initial_state, program);
@@ -300,11 +300,10 @@ pub fn runTestCase(name: []const u8, program: []const u8, initial_state: *TestCp
 
 pub fn runProgram(program: []const u8) !Cpu {
     @memset(&Mmu.backing_array, 0);
-    var container = Container.init(.{
-        .breakpoint_instruction = 0x40,
-    });
-    var cpu = try container.get_cpu();
-    const mmu = try container.get_mmu();
+    var container = Container.init();
+    var cpu = container.get_cpu();
+    cpu.setBreakpointInstruction(0x40);
+    const mmu = container.get_mmu();
     zeroizeRegisters(cpu);
 
     for (program, 0..) |b, i| {

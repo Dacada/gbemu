@@ -298,8 +298,8 @@ const TestContainer = @import("dependency_container.zig").Container(.{
 });
 
 test "Mmu: write and read to all mapped memory regions" {
-    var container = TestContainer.init(.{});
-    var mmu = try container.get_mmu();
+    var container = TestContainer.init();
+    var mmu = container.get_mmu();
 
     for (0..0x10000) |addr| {
         const val = 0xAB;

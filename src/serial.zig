@@ -98,8 +98,8 @@ const TestContainer = @import("dependency_container.zig").Container(.{
 const TestSerial = TestContainer.Serial;
 
 test "Serial register read/write" {
-    var container = TestContainer.init(.{});
-    var serial = try container.get_serial();
+    var container = TestContainer.init();
+    var serial = container.get_serial();
 
     // Test writing to and reading from data register (0)
     serial.poke(0, 0xA5);
@@ -112,8 +112,8 @@ test "Serial register read/write" {
 }
 
 test "Serial transfer initiation conditions" {
-    var container = TestContainer.init(.{});
-    var serial = try container.get_serial();
+    var container = TestContainer.init();
+    var serial = container.get_serial();
 
     // Initially not running
     try std.testing.expect(!serial.running);
@@ -128,8 +128,8 @@ test "Serial transfer initiation conditions" {
 }
 
 test "Serial bit shift behavior" {
-    var container = TestContainer.init(.{});
-    var serial = try container.get_serial();
+    var container = TestContainer.init();
+    var serial = container.get_serial();
 
     serial.data = 0b1010_0000;
 
@@ -141,8 +141,8 @@ test "Serial bit shift behavior" {
 }
 
 test "Serial transfer completion" {
-    var container = TestContainer.init(.{});
-    var serial = try container.get_serial();
+    var container = TestContainer.init();
+    var serial = container.get_serial();
 
     serial.data = 0x00;
     serial.transfer_enable = 1;

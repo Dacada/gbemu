@@ -167,7 +167,7 @@ pub fn Cpu(Mmu: type, Interrupt: type) type {
         flags: CpuFlag,
         halted: bool,
 
-        pub inline fn init(mmu: *Mmu, intr: *Interrupt, breakpoint_instruction: ?u8) This {
+        pub inline fn init(mmu: *Mmu, intr: *Interrupt) This {
             return This{
                 .mmu = mmu,
                 .intr = intr,
@@ -188,10 +188,14 @@ pub fn Cpu(Mmu: type, Interrupt: type) type {
                 .next_op_3 = undefined,
                 .should_enable_interrupt_after_next_instruction = false,
                 .should_enable_interrupt_after_current_instruction = false,
-                .breakpoint_instruction = breakpoint_instruction,
+                .breakpoint_instruction = null,
                 .flags = .{},
                 .halted = false,
             };
+        }
+
+        pub inline fn setBreakpointInstruction(self: *This, instr: ?u8) void {
+            self.breakpoint_instruction = instr;
         }
 
         pub inline fn getFlags(self: *const This) CpuFlag {
@@ -1217,8 +1221,8 @@ const TestContainer = @import("dependency_container.zig").Container(.{
 });
 
 test "Cpu: ptrReg8Bit maps correctly" {
-    var container = TestContainer.init(.{});
-    var cpu = try container.get_cpu();
+    var container = TestContainer.init();
+    var cpu = container.get_cpu();
 
     cpu.reg.bc.hi = 0x10;
     cpu.reg.bc.lo = 0x11;
@@ -1244,8 +1248,8 @@ test "Cpu: ptrReg8Bit maps correctly" {
 }
 
 test "Cpu: ptrReg16Bit maps correctly" {
-    var container = TestContainer.init(.{});
-    var cpu = try container.get_cpu();
+    var container = TestContainer.init();
+    var cpu = container.get_cpu();
 
     cpu.reg.bc.setAll(0x1111);
     cpu.reg.de.setAll(0x2222);
@@ -1259,8 +1263,8 @@ test "Cpu: ptrReg16Bit maps correctly" {
 }
 
 test "Cpu: ptrRegStack maps correctly" {
-    var container = TestContainer.init(.{});
-    var cpu = try container.get_cpu();
+    var container = TestContainer.init();
+    var cpu = container.get_cpu();
 
     cpu.reg.bc.setAll(0xAAAA);
     cpu.reg.de.setAll(0xBBBB);

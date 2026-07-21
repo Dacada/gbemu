@@ -190,8 +190,8 @@ const TestContainer = @import("dependency_container.zig").Container(.{
 });
 
 test "Mmio unit tests with Dummy" {
-    var container = TestContainer.init(.{});
-    var mmio = try container.get_mmio();
+    var container = TestContainer.init();
+    var mmio = container.get_mmio();
 
     // Test writing and reading joypad
     _ = mmio.write(0x00, 0xAA);

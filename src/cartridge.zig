@@ -71,7 +71,15 @@ pub const Cartridge = struct {
             static_ram[addr] = val;
         }
     };
-    pub fn fromBuffer(rom: []const u8) !Cartridge {
+
+    pub fn init() Cartridge {
+        return Cartridge{
+            .title = "",
+            .checksum = 0,
+        };
+    }
+
+    pub fn loadFromBuffer(self: *Cartridge, rom: []const u8) !void {
         const offset = 0x0100;
 
         if (rom.len < offset + 0x50) {
@@ -131,10 +139,8 @@ pub const Cartridge = struct {
         @memcpy(&static_rom, rom);
         @memset(&static_init_ram, false);
 
-        return Cartridge{
-            .title = title,
-            .checksum = checksum,
-        };
+        self.title = title;
+        self.checksum = checksum;
     }
 
     fn getTitleFromHeader(buff: []const u8) ![]const u8 {
@@ -203,7 +209,7 @@ fn craftValidRomBuffer(buff: []u8, title: []const u8, checksum: u8) void {
     buff[0x14D] = checksum;
 }
 
-test "Cartridge fromBuffer loads valid ROM successfully" {
+test "Cartridge loadFromBuffer loads valid ROM successfully" {
     var rom_buffer = [_]u8{0} ** 0x8000;
 
     // Calculate a correct header checksum
@@ -215,12 +221,13 @@ test "Cartridge fromBuffer loads valid ROM successfully" {
         break :blk sum;
     });
 
-    const cartridge = try Cartridge.fromBuffer(&rom_buffer);
+    var cartridge = Cartridge.init();
+    try cartridge.loadFromBuffer(&rom_buffer);
 
     try std.testing.expectEqualStrings("VALID", cartridge.title);
 }
 
-test "Cartridge fromBuffer rejects invalid logo" {
+test "Cartridge loadFromBuffer rejects invalid logo" {
     var rom_buffer = [_]u8{0} ** 0x8000;
 
     // Corrupt the logo
@@ -236,11 +243,12 @@ test "Cartridge fromBuffer rejects invalid logo" {
     });
 
     // The logo warning is not fatal, so loading should still succeed
-    const cartridge = try Cartridge.fromBuffer(&rom_buffer);
+    var cartridge = Cartridge.init();
+    try cartridge.loadFromBuffer(&rom_buffer);
     try std.testing.expectEqualStrings("INVALID", cartridge.title);
 }
 
-test "Cartridge fromBuffer rejects unsupported cartridge type" {
+test "Cartridge loadFromBuffer rejects unsupported cartridge type" {
     var rom_buffer = [_]u8{0} ** 0x8000;
 
     craftValidRomBuffer(&rom_buffer, "BADTYPE", blk: {
@@ -253,10 +261,11 @@ test "Cartridge fromBuffer rejects unsupported cartridge type" {
 
     rom_buffer[0x147] = 0x01; // Unsupported type
 
-    try std.testing.expectError(CartridgeHeaderParseError.UnsupportedCartridgeType, Cartridge.fromBuffer(&rom_buffer));
+    var cartridge = Cartridge.init();
+    try std.testing.expectError(CartridgeHeaderParseError.UnsupportedCartridgeType, cartridge.loadFromBuffer(&rom_buffer));
 }
 
-test "Cartridge fromBuffer rejects unsupported rom size" {
+test "Cartridge loadFromBuffer rejects unsupported rom size" {
     var rom_buffer = [_]u8{0} ** 0x8000;
 
     craftValidRomBuffer(&rom_buffer, "BADSIZE", blk: {
@@ -269,10 +278,11 @@ test "Cartridge fromBuffer rejects unsupported rom size" {
 
     rom_buffer[0x148] = 0x01; // Unsupported rom size
 
-    try std.testing.expectError(CartridgeHeaderParseError.UnsupportedCartridgeType, Cartridge.fromBuffer(&rom_buffer));
+    var cartridge = Cartridge.init();
+    try std.testing.expectError(CartridgeHeaderParseError.UnsupportedCartridgeType, cartridge.loadFromBuffer(&rom_buffer));
 }
 
-test "Cartridge fromBuffer rejects unsupported ram size" {
+test "Cartridge loadFromBuffer rejects unsupported ram size" {
     var rom_buffer = [_]u8{0} ** 0x8000;
 
     craftValidRomBuffer(&rom_buffer, "BADRAM", blk: {
@@ -285,14 +295,16 @@ test "Cartridge fromBuffer rejects unsupported ram size" {
 
     rom_buffer[0x149] = 0x01; // Unsupported ram size
 
-    try std.testing.expectError(CartridgeHeaderParseError.UnsupportedCartridgeType, Cartridge.fromBuffer(&rom_buffer));
+    var cartridge = Cartridge.init();
+    try std.testing.expectError(CartridgeHeaderParseError.UnsupportedCartridgeType, cartridge.loadFromBuffer(&rom_buffer));
 }
 
-test "Cartridge fromBuffer warns on bad header checksum but still loads" {
+test "Cartridge loadFromBuffer warns on bad header checksum but still loads" {
     var rom_buffer = [_]u8{0} ** 0x8000;
 
     craftValidRomBuffer(&rom_buffer, "BADCHK", 0x00); // Wrong checksum on purpose
 
-    const cartridge = try Cartridge.fromBuffer(&rom_buffer);
+    var cartridge = Cartridge.init();
+    try cartridge.loadFromBuffer(&rom_buffer);
     try std.testing.expectEqualStrings("BADCHK", cartridge.title);
 }

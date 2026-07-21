@@ -37,12 +37,11 @@ fn testInterrupt(target: InterruptKind, targetAddr: u16) !void {
         @memcpy(Mmu.backing_array[targetAddr .. targetAddr + assembled2.len], assembled2);
     }
 
-    var container = Container.init(.{
-        .breakpoint_instruction = 0xAA,
-    });
-    var cpu = try container.get_cpu();
-    var intr = try container.get_interrupt();
-    var mmu = try container.get_mmu();
+    var container = Container.init();
+    var cpu = container.get_cpu();
+    cpu.setBreakpointInstruction(0xAA);
+    var intr = container.get_interrupt();
+    var mmu = container.get_mmu();
 
     cpu.reg.pc = 0x100;
     cpu.reg.sp.setAll(0xFFFE);
@@ -134,11 +133,10 @@ test "halt normally: ime=1 and no interrupt pending" {
         Mmu.backing_array[0x40] = 0;
     }
 
-    var container = Container.init(.{
-        .breakpoint_instruction = 0xAA,
-    });
-    var cpu = try container.get_cpu();
-    var intr = try container.get_interrupt();
+    var container = Container.init();
+    var cpu = container.get_cpu();
+    cpu.setBreakpointInstruction(0xAA);
+    var intr = container.get_interrupt();
 
     cpu.reg.pc = 0;
     cpu.reg.sp.setAll(0xFFFE);
@@ -198,11 +196,10 @@ test "halt normally: ime=0 and no interrupt pending" {
         Mmu.backing_array[0x40] = 0;
     }
 
-    var container = Container.init(.{
-        .breakpoint_instruction = 0xAA,
-    });
-    var cpu = try container.get_cpu();
-    var intr = try container.get_interrupt();
+    var container = Container.init();
+    var cpu = container.get_cpu();
+    cpu.setBreakpointInstruction(0xAA);
+    var intr = container.get_interrupt();
 
     cpu.reg.pc = 0;
     cpu.reg.sp.setAll(0xFFFE);
@@ -249,11 +246,10 @@ test "halt bug: ei, halt" {
         Mmu.backing_array[0x40] = 0xD9; // reti
     }
 
-    var container = Container.init(.{
-        .breakpoint_instruction = 0xAA,
-    });
-    var cpu = try container.get_cpu();
-    var intr = try container.get_interrupt();
+    var container = Container.init();
+    var cpu = container.get_cpu();
+    cpu.setBreakpointInstruction(0xAA);
+    var intr = container.get_interrupt();
 
     cpu.reg.pc = 0;
     cpu.reg.sp.setAll(0xFFFE);
@@ -311,11 +307,10 @@ test "halt bug: halt, inc b " {
         @memcpy(Mmu.backing_array[0..assembled.len], assembled);
     }
 
-    var container = Container.init(.{
-        .breakpoint_instruction = 0xAA,
-    });
-    var cpu = try container.get_cpu();
-    var intr = try container.get_interrupt();
+    var container = Container.init();
+    var cpu = container.get_cpu();
+    cpu.setBreakpointInstruction(0xAA);
+    var intr = container.get_interrupt();
 
     cpu.reg.pc = 0;
     cpu.reg.sp.setAll(0xFFFE);
@@ -352,11 +347,10 @@ test "halt bug: halt, ld B 4" {
         @memcpy(Mmu.backing_array[0..assembled.len], assembled);
     }
 
-    var container = Container.init(.{
-        .breakpoint_instruction = 0xAA,
-    });
-    var cpu = try container.get_cpu();
-    var intr = try container.get_interrupt();
+    var container = Container.init();
+    var cpu = container.get_cpu();
+    cpu.setBreakpointInstruction(0xAA);
+    var intr = container.get_interrupt();
 
     cpu.reg.pc = 0;
     cpu.reg.sp.setAll(0xFFFE);
@@ -395,11 +389,10 @@ test "halt bug: halt, rst 1" {
         @memcpy(Mmu.backing_array[0..assembled.len], assembled);
     }
 
-    var container = Container.init(.{
-        .breakpoint_instruction = 0xAA,
-    });
-    var cpu = try container.get_cpu();
-    var intr = try container.get_interrupt();
+    var container = Container.init();
+    var cpu = container.get_cpu();
+    cpu.setBreakpointInstruction(0xAA);
+    var intr = container.get_interrupt();
 
     cpu.reg.pc = 0;
     cpu.reg.sp.setAll(0xFFFE);
@@ -438,11 +431,10 @@ test "halt bug: halt, halt" {
         @memcpy(Mmu.backing_array[0..assembled.len], assembled);
     }
 
-    var container = Container.init(.{
-        .breakpoint_instruction = 0xAA,
-    });
-    var cpu = try container.get_cpu();
-    var intr = try container.get_interrupt();
+    var container = Container.init();
+    var cpu = container.get_cpu();
+    cpu.setBreakpointInstruction(0xAA);
+    var intr = container.get_interrupt();
 
     cpu.reg.pc = 0;
     cpu.reg.sp.setAll(0xFFFE);

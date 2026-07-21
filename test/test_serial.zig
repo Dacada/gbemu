@@ -31,11 +31,11 @@ fn spin(emu: *Emulator, ticks: usize) !void {
 }
 
 test "serial transfer" {
-    var container = Container.init(.{});
-    const emu = try container.get_emulator();
-    var mmu = try container.get_mmu();
-    const serial = try container.get_serial();
-    const sched = try container.get_scheduler();
+    var container = Container.init();
+    const emu = container.get_emulator();
+    var mmu = container.get_mmu();
+    const serial = container.get_serial();
+    const sched = container.get_scheduler();
 
     // Wait a few cycles
     try spin(emu, 100);

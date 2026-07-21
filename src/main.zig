@@ -25,25 +25,23 @@ pub fn main(init: std.process.Init) !void {
         @panic("invalid rom?");
     }
 
-    var container = Container.init(.{
-        .debugger_writer = writer,
-        .breakpoint_instruction = breakpoint_instruction,
-        .cartridge = .{
-            .by_buffer = .{ .buffer = &romBuffer },
-        },
-    });
+    var container = Container.init();
+    var debugger = container.get_debugger();
+    debugger.setWriter(writer);
 
-    const cart = try container.get_cartridge();
+    const cart = container.get_cartridge();
+    try cart.loadFromBuffer(&romBuffer);
 
-    const mmu = try container.get_mmu();
+    const mmu = container.get_mmu();
     lib.emulator.initializeMemory(Mmu, mmu);
 
-    var cpu = try container.get_cpu();
+    var cpu = container.get_cpu();
+    cpu.setBreakpointInstruction(breakpoint_instruction);
     lib.emulator.initializeCpu(Cpu, cpu, cart.checksum);
 
     // This executes a nop and fetches the first instruction of the ROM
     cpu.tick();
 
-    var emu = try container.get_emulator();
+    var emu = container.get_emulator();
     try emu.run(true);
 }

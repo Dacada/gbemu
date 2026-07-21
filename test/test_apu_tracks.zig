@@ -67,13 +67,11 @@ fn testTrack(allocator: std.mem.Allocator, song: tracker.Song, comptime name: []
     const tmp_file = std.fmt.comptimePrint("/tmp/{s}.wav", .{name});
     const res_file = std.fmt.comptimePrint("res/{s}.wav", .{name});
 
-    var container = Container.init(.{
-        .audio_wav_filename = tmp_file,
-        .allocator = allocator,
-    });
+    var container = Container.init();
 
-    var apu = try container.get_apu();
-    var backend = try container.get_audio_backend();
+    var apu = container.get_apu();
+    var backend = container.get_audio_backend();
+    try backend.setup(allocator);
 
     // container won't deinit stuff for us
     defer backend.deinit();
@@ -101,7 +99,7 @@ fn testTrack(allocator: std.mem.Allocator, song: tracker.Song, comptime name: []
         total_ticks += ticks_per_subdivision;
     }
 
-    try backend.writeToDisk(std.testing.io);
+    try backend.writeToDisk(std.testing.io, tmp_file);
 
     try expectIdenticalFiles(res_file, std.testing.io, tmp_file, allocator);
 }

@@ -1,18 +1,5 @@
 const std = @import("std");
 
-const RuntimeCfg = struct {
-    io: ?std.Io = null,
-    debugger_writer: ?*std.Io.Writer = null,
-    breakpoint_instruction: ?u8 = null,
-    cartridge: ?union(enum) {
-        by_buffer: struct {
-            buffer: []const u8,
-        },
-    } = null,
-    audio_wav_filename: ?[]const u8 = null,
-    allocator: ?std.mem.Allocator = null,
-};
-
 pub const ContainerConfig = struct {
     audio_backend: enum {
         mock_wav,
@@ -209,56 +196,47 @@ pub fn Container(comptime cfg: ContainerConfig) type {
         debugger: ?Debugger = null,
         emulator: ?Emulator = null,
 
-        runtime_cfg: RuntimeCfg,
-
         /// The lifetimes of all created objects depend on the lifetime of this one.
-        pub fn init(runtime_cfg: RuntimeCfg) This {
-            return This{
-                .runtime_cfg = runtime_cfg,
-            };
+        pub fn init() This {
+            return This{};
         }
 
-        fn get_or_make(T: type, comptime what: []const u8, inst: *This) !*T {
+        fn get_or_make(T: type, comptime what: []const u8, inst: *This) *T {
             if (@field(inst, what) == null) {
-                @field(inst, what) = try @field(This, std.fmt.comptimePrint("make_{s}", .{what}))(inst);
+                @field(inst, what) = @field(This, std.fmt.comptimePrint("make_{s}", .{what}))(inst);
             }
             return &@field(inst, what).?;
         }
 
-        fn make_audio_backend(self: *This) !AudioBackend {
+        fn make_audio_backend(_: *This) AudioBackend {
             return switch (cfg.audio_backend) {
                 .mock_nil => AudioBackend.init(),
-                .mock_wav => AudioBackend.init(
-                    self.runtime_cfg.audio_wav_filename.?,
-                    self.runtime_cfg.allocator.?,
-                ),
+                .mock_wav => AudioBackend.init(),
             };
         }
 
-        fn make_video_backend(_: *This) !VideoBackend {
+        fn make_video_backend(_: *This) VideoBackend {
             return switch (cfg.video_backend) {
                 .mock_nil => VideoBackend.init(),
             };
         }
 
-        fn make_scheduler(_: *This) !Scheduler {
+        fn make_scheduler(_: *This) Scheduler {
             return switch (cfg.scheduler) {
                 .real => Scheduler.init(),
                 .mock => Scheduler{},
             };
         }
 
-        fn make_cartridge(self: *This) !Cartridge {
+        fn make_cartridge(_: *This) Cartridge {
             return switch (cfg.cartridge) {
-                .real => switch (self.runtime_cfg.cartridge.?) {
-                    .by_buffer => |f| Cartridge.fromBuffer(f.buffer),
-                },
+                .real => Cartridge.init(),
                 .mock => Cartridge{},
                 .dummy => Cartridge{},
             };
         }
 
-        fn make_interrupt(_: *This) !Interrupt {
+        fn make_interrupt(_: *This) Interrupt {
             return switch (cfg.interrupt) {
                 .real => Interrupt.init(),
                 .mock => Interrupt.init(),
@@ -266,154 +244,154 @@ pub fn Container(comptime cfg: ContainerConfig) type {
             };
         }
 
-        fn make_joypad(self: *This) !Joypad {
+        fn make_joypad(self: *This) Joypad {
             return switch (cfg.joypad) {
-                .real => Joypad.init(try self.get_interrupt()),
+                .real => Joypad.init(self.get_interrupt()),
                 .dummy => Dummy{},
             };
         }
 
-        fn make_serial(self: *This) !Serial {
+        fn make_serial(self: *This) Serial {
             return switch (cfg.serial) {
-                .real => Serial.init(try self.get_scheduler(), try self.get_interrupt()),
+                .real => Serial.init(self.get_scheduler(), self.get_interrupt()),
                 .dummy => Dummy{},
             };
         }
 
-        fn make_apu(self: *This) !Apu {
+        fn make_apu(self: *This) Apu {
             return switch (cfg.apu) {
-                .real => Apu.init(try self.get_audio_backend()),
-                .mock => Apu.init(try self.get_audio_backend()),
+                .real => Apu.init(self.get_audio_backend()),
+                .mock => Apu.init(self.get_audio_backend()),
                 .dummy => Dummy{},
             };
         }
 
-        fn make_timer(self: *This) !Timer {
+        fn make_timer(self: *This) Timer {
             return switch (cfg.timer) {
-                .real => Timer.init(try self.get_apu(), try self.get_interrupt()),
+                .real => Timer.init(self.get_apu(), self.get_interrupt()),
                 .dummy => Dummy{},
             };
         }
 
-        fn make_boot_rom(_: *This) !BootRom {
+        fn make_boot_rom(_: *This) BootRom {
             return switch (cfg.boot_rom) {
                 .dummy => Dummy{},
             };
         }
 
-        fn make_ppu(self: *This) !Ppu {
+        fn make_ppu(self: *This) Ppu {
             return switch (cfg.ppu) {
-                .real => Ppu.init(try self.get_video_backend()),
+                .real => Ppu.init(self.get_video_backend()),
                 .dummy => DummyWithTickArgument{},
             };
         }
 
-        fn make_mmio(self: *This) !Mmio {
+        fn make_mmio(self: *This) Mmio {
             return switch (cfg.mmio) {
                 .real => Mmio.init(
-                    try self.get_joypad(),
-                    try self.get_serial(),
-                    try self.get_timer(),
-                    try self.get_interrupt(),
-                    try self.get_apu(),
-                    try self.get_ppu(),
-                    try self.get_boot_rom(),
+                    self.get_joypad(),
+                    self.get_serial(),
+                    self.get_timer(),
+                    self.get_interrupt(),
+                    self.get_apu(),
+                    self.get_ppu(),
+                    self.get_boot_rom(),
                 ),
                 .dummy => Dummy{},
             };
         }
 
-        fn make_mmu(self: *This) !Mmu {
+        fn make_mmu(self: *This) Mmu {
             return switch (cfg.mmu) {
                 .real => Mmu.init(
-                    try self.get_cartridge(),
-                    try self.get_ppu(),
-                    try self.get_mmio(),
+                    self.get_cartridge(),
+                    self.get_ppu(),
+                    self.get_mmio(),
                 ),
                 .mock => Mmu{},
                 .dummy => Dummy{},
             };
         }
 
-        fn make_cpu(self: *This) !Cpu {
+        fn make_cpu(self: *This) Cpu {
             return switch (cfg.cpu) {
-                .real => Cpu.init(try self.get_mmu(), try self.get_interrupt(), self.runtime_cfg.breakpoint_instruction),
-                .mock => Cpu.init(try self.get_mmu()),
+                .real => Cpu.init(self.get_mmu(), self.get_interrupt()),
+                .mock => Cpu.init(self.get_mmu()),
             };
         }
 
-        fn make_debugger(self: *This) !Debugger {
+        fn make_debugger(self: *This) Debugger {
             return switch (cfg.debugger) {
-                .real => Debugger.init(try self.get_cpu(), try self.get_mmu(), self.runtime_cfg.debugger_writer.?),
+                .real => Debugger.init(self.get_cpu(), self.get_mmu()),
                 .mock => Debugger{},
             };
         }
 
-        fn make_emulator(self: *This) !Emulator {
-            return Emulator.init(try self.get_cpu(), try self.get_apu(), try self.get_ppu(), try self.get_timer(), try self.get_scheduler(), try self.get_debugger());
+        fn make_emulator(self: *This) Emulator {
+            return Emulator.init(self.get_cpu(), self.get_apu(), self.get_ppu(), self.get_timer(), self.get_scheduler(), self.get_debugger());
         }
 
-        pub fn get_audio_backend(self: *This) !*AudioBackend {
+        pub fn get_audio_backend(self: *This) *AudioBackend {
             return get_or_make(AudioBackend, "audio_backend", self);
         }
 
-        pub fn get_video_backend(self: *This) !*VideoBackend {
+        pub fn get_video_backend(self: *This) *VideoBackend {
             return get_or_make(VideoBackend, "video_backend", self);
         }
 
-        pub fn get_scheduler(self: *This) !*Scheduler {
+        pub fn get_scheduler(self: *This) *Scheduler {
             return get_or_make(Scheduler, "scheduler", self);
         }
 
-        pub fn get_cartridge(self: *This) !*Cartridge {
+        pub fn get_cartridge(self: *This) *Cartridge {
             return get_or_make(Cartridge, "cartridge", self);
         }
 
-        pub fn get_interrupt(self: *This) !*Interrupt {
+        pub fn get_interrupt(self: *This) *Interrupt {
             return get_or_make(Interrupt, "interrupt", self);
         }
 
-        pub fn get_joypad(self: *This) !*Joypad {
+        pub fn get_joypad(self: *This) *Joypad {
             return get_or_make(Joypad, "joypad", self);
         }
 
-        pub fn get_serial(self: *This) !*Serial {
+        pub fn get_serial(self: *This) *Serial {
             return get_or_make(Serial, "serial", self);
         }
 
-        pub fn get_apu(self: *This) !*Apu {
+        pub fn get_apu(self: *This) *Apu {
             return get_or_make(Apu, "apu", self);
         }
 
-        pub fn get_timer(self: *This) !*Timer {
+        pub fn get_timer(self: *This) *Timer {
             return get_or_make(Timer, "timer", self);
         }
 
-        pub fn get_boot_rom(self: *This) !*BootRom {
+        pub fn get_boot_rom(self: *This) *BootRom {
             return get_or_make(BootRom, "boot_rom", self);
         }
 
-        pub fn get_ppu(self: *This) !*Ppu {
+        pub fn get_ppu(self: *This) *Ppu {
             return get_or_make(Ppu, "ppu", self);
         }
 
-        pub fn get_mmio(self: *This) !*Mmio {
+        pub fn get_mmio(self: *This) *Mmio {
             return get_or_make(Mmio, "mmio", self);
         }
 
-        pub fn get_mmu(self: *This) !*Mmu {
+        pub fn get_mmu(self: *This) *Mmu {
             return get_or_make(Mmu, "mmu", self);
         }
 
-        pub fn get_cpu(self: *This) !*Cpu {
+        pub fn get_cpu(self: *This) *Cpu {
             return get_or_make(Cpu, "cpu", self);
         }
 
-        pub fn get_debugger(self: *This) !*Debugger {
+        pub fn get_debugger(self: *This) *Debugger {
             return get_or_make(Debugger, "debugger", self);
         }
 
-        pub fn get_emulator(self: *This) !*Emulator {
+        pub fn get_emulator(self: *This) *Emulator {
             return get_or_make(Emulator, "emulator", self);
         }
     };

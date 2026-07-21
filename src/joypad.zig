@@ -106,8 +106,8 @@ const TestContainer = @import("dependency_container.zig").Container(.{
 });
 
 test "Joypad initial state reads 0xFF" {
-    var container = TestContainer.init(.{});
-    var joypad = try container.get_joypad();
+    var container = TestContainer.init();
+    var joypad = container.get_joypad();
     joypad.select_buttons = 1;
     joypad.select_dpad = 1;
     joypad.buttons = 0b0000;
@@ -118,8 +118,8 @@ test "Joypad initial state reads 0xFF" {
 }
 
 test "Joypad button selection returns button state" {
-    var container = TestContainer.init(.{});
-    var joypad = try container.get_joypad();
+    var container = TestContainer.init();
+    var joypad = container.get_joypad();
     joypad.select_buttons = 0;
     joypad.select_dpad = 1;
     joypad.buttons = 0b0000;
@@ -132,8 +132,8 @@ test "Joypad button selection returns button state" {
 }
 
 test "Joypad dpad selection returns dpad state" {
-    var container = TestContainer.init(.{});
-    var joypad = try container.get_joypad();
+    var container = TestContainer.init();
+    var joypad = container.get_joypad();
     joypad.select_buttons = 1;
     joypad.select_dpad = 0;
     joypad.buttons = 0b0000;
@@ -147,8 +147,8 @@ test "Joypad dpad selection returns dpad state" {
 }
 
 test "Joypad selection bits update correctly" {
-    var container = TestContainer.init(.{});
-    var joypad = try container.get_joypad();
+    var container = TestContainer.init();
+    var joypad = container.get_joypad();
     joypad.select_buttons = 1;
     joypad.select_dpad = 1;
     joypad.buttons = 0b0000;
@@ -164,8 +164,8 @@ test "Joypad selection bits update correctly" {
 }
 
 test "Joypad preserves unselected group state" {
-    var container = TestContainer.init(.{});
-    var joypad = try container.get_joypad();
+    var container = TestContainer.init();
+    var joypad = container.get_joypad();
     joypad.select_buttons = 0;
     joypad.select_dpad = 0;
     joypad.buttons = 0b0000;
@@ -177,8 +177,8 @@ test "Joypad preserves unselected group state" {
 }
 
 test "getActive and setActive round-trip" {
-    var container = TestContainer.init(.{});
-    var joypad = try container.get_joypad();
+    var container = TestContainer.init();
+    var joypad = container.get_joypad();
 
     const original = JoypadButtons{
         .start = true,
@@ -198,8 +198,8 @@ test "getActive and setActive round-trip" {
 }
 
 test "setActive sets internal button states correctly" {
-    var container = TestContainer.init(.{});
-    var joypad = try container.get_joypad();
+    var container = TestContainer.init();
+    var joypad = container.get_joypad();
 
     const state = JoypadButtons{
         .start = true,
@@ -223,9 +223,9 @@ test "setActive sets internal button states correctly" {
 }
 
 test "setActive triggers interrupt on new press" {
-    var container = TestContainer.init(.{});
-    const intr = try container.get_interrupt();
-    var joypad = try container.get_joypad();
+    var container = TestContainer.init();
+    const intr = container.get_interrupt();
+    var joypad = container.get_joypad();
 
     // Initial state: all released (1s)
     joypad.buttons = 0xF;
@@ -253,9 +253,9 @@ test "setActive triggers interrupt on new press" {
 }
 
 test "setActive does not trigger interrupt when unchanged" {
-    var container = TestContainer.init(.{});
-    var intr = try container.get_interrupt();
-    var joypad = try container.get_joypad();
+    var container = TestContainer.init();
+    var intr = container.get_interrupt();
+    var joypad = container.get_joypad();
 
     joypad.select_buttons = 0;
     joypad.select_dpad = 0;
