@@ -25,13 +25,13 @@ fn testInterrupt(target: InterruptKind, targetAddr: u16) !void {
     {
         const program = "loop: jp loop";
 
-        const assembled1 = try lib.assembler.translate(program, std.testing.allocator, 0x100);
+        const assembled1 = try lib.assembler.translate(program, std.testing.allocator, 0x100, null);
         defer std.testing.allocator.free(assembled1);
 
         @memset(&Mmu.backing_array, 0xAA);
         @memcpy(Mmu.backing_array[0x100 .. 0x100 + assembled1.len], assembled1);
 
-        const assembled2 = try lib.assembler.translate(program, std.testing.allocator, targetAddr);
+        const assembled2 = try lib.assembler.translate(program, std.testing.allocator, targetAddr, null);
         defer std.testing.allocator.free(assembled2);
 
         @memcpy(Mmu.backing_array[targetAddr .. targetAddr + assembled2.len], assembled2);
@@ -126,7 +126,7 @@ test "halt normally: ime=1 and no interrupt pending" {
     ;
 
     {
-        const assembled = try lib.assembler.translate(program, std.testing.allocator, 0);
+        const assembled = try lib.assembler.translate(program, std.testing.allocator, 0, null);
         defer std.testing.allocator.free(assembled);
         @memset(&Mmu.backing_array, 0xAA);
         @memcpy(Mmu.backing_array[0..assembled.len], assembled);
@@ -189,7 +189,7 @@ test "halt normally: ime=0 and no interrupt pending" {
     ;
 
     {
-        const assembled = try lib.assembler.translate(program, std.testing.allocator, 0);
+        const assembled = try lib.assembler.translate(program, std.testing.allocator, 0, null);
         defer std.testing.allocator.free(assembled);
         @memset(&Mmu.backing_array, 0xAA);
         @memcpy(Mmu.backing_array[0..assembled.len], assembled);
@@ -239,7 +239,7 @@ test "halt bug: ei, halt" {
     ;
 
     {
-        const assembled = try lib.assembler.translate(program, std.testing.allocator, 0);
+        const assembled = try lib.assembler.translate(program, std.testing.allocator, 0, null);
         defer std.testing.allocator.free(assembled);
         @memset(&Mmu.backing_array, 0xAA);
         @memcpy(Mmu.backing_array[0..assembled.len], assembled);
@@ -301,7 +301,7 @@ test "halt bug: halt, inc b " {
     ;
 
     {
-        const assembled = try lib.assembler.translate(program, std.testing.allocator, 0);
+        const assembled = try lib.assembler.translate(program, std.testing.allocator, 0, null);
         defer std.testing.allocator.free(assembled);
         @memset(&Mmu.backing_array, 0xAA);
         @memcpy(Mmu.backing_array[0..assembled.len], assembled);
@@ -341,7 +341,7 @@ test "halt bug: halt, ld B 4" {
     ;
 
     {
-        const assembled = try lib.assembler.translate(program, std.testing.allocator, 0);
+        const assembled = try lib.assembler.translate(program, std.testing.allocator, 0, null);
         defer std.testing.allocator.free(assembled);
         @memset(&Mmu.backing_array, 0xAA);
         @memcpy(Mmu.backing_array[0..assembled.len], assembled);
@@ -383,7 +383,7 @@ test "halt bug: halt, rst 1" {
     ;
 
     {
-        const assembled = try lib.assembler.translate(program, std.testing.allocator, 0);
+        const assembled = try lib.assembler.translate(program, std.testing.allocator, 0, null);
         defer std.testing.allocator.free(assembled);
         @memset(&Mmu.backing_array, 0xAA);
         @memcpy(Mmu.backing_array[0..assembled.len], assembled);
@@ -425,7 +425,7 @@ test "halt bug: halt, halt" {
     ;
 
     {
-        const assembled = try lib.assembler.translate(program, std.testing.allocator, 0);
+        const assembled = try lib.assembler.translate(program, std.testing.allocator, 0, null);
         defer std.testing.allocator.free(assembled);
         @memset(&Mmu.backing_array, 0xAA);
         @memcpy(Mmu.backing_array[0..assembled.len], assembled);

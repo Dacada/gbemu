@@ -2,13 +2,29 @@ const std = @import("std");
 
 const logger = std.log.scoped(.assembler);
 
-pub const AssemblerError = error{
+const LabelValidationError = error{
+    StartsNonAlphabetic,
+    IsNonAlphanumeric,
+    IsRegister8,
+    IsRegister16,
+    IsCondition,
+};
+
+const OpcodeParseError = std.mem.Allocator.Error || error{
     InvalidInstruction,
+};
+
+const ArgumentParseError = std.mem.Allocator.Error || error{
     MissmatchedParenthesis,
+};
+
+const ParserError = std.mem.Allocator.Error || LabelValidationError || OpcodeParseError || ArgumentParseError || error{
     RedefinedLabel,
     InvalidArgumentCount,
+};
+
+pub const AssemblerError = ParserError || error{
     InvalidArgument,
-    InvalidLabel,
     InvalidInstructionArguments,
     UndefinedLabel,
 };
@@ -179,7 +195,7 @@ test "lexer" {
     try std.testing.expectEqualDeep(&expected, actual);
 }
 
-fn toUpper(input: []const u8, allocator: std.mem.Allocator) ![]u8 {
+fn toUpper(input: []const u8, allocator: std.mem.Allocator) std.mem.Allocator.Error![]u8 {
     var upper: []u8 = try allocator.alloc(u8, input.len);
     for (input, 0..) |c, i| {
         upper[i] = if (c >= 'a' and c <= 'z') c - ('a' - 'A') else c;
@@ -197,45 +213,58 @@ test "toUpper" {
     try std.testing.expectEqualSlices(u8, expected, actual);
 }
 
-fn validateLabel(source: []const u8, line: usize) !void {
+fn validateLabel(source: []const u8) LabelValidationError!void {
     if (source[0] != '_' and !std.ascii.isAlphabetic(source[0])) {
-        logger.err("Line {d}: Invalid label '{s}'.", .{ line, source });
-        return AssemblerError.InvalidLabel;
+        return LabelValidationError.StartsNonAlphabetic;
     }
     if (std.meta.stringToEnum(Register8, source) != null) {
-        logger.err("Line {d}: Invalid label '{s}' is actually a Register8", .{ line, source });
-        return AssemblerError.InvalidLabel;
+        return LabelValidationError.IsRegister8;
     }
     if (std.meta.stringToEnum(Register16, source) != null) {
-        logger.err("Line {d}: Invalid label '{s}' is actually a Register16", .{ line, source });
-        return AssemblerError.InvalidLabel;
+        return LabelValidationError.IsRegister16;
     }
     if (std.meta.stringToEnum(Condition, source) != null) {
-        logger.err("Line {d}: Invalid label '{s}' is actually a Condition", .{ line, source });
-        return AssemblerError.InvalidLabel;
+        return LabelValidationError.IsCondition;
     }
     for (source) |c| {
         if (!std.ascii.isAlphanumeric(c) and c != '_') {
-            logger.err("Line {d}: Invalid label '{s}'.", .{ line, source });
-            return AssemblerError.InvalidLabel;
+            return LabelValidationError.IsNonAlphanumeric;
         }
     }
 }
 
 test "validateLabel incorrect 1" {
-    const expected = AssemblerError.InvalidLabel;
-    const actual = validateLabel("-0x1", 0);
+    const expected = AssemblerError.StartsNonAlphabetic;
+    const actual = validateLabel("-0x1");
     try std.testing.expectError(expected, actual);
 }
 
 test "validateLabel incorrect 2" {
-    const expected = AssemblerError.InvalidLabel;
-    const actual = validateLabel("_0$1", 0);
+    const expected = AssemblerError.IsNonAlphanumeric;
+    const actual = validateLabel("_0$1");
+    try std.testing.expectError(expected, actual);
+}
+
+test "validateLabel incorrect 3" {
+    const expected = AssemblerError.IsRegister8;
+    const actual = validateLabel("B");
+    try std.testing.expectError(expected, actual);
+}
+
+test "validateLabel incorrect 4" {
+    const expected = AssemblerError.IsRegister16;
+    const actual = validateLabel("BC");
+    try std.testing.expectError(expected, actual);
+}
+
+test "validateLabel incorrect 5" {
+    const expected = AssemblerError.IsCondition;
+    const actual = validateLabel("NZ");
     try std.testing.expectError(expected, actual);
 }
 
 test "validateLabel correct" {
-    try validateLabel("_01", 0);
+    try validateLabel("_01");
 }
 
 const Instruction = enum { LD, LDH, PUSH, POP, ADD, ADC, SUB, SBC, CP, INC, DEC, AND, OR, XOR, CCF, SCF, DAA, CPL, RLCA, RRCA, RLA, RRA, RLC, RRC, RL, RR, SLA, SRA, SWAP, SRL, BIT, RES, SET, JP, JR, CALL, RET, RETI, RST, HALT, STOP, DI, EI, NOP };
@@ -292,10 +321,10 @@ const Argument = struct {
         }
     }
 
-    fn parseIndirect(input: []const u8) !struct { bool, []const u8 } {
+    fn parseIndirect(input: []const u8) ArgumentParseError!struct { bool, []const u8 } {
         if (input[0] == '(') {
             if (input[input.len - 1] != ')') {
-                return AssemblerError.MissmatchedParenthesis;
+                return ArgumentParseError.MissmatchedParenthesis;
             }
             return .{
                 true,
@@ -388,7 +417,7 @@ const Argument = struct {
         return std.fmt.parseInt(i32, rest, base) catch null;
     }
 
-    fn fromTokenInner(token: []const u8, allocator: std.mem.Allocator) !Argument {
+    fn fromTokenInner(token: []const u8, allocator: std.mem.Allocator) ArgumentParseError!Argument {
         var source = token;
 
         const indirect, source = try Argument.parseIndirect(source);
@@ -431,15 +460,10 @@ const Argument = struct {
         };
     }
 
-    fn fromToken(token: Token, allocator: std.mem.Allocator) !Argument {
+    fn fromToken(token: Token, allocator: std.mem.Allocator) ArgumentParseError!Argument {
         const token_upper = try toUpper(token.source, allocator);
         defer allocator.free(token_upper);
-        const res = Argument.fromTokenInner(token_upper, allocator) catch |e| {
-            if (e == AssemblerError.MissmatchedParenthesis) {
-                logger.err("Line {d}: Missmatched parenthesis '{s}'", .{ token.line, token.source });
-            }
-            return e;
-        };
+        const res = try Argument.fromTokenInner(token_upper, allocator);
         return res;
     }
 
@@ -476,7 +500,7 @@ test "parseIndirect 2" {
 
 test "parseIndirect 3" {
     const input = "(foo";
-    const expected = AssemblerError.MissmatchedParenthesis;
+    const expected = ArgumentParseError.MissmatchedParenthesis;
 
     const actual = Argument.parseIndirect(input);
 
@@ -3597,13 +3621,12 @@ const Opcode = struct {
         }
     }
 
-    fn fromToken(token: Token, allocator: std.mem.Allocator) !Opcode {
+    fn fromToken(token: Token, allocator: std.mem.Allocator) OpcodeParseError!Opcode {
         const token_capital = try toUpper(token.source, allocator);
         defer allocator.free(token_capital);
         const instr = std.meta.stringToEnum(Instruction, token_capital);
         if (instr == null) {
-            logger.err("Line {d}: Invalid instruction '{s}'", .{ token.line, token.source });
-            return AssemblerError.InvalidInstruction;
+            return OpcodeParseError.InvalidInstruction;
         }
         return Opcode{
             .line = token.line,
@@ -3613,7 +3636,7 @@ const Opcode = struct {
         };
     }
 
-    fn addArgument(self: *Opcode, arg: Argument) !void {
+    fn addArgument(self: *Opcode, arg: Argument) ParserError!void {
         if (self.arg1 == null) {
             self.arg1 = arg;
             return;
@@ -3623,7 +3646,7 @@ const Opcode = struct {
             return;
         }
         logger.err("Line {d}: Too many arguments for instruction '{s}'", .{ self.line, @tagName(self.instr) });
-        return AssemblerError.InvalidArgumentCount;
+        return ParserError.InvalidArgumentCount;
     }
 
     fn free(self: *const Opcode, allocator: std.mem.Allocator) void {
@@ -4339,7 +4362,12 @@ test "formatOpcode 3" {
     try std.testing.expectEqualStrings("LD", writer.buffered());
 }
 
-pub fn parser(input: []const Token, allocator: std.mem.Allocator) !struct { std.StringHashMap(usize), []Opcode } {
+const ParserDiagnostics = struct {
+    line: usize,
+    context: []const u8,
+};
+
+pub fn parser(input: []const Token, allocator: std.mem.Allocator, diag: ?*ParserDiagnostics) ParserError!struct { std.StringHashMap(usize), []Opcode } {
     var opcodes = try std.ArrayList(Opcode).initCapacity(allocator, 64);
     defer opcodes.deinit(allocator);
 
@@ -4360,15 +4388,18 @@ pub fn parser(input: []const Token, allocator: std.mem.Allocator) !struct { std.
     var current: ?Opcode = null;
     var idx: usize = 0;
     for (input) |token| {
+        if (diag) |d| {
+            d.line = token.line;
+            d.context = token.source;
+        }
         switch (token.which) {
             TokenKind.Label => {
                 const upper = try toUpper(token.source, allocator);
                 errdefer allocator.free(upper);
 
-                try validateLabel(token.source, token.line);
+                try validateLabel(token.source);
                 if (labels.contains(upper)) {
-                    logger.err("Line {d}: Redefinition of label '{s}'", .{ token.line, token.source });
-                    return AssemblerError.RedefinedLabel;
+                    return ParserError.RedefinedLabel;
                 }
                 try labels.put(upper, idx);
             },
@@ -4461,7 +4492,7 @@ test "parser succeed" {
         },
     };
 
-    var labels, const opcodes = try parser(tokens, std.testing.allocator);
+    var labels, const opcodes = try parser(tokens, std.testing.allocator, null);
     defer std.testing.allocator.free(opcodes);
     defer std.testing.allocator.free(opcodes[0].arg1.?.arg.Reserved);
     defer std.testing.allocator.free(opcodes[1].arg1.?.arg.Reserved);
@@ -4592,7 +4623,7 @@ test "assembler" {
     const tokens = try lexer(input, std.testing.allocator);
     defer std.testing.allocator.free(tokens);
 
-    var labelMap, const opcodes = try parser(tokens, std.testing.allocator);
+    var labelMap, const opcodes = try parser(tokens, std.testing.allocator, null);
     defer labelMap.deinit();
     defer std.testing.allocator.free(opcodes);
     defer freeLabelMap(&labelMap, std.testing.allocator);
@@ -4622,7 +4653,7 @@ test "assembler offset" {
     const tokens = try lexer(input, std.testing.allocator);
     defer std.testing.allocator.free(tokens);
 
-    var labelMap, const opcodes = try parser(tokens, std.testing.allocator);
+    var labelMap, const opcodes = try parser(tokens, std.testing.allocator, null);
     defer labelMap.deinit();
     defer std.testing.allocator.free(opcodes);
     defer freeLabelMap(&labelMap, std.testing.allocator);
@@ -4646,7 +4677,7 @@ test "assembler bad argument" {
     const tokens = try lexer(input, std.testing.allocator);
     defer std.testing.allocator.free(tokens);
 
-    var labelMap, const opcodes = try parser(tokens, std.testing.allocator);
+    var labelMap, const opcodes = try parser(tokens, std.testing.allocator, null);
     defer labelMap.deinit();
     defer std.testing.allocator.free(opcodes);
     defer freeLabelMap(&labelMap, std.testing.allocator);
@@ -4663,7 +4694,7 @@ test "assembler bad label" {
     const tokens = try lexer(input, std.testing.allocator);
     defer std.testing.allocator.free(tokens);
 
-    var labelMap, const opcodes = try parser(tokens, std.testing.allocator);
+    var labelMap, const opcodes = try parser(tokens, std.testing.allocator, null);
     defer labelMap.deinit();
     defer std.testing.allocator.free(opcodes);
     defer freeLabelMap(&labelMap, std.testing.allocator);
@@ -4674,11 +4705,22 @@ test "assembler bad label" {
     try std.testing.expectError(AssemblerError.UndefinedLabel, actual);
 }
 
-pub fn translate(code: []const u8, allocator: std.mem.Allocator, offset: u16) ![]u8 {
+pub const AssemblerDiagnostics = union(enum) {
+    parser: ParserDiagnostics,
+};
+
+pub fn translate(code: []const u8, allocator: std.mem.Allocator, offset: u16, diag: ?*AssemblerDiagnostics) ![]u8 {
     const tokens = try lexer(code, allocator);
     defer allocator.free(tokens);
 
-    var labelMap, const opcodes = try parser(tokens, allocator);
+    var parser_diag: ParserDiagnostics = undefined;
+    var labelMap, const opcodes = parser(tokens, allocator, &parser_diag) catch |e| {
+        if (diag) |d| {
+            d.parser = parser_diag;
+        }
+        return e;
+    };
+
     defer labelMap.deinit();
     defer allocator.free(opcodes);
     defer freeLabelMap(&labelMap, allocator);
@@ -4994,7 +5036,7 @@ test "translate" {
         0x00, // NOP
     };
 
-    const actual = try translate(input, std.testing.allocator, 0);
+    const actual = try translate(input, std.testing.allocator, 0, null);
     defer std.testing.allocator.free(actual);
 
     try std.testing.expectEqualSlices(u8, &expected, actual);
