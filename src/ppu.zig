@@ -41,26 +41,24 @@ pub fn Ppu(VideoBackend: type) type {
             const Row = struct { u16, u16, u16, u16 };
 
             pub fn read(ppu: *This, addr: u16) struct { MemoryFlag, u8 } {
-                const corrupted = Oam.maybe_corrupting_read(ppu);
                 const illegal_access, const val = if (ppu.mode == .Mode0 or ppu.mode == .Mode1)
                     .{ false, static_oam[addr] }
                 else
                     .{ true, 0xFF };
                 const flags = MemoryFlag{
                     .uninitialized = !static_init_oam[addr],
-                    .illegal = corrupted or illegal_access,
+                    .illegal = illegal_access,
                 };
                 return .{ flags, val };
             }
 
             pub fn write(ppu: *This, addr: u16, val: u8) MemoryFlag {
-                const corrupted = Oam.maybe_corrupting_write(ppu);
                 const illegal_access = if (ppu.mode == .Mode0 or ppu.mode == .Mode1) brk: {
                     static_oam[addr] = val;
                     static_init_oam[addr] = true;
                     break :brk false;
                 } else true;
-                return .{ .illegal = corrupted or illegal_access };
+                return .{ .illegal = illegal_access };
             }
 
             pub fn peek(_: *This, addr: u16) u8 {
@@ -69,104 +67,6 @@ pub fn Ppu(VideoBackend: type) type {
 
             pub fn poke(_: *This, addr: u16, val: u8) void {
                 static_oam[addr] = val;
-            }
-
-            /// For OAM corruption triggered by 16bit register increment/decrement
-            pub fn fake_write(ppu: *This) void {
-                _ = Oam.maybe_corrupting_write(ppu);
-            }
-
-            fn maybe_corrupting_read(ppu: *This) bool {
-                if (ppu.mode == .Mode2) {
-                    ppu.corrupting_oam_read = true;
-                    return true;
-                }
-                return false;
-            }
-
-            fn maybe_corrupting_write(ppu: *This) bool {
-                if (ppu.mode == .Mode2) {
-                    ppu.corrupting_oam_write = true;
-                    return true;
-                }
-                return false;
-            }
-
-            fn get_row(ppu: *This, addr: u5) Row {
-                var start: u16 = addr;
-                start *= 8;
-
-                var ret: Row = undefined;
-                inline for (0..4) |i| {
-                    var a: u16 = start;
-                    a += i * 2;
-                    ret[i] = Oam.peek(ppu, a + 1);
-                    ret[i] <<= 8;
-                    ret[i] |= Oam.peek(ppu, a);
-                }
-                return ret;
-            }
-
-            fn set_row(ppu: *This, addr: u5, row: Row) void {
-                var start: u16 = addr;
-                start *= 8;
-
-                inline for (0..4) |i| {
-                    var a: u16 = start;
-                    a += i * 2;
-
-                    const val = row[i];
-                    Oam.poke(ppu, a + 1, @intCast((val & 0xFF00) >> 8));
-                    Oam.poke(ppu, a, @intCast(val & 0xFF));
-                }
-            }
-
-            fn execute_regular_corruption(ppu: *This, addr: u5, comptime which: enum { read, write }) void {
-                // https://gbdev.io/pandocs/OAM_Corruption_Bug.html#write-corruption
-                // https://gbdev.io/pandocs/OAM_Corruption_Bug.html#read-corruption
-
-                if (addr == 0) {
-                    // no corruption for the first row
-                    return;
-                }
-
-                const a, _, _, _ = Oam.get_row(ppu, addr);
-                const b, const r1, const c, const r3 = Oam.get_row(ppu, addr - 1);
-
-                const new = switch (which) {
-                    .write => ((a ^ c) & (b ^ c)) ^ c,
-                    .read => b | (a & c),
-                };
-
-                Oam.set_row(ppu, addr, .{ new, r1, c, r3 });
-            }
-
-            fn execute_write_corruption(ppu: *This, addr: u5) void {
-                Oam.execute_regular_corruption(ppu, addr, .write);
-            }
-
-            fn execute_read_corruption(ppu: *This, addr: u5) void {
-                Oam.execute_regular_corruption(ppu, addr, .read);
-            }
-
-            fn execute_read_write_corruption(ppu: *This, addr: u5) void {
-                // https://gbdev.io/pandocs/OAM_Corruption_Bug.html#read-during-increasedecrease
-
-                if (addr > 3 and addr < 19) {
-                    const a, _, _, _ = Oam.get_row(ppu, addr - 2);
-                    const b, const r1, const d, const r3 = Oam.get_row(ppu, addr - 1);
-                    const c, _, _, _ = Oam.get_row(ppu, addr);
-
-                    const new = (b & (a | c | d)) | (a & c & d);
-
-                    const row: Row = .{ new, r1, d, r3 };
-                    Oam.set_row(ppu, addr - 1, row);
-
-                    Oam.set_row(ppu, addr, row);
-                    Oam.set_row(ppu, addr - 2, row);
-                }
-
-                Oam.execute_read_corruption(ppu, addr);
             }
         };
 
@@ -209,25 +109,8 @@ pub fn Ppu(VideoBackend: type) type {
             };
         }
 
-        pub fn tick(self: *This, tcycle: u2) void {
-            // do some housekeeping for the previous M-cycle
-            if (tcycle == 0) {
-                self.apply_oam_corruption();
-            }
-
+        pub fn tick(_: *This, _: u2) void {
             //everything here ...
-        }
-
-        fn apply_oam_corruption(self: *This) void {
-            if (self.corrupting_oam_read and self.corrupting_oam_write) {
-                Oam.execute_read_write_corruption(self, self.current_oam_row);
-            } else if (self.corrupting_oam_read) {
-                Oam.execute_read_corruption(self, self.current_oam_row);
-            } else if (self.corrupting_oam_write) {
-                Oam.execute_write_corruption(self, self.current_oam_row);
-            }
-            self.corrupting_oam_read = false;
-            self.corrupting_oam_write = false;
         }
 
         pub fn read(_: *This, _: u16) struct { MemoryFlag, u8 } {

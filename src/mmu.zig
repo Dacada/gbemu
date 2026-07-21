@@ -222,16 +222,6 @@ pub fn Mmu(Cartridge: type, Ppu: type, Mmio: type) type {
                 buff[i] = self.peek(start + @as(u16, @intCast(i)));
             }
         }
-
-        pub inline fn incDec16Bit(self: *This, prev: u16) void {
-            if (prev < 0xFE00) {
-                return;
-            }
-            if (prev > 0xFEFF) {
-                return;
-            }
-            Ppu.Oam.fake_write(self.ppu);
-        }
     };
 }
 
@@ -256,8 +246,6 @@ pub const MockMmu = struct {
     pub inline fn write(self: *MockMmu, addr: u16, val: u8) void {
         return self.poke(addr, val);
     }
-
-    pub inline fn incDec16Bit(_: *MockMmu, _: u16) void {}
 };
 
 pub fn Dummy(comptime tick_receives_arg: bool) type {

@@ -864,13 +864,13 @@ pub fn Cpu(Mmu: type, Interrupt: type) type {
 
         // HELPERS //
 
-        fn inc16Bit(self: *This, reg: *WideRegister) void {
-            self.mmu.incDec16Bit(reg.all());
+        fn inc16Bit(_: *This, reg: *WideRegister) void {
+            // this will be useful for the oam corruption bug
             reg.inc();
         }
 
-        fn dec16Bit(self: *This, reg: *WideRegister) void {
-            self.mmu.incDec16Bit(reg.all());
+        fn dec16Bit(_: *This, reg: *WideRegister) void {
+            // this will be useful for the oam corruption bug
             reg.dec();
         }
 
