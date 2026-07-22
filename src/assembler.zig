@@ -1,7 +1,5 @@
 const std = @import("std");
 
-const logger = std.log.scoped(.assembler);
-
 const LabelValidationError = error{
     StartsNonAlphabetic,
     IsNonAlphanumeric,
@@ -18,16 +16,19 @@ const ArgumentParseError = std.mem.Allocator.Error || error{
     MissmatchedParenthesis,
 };
 
+const EncodingError = std.mem.Allocator.Error || error{
+    InvalidInstructionArguments,
+    UndefinedLabel,
+};
+
 const ParserError = std.mem.Allocator.Error || LabelValidationError || OpcodeParseError || ArgumentParseError || error{
     RedefinedLabel,
     InvalidArgumentCount,
 };
 
-pub const AssemblerError = ParserError || error{
-    InvalidArgument,
-    InvalidInstructionArguments,
-    UndefinedLabel,
-};
+pub const AssemblerError = std.mem.Allocator.Error || EncodingError;
+
+pub const TranslateError = ParserError || AssemblerError;
 
 pub const TokenKind = enum {
     Label,
@@ -74,7 +75,7 @@ fn read_one_token(input: []const u8) struct { []const u8, []const u8 } {
     return .{ input[i..j], input[j..] };
 }
 
-pub fn lexer(input: []const u8, allocator: std.mem.Allocator) ![]Token {
+pub fn lexer(input: []const u8, allocator: std.mem.Allocator) std.mem.Allocator.Error![]Token {
     var tokens = try std.ArrayList(Token).initCapacity(allocator, 16);
     defer tokens.deinit(allocator);
 
@@ -234,31 +235,31 @@ fn validateLabel(source: []const u8) LabelValidationError!void {
 }
 
 test "validateLabel incorrect 1" {
-    const expected = AssemblerError.StartsNonAlphabetic;
+    const expected = LabelValidationError.StartsNonAlphabetic;
     const actual = validateLabel("-0x1");
     try std.testing.expectError(expected, actual);
 }
 
 test "validateLabel incorrect 2" {
-    const expected = AssemblerError.IsNonAlphanumeric;
+    const expected = LabelValidationError.IsNonAlphanumeric;
     const actual = validateLabel("_0$1");
     try std.testing.expectError(expected, actual);
 }
 
 test "validateLabel incorrect 3" {
-    const expected = AssemblerError.IsRegister8;
+    const expected = LabelValidationError.IsRegister8;
     const actual = validateLabel("B");
     try std.testing.expectError(expected, actual);
 }
 
 test "validateLabel incorrect 4" {
-    const expected = AssemblerError.IsRegister16;
+    const expected = LabelValidationError.IsRegister16;
     const actual = validateLabel("BC");
     try std.testing.expectError(expected, actual);
 }
 
 test "validateLabel incorrect 5" {
-    const expected = AssemblerError.IsCondition;
+    const expected = LabelValidationError.IsCondition;
     const actual = validateLabel("NZ");
     try std.testing.expectError(expected, actual);
 }
@@ -288,7 +289,7 @@ const Argument = struct {
     incDec: ?bool,
     offset: ?i8,
 
-    fn format(self: *const Argument, writer: *std.Io.Writer) !void {
+    fn format(self: *const Argument, writer: *std.Io.Writer) std.Io.Writer.Error!void {
         if (self.indirect) {
             try writer.writeByte('(');
         }
@@ -1423,7 +1424,7 @@ const ArgumentDefinition = union(DefinedArgumentType) {
         };
     }
 
-    fn decode(self: ArgumentDefinition, stream: []const u8, opcode: u8) !?struct { ?Argument, []const u8 } {
+    fn decode(self: ArgumentDefinition, stream: []const u8, opcode: u8) ?struct { ?Argument, []const u8 } {
         switch (self) {
             .Immediate3Bit => {
                 return .{
@@ -1643,7 +1644,7 @@ const ArgumentDefinition = union(DefinedArgumentType) {
         }
     }
 
-    fn encode(self: ArgumentDefinition, opcode: u8, arg: ArgumentData) !struct { u8, ?u8, ?u8 } {
+    fn encode(self: ArgumentDefinition, opcode: u8, arg: ArgumentData) EncodingError!struct { u8, ?u8, ?u8 } {
         switch (self) {
             .Immediate3Bit => {
                 const vector: u8 = @intCast(arg.Immediate3Bit);
@@ -1675,7 +1676,7 @@ const ArgumentDefinition = union(DefinedArgumentType) {
                     },
                     .Register => |register| {
                         if (arg.Register8Bit != register) {
-                            return AssemblerError.InvalidInstructionArguments;
+                            return EncodingError.InvalidInstructionArguments;
                         }
                         return .{ opcode, null, null };
                     },
@@ -1693,7 +1694,7 @@ const ArgumentDefinition = union(DefinedArgumentType) {
                     },
                     .Register => |register| {
                         if (arg.Register16Bit != register) {
-                            return AssemblerError.InvalidInstructionArguments;
+                            return EncodingError.InvalidInstructionArguments;
                         }
                         return .{ opcode, null, null };
                     },
@@ -1701,7 +1702,7 @@ const ArgumentDefinition = union(DefinedArgumentType) {
             },
             .Register16BitWithOffset => |x| {
                 if (x != arg.Register16BitWithOffset.reg) {
-                    return AssemblerError.InvalidInstructionArguments;
+                    return EncodingError.InvalidInstructionArguments;
                 }
                 const byte: u8 = @bitCast(arg.Register16BitWithOffset.offset);
                 return .{ opcode, byte, null };
@@ -1722,32 +1723,32 @@ const ArgumentDefinition = union(DefinedArgumentType) {
             },
             .IndirectRegister8Bit => |register| {
                 if (arg.IndirectRegister8Bit != register) {
-                    return AssemblerError.InvalidInstructionArguments;
+                    return EncodingError.InvalidInstructionArguments;
                 }
                 return .{ opcode, null, null };
             },
             .IndirectRegister16Bit => |register| {
                 if (arg.IndirectRegister16Bit != register) {
-                    return AssemblerError.InvalidInstructionArguments;
+                    return EncodingError.InvalidInstructionArguments;
                 }
                 return .{ opcode, null, null };
             },
             .IndirectRegister16BitInc => |register| {
                 if (arg.IndirectRegister16BitInc != register) {
-                    return AssemblerError.InvalidInstructionArguments;
+                    return EncodingError.InvalidInstructionArguments;
                 }
                 return .{ opcode, null, null };
             },
             .IndirectRegister16BitDec => |register| {
                 if (arg.IndirectRegister16BitDec != register) {
-                    return AssemblerError.InvalidInstructionArguments;
+                    return EncodingError.InvalidInstructionArguments;
                 }
                 return .{ opcode, null, null };
             },
         }
     }
 
-    fn encodeRegister8(r: Register8) !u8 {
+    fn encodeRegister8(r: Register8) EncodingError!u8 {
         return switch (r) {
             Register8.B => 0b000,
             Register8.C => 0b001,
@@ -1757,7 +1758,7 @@ const ArgumentDefinition = union(DefinedArgumentType) {
             Register8.L => 0b101,
             Register8.A => 0b111,
             else => {
-                return AssemblerError.InvalidInstructionArguments;
+                return EncodingError.InvalidInstructionArguments;
             },
         };
     }
@@ -1775,14 +1776,14 @@ const ArgumentDefinition = union(DefinedArgumentType) {
         };
     }
 
-    fn encodeRegister16_1(r: Register16) !u8 {
+    fn encodeRegister16_1(r: Register16) EncodingError!u8 {
         return switch (r) {
             Register16.BC => 0b00,
             Register16.DE => 0b01,
             Register16.HL => 0b10,
             Register16.SP => 0b11,
             else => {
-                return AssemblerError.InvalidInstructionArguments;
+                return EncodingError.InvalidInstructionArguments;
             },
         };
     }
@@ -1797,14 +1798,14 @@ const ArgumentDefinition = union(DefinedArgumentType) {
         };
     }
 
-    fn encodeRegister16_2(r: Register16) !u8 {
+    fn encodeRegister16_2(r: Register16) EncodingError!u8 {
         return switch (r) {
             Register16.BC => 0b00,
             Register16.DE => 0b01,
             Register16.HL => 0b10,
             Register16.AF => 0b11,
             else => {
-                return AssemblerError.InvalidInstructionArguments;
+                return EncodingError.InvalidInstructionArguments;
             },
         };
     }
@@ -1964,7 +1965,7 @@ test "ArgumentDefinition.encode Register8Bit register failure" {
 
     const actual = definition.encode(opcode, argument);
 
-    try std.testing.expectError(AssemblerError.InvalidInstructionArguments, actual);
+    try std.testing.expectError(EncodingError.InvalidInstructionArguments, actual);
 }
 
 test "ArgumentDefinition.encode Register16Bit offset 1" {
@@ -2035,7 +2036,7 @@ test "ArgumentDefinition.encode Register16Bit register failure" {
 
     const actual = definition.encode(opcode, argument);
 
-    try std.testing.expectError(AssemblerError.InvalidInstructionArguments, actual);
+    try std.testing.expectError(EncodingError.InvalidInstructionArguments, actual);
 }
 
 test "ArgumentDefinition.encode Condition" {
@@ -2109,7 +2110,7 @@ test "ArgumentDefinition.encode IndirectRegister8Bit failure" {
 
     const actual = definition.encode(opcode, argument);
 
-    try std.testing.expectError(AssemblerError.InvalidInstructionArguments, actual);
+    try std.testing.expectError(EncodingError.InvalidInstructionArguments, actual);
 }
 
 test "ArgumentDefinition.encode IndirectRegister16Bit success" {
@@ -2138,7 +2139,7 @@ test "ArgumentDefinition.encode IndirectRegister16Bit failure" {
 
     const actual = definition.encode(opcode, argument);
 
-    try std.testing.expectError(AssemblerError.InvalidInstructionArguments, actual);
+    try std.testing.expectError(EncodingError.InvalidInstructionArguments, actual);
 }
 
 test "ArgumentDefinition.encode IndirectRegister16BitInc success" {
@@ -2167,7 +2168,7 @@ test "ArgumentDefinition.encode IndirectRegister16BitInc failure" {
 
     const actual = definition.encode(opcode, argument);
 
-    try std.testing.expectError(AssemblerError.InvalidInstructionArguments, actual);
+    try std.testing.expectError(EncodingError.InvalidInstructionArguments, actual);
 }
 
 test "ArgumentDefinition.encode IndirectRegister16BitDec success" {
@@ -2196,7 +2197,7 @@ test "ArgumentDefinition.encode IndirectRegister16BitDec failure" {
 
     const actual = definition.encode(opcode, argument);
 
-    try std.testing.expectError(AssemblerError.InvalidInstructionArguments, actual);
+    try std.testing.expectError(EncodingError.InvalidInstructionArguments, actual);
 }
 
 test "ArgumentDefinition.decode Immediate3Bit" {
@@ -2216,7 +2217,7 @@ test "ArgumentDefinition.decode Immediate3Bit" {
         .Immediate3Bit = {},
     };
 
-    const actual, const rest = (try definition.decode(&stream, opcode)).?;
+    const actual, const rest = (definition.decode(&stream, opcode)).?;
 
     try std.testing.expectEqualSlices(u8, stream[0..], rest);
     try std.testing.expectEqual(expected, actual);
@@ -2239,7 +2240,7 @@ test "ArgumentDefinition.decode Immediate8Bit" {
         .Immediate8Bit = {},
     };
 
-    const actual, const rest = (try definition.decode(&stream, opcode)).?;
+    const actual, const rest = (definition.decode(&stream, opcode)).?;
 
     try std.testing.expectEqualSlices(u8, stream[1..], rest);
     try std.testing.expectEqual(expected, actual);
@@ -2262,7 +2263,7 @@ test "ArgumentDefinition.decode Immediate8BitSigned" {
         .Immediate8BitSigned = {},
     };
 
-    const actual, const rest = (try definition.decode(&stream, opcode)).?;
+    const actual, const rest = (definition.decode(&stream, opcode)).?;
 
     try std.testing.expectEqualSlices(u8, stream[1..], rest);
     try std.testing.expectEqual(expected, actual);
@@ -2285,7 +2286,7 @@ test "ArgumentDefinition.decode Immediate16Bit" {
         .Immediate16Bit = {},
     };
 
-    const actual, const rest = (try definition.decode(&stream, opcode)).?;
+    const actual, const rest = (definition.decode(&stream, opcode)).?;
 
     try std.testing.expectEqualSlices(u8, stream[2..], rest);
     try std.testing.expectEqual(expected, actual);
@@ -2308,7 +2309,7 @@ test "ArgumentDefinition.decode ImmediateBitIndex" {
         .ImmediateBitIndex = {},
     };
 
-    const actual, const rest = (try definition.decode(&stream, opcode)).?;
+    const actual, const rest = (definition.decode(&stream, opcode)).?;
 
     try std.testing.expectEqualSlices(u8, stream[0..], rest);
     try std.testing.expectEqual(expected, actual);
@@ -2333,7 +2334,7 @@ test "ArgumentDefinition.decode Register8Bit Offset" {
         },
     };
 
-    const actual, const rest = (try definition.decode(&stream, opcode)).?;
+    const actual, const rest = (definition.decode(&stream, opcode)).?;
 
     try std.testing.expectEqualSlices(u8, stream[0..], rest);
     try std.testing.expectEqualDeep(expected, actual);
@@ -2358,7 +2359,7 @@ test "ArgumentDefinition.decode Register8Bit Register" {
         },
     };
 
-    const actual, const rest = (try definition.decode(&stream, opcode)).?;
+    const actual, const rest = (definition.decode(&stream, opcode)).?;
 
     try std.testing.expectEqualSlices(u8, stream[0..], rest);
     try std.testing.expectEqualDeep(expected, actual);
@@ -2385,7 +2386,7 @@ test "ArgumentDefinition.decode Register16Bit Offset LikeLD" {
         },
     };
 
-    const actual, const rest = (try definition.decode(&stream, opcode)).?;
+    const actual, const rest = (definition.decode(&stream, opcode)).?;
 
     try std.testing.expectEqualSlices(u8, stream[0..], rest);
     try std.testing.expectEqualDeep(expected, actual);
@@ -2412,7 +2413,7 @@ test "ArgumentDefinition.decode Register16Bit Offset LikePUSH" {
         },
     };
 
-    const actual, const rest = (try definition.decode(&stream, opcode)).?;
+    const actual, const rest = (definition.decode(&stream, opcode)).?;
 
     try std.testing.expectEqualSlices(u8, stream[0..], rest);
     try std.testing.expectEqualDeep(expected, actual);
@@ -2437,7 +2438,7 @@ test "ArgumentDefinition.decode Register16Bit Register" {
         },
     };
 
-    const actual, const rest = (try definition.decode(&stream, opcode)).?;
+    const actual, const rest = (definition.decode(&stream, opcode)).?;
 
     try std.testing.expectEqualSlices(u8, stream[0..], rest);
     try std.testing.expectEqualDeep(expected, actual);
@@ -2460,7 +2461,7 @@ test "ArgumentDefinition.decode Register16BitWithOffset" {
         .Register16BitWithOffset = Register16.BC,
     };
 
-    const actual, const rest = (try definition.decode(&stream, opcode)).?;
+    const actual, const rest = (definition.decode(&stream, opcode)).?;
 
     try std.testing.expectEqualSlices(u8, stream[1..], rest);
     try std.testing.expectEqualDeep(expected, actual);
@@ -2483,7 +2484,7 @@ test "ArgumentDefinition.decode Condition" {
         .Condition = {},
     };
 
-    const actual, const rest = (try definition.decode(&stream, opcode)).?;
+    const actual, const rest = (definition.decode(&stream, opcode)).?;
 
     try std.testing.expectEqualSlices(u8, stream[0..], rest);
     try std.testing.expectEqualDeep(expected, actual);
@@ -2506,7 +2507,7 @@ test "ArgumentDefinition.decode IndirectImmediate8Bit" {
         .IndirectImmediate8Bit = {},
     };
 
-    const actual, const rest = (try definition.decode(&stream, opcode)).?;
+    const actual, const rest = (definition.decode(&stream, opcode)).?;
 
     try std.testing.expectEqualSlices(u8, stream[1..], rest);
     try std.testing.expectEqualDeep(expected, actual);
@@ -2527,7 +2528,7 @@ test "ArgumentDefinition.decode IndirectRegister16Bit" {
         .IndirectRegister16Bit = Register16.DE,
     };
 
-    const actual, const rest = (try definition.decode(&stream, opcode)).?;
+    const actual, const rest = (definition.decode(&stream, opcode)).?;
 
     try std.testing.expectEqualSlices(u8, stream[0..], rest);
     try std.testing.expectEqualDeep(expected, actual);
@@ -2548,7 +2549,7 @@ test "ArgumentDefinition.decode IndirectRegister16BitInc" {
         .IndirectRegister16BitInc = Register16.DE,
     };
 
-    const actual, const rest = (try definition.decode(&stream, opcode)).?;
+    const actual, const rest = (definition.decode(&stream, opcode)).?;
 
     try std.testing.expectEqualSlices(u8, stream[0..], rest);
     try std.testing.expectEqualDeep(expected, actual);
@@ -2569,7 +2570,7 @@ test "ArgumentDefinition.decode IndirectRegister16BitDec" {
         .IndirectRegister16BitDec = Register16.DE,
     };
 
-    const actual, const rest = (try definition.decode(&stream, opcode)).?;
+    const actual, const rest = (definition.decode(&stream, opcode)).?;
 
     try std.testing.expectEqualSlices(u8, stream[0..], rest);
     try std.testing.expectEqualDeep(expected, actual);
@@ -3609,7 +3610,7 @@ const Opcode = struct {
     arg1: ?Argument,
     arg2: ?Argument,
 
-    fn format(self: *const Opcode, writer: *std.Io.Writer) !void {
+    fn format(self: *const Opcode, writer: *std.Io.Writer) std.Io.Writer.Error!void {
         try writer.writeAll(@tagName(self.instr));
         if (self.arg1) |arg| {
             try writer.writeByte(' ');
@@ -3645,7 +3646,6 @@ const Opcode = struct {
             self.arg2 = arg;
             return;
         }
-        logger.err("Line {d}: Too many arguments for instruction '{s}'", .{ self.line, @tagName(self.instr) });
         return ParserError.InvalidArgumentCount;
     }
 
@@ -3658,7 +3658,7 @@ const Opcode = struct {
         }
     }
 
-    fn encode(self: *const Opcode, stream: *std.ArrayList(u8), allocator: std.mem.Allocator) ![]u8 {
+    fn encode(self: *const Opcode, stream: *std.ArrayList(u8), allocator: std.mem.Allocator) EncodingError![]u8 {
         var latest_error: ?AssemblerError = null;
         for (defined_opcodes) |opcode_definition| {
             if (opcode_definition.instr != self.instr) {
@@ -3741,11 +3741,10 @@ const Opcode = struct {
             return stream.items[stream.items.len - size ..];
         }
 
-        logger.err("Line {d}: Invalid instruction/argument combination.", .{self.line});
-        return latest_error orelse AssemblerError.InvalidInstructionArguments;
+        return latest_error orelse EncodingError.InvalidInstructionArguments;
     }
 
-    fn decode(stream: []const u8) !struct { Opcode, []const u8 } {
+    fn decode(stream: []const u8) OpcodeParseError!struct { Opcode, []const u8 } {
         const opcode, const with_prefix = if (stream[0] == 0xCB)
             .{ stream[1], true }
         else
@@ -3779,14 +3778,14 @@ const Opcode = struct {
             var arg1: ?Argument = null;
             var currentStream = stream[(if (with_prefix) 2 else 1)..];
             if (opcode_definition.arg1) |arg| {
-                arg1, currentStream = if (try arg.decode(currentStream, stream[0])) |res|
+                arg1, currentStream = if (arg.decode(currentStream, stream[0])) |res|
                     res
                 else
                     continue;
             }
             var arg2: ?Argument = null;
             if (opcode_definition.arg2) |arg| {
-                arg2, currentStream = if (try arg.decode(currentStream, stream[0])) |res|
+                arg2, currentStream = if (arg.decode(currentStream, stream[0])) |res|
                     res
                 else {
                     continue;
@@ -3804,7 +3803,7 @@ const Opcode = struct {
             };
         }
 
-        return AssemblerError.InvalidInstruction;
+        return OpcodeParseError.InvalidInstruction;
     }
 };
 
@@ -3832,7 +3831,7 @@ test "Opcode.fromToken 2" {
         .source = "FOO",
         .which = TokenKind.Instruction,
     };
-    const expected = AssemblerError.InvalidInstruction;
+    const expected = OpcodeParseError.InvalidInstruction;
 
     const actual = Opcode.fromToken(input, std.testing.allocator);
 
@@ -3923,7 +3922,7 @@ test "addArgument 3" {
         .offset = null,
     };
 
-    try std.testing.expectError(AssemblerError.InvalidArgumentCount, opcode.addArgument(arg));
+    try std.testing.expectError(ParserError.InvalidArgumentCount, opcode.addArgument(arg));
 }
 
 test "encode immediate 16" {
@@ -4293,7 +4292,7 @@ test "encode failure" {
 
     const actual = opcode.encode(&stream, std.testing.allocator);
 
-    try std.testing.expectError(AssemblerError.InvalidInstructionArguments, actual);
+    try std.testing.expectError(EncodingError.InvalidInstructionArguments, actual);
 }
 
 test "formatOpcode 1" {
@@ -4520,7 +4519,12 @@ test "parser succeed" {
     }
 }
 
-pub fn assembler(input: []const Opcode, labelMap: *std.StringHashMap(usize), allocator: std.mem.Allocator, offset: u16) ![]u8 {
+const AssemblerDiagnostics = struct {
+    line: ?usize,
+    label: ?[]const u8,
+};
+
+pub fn assembler(input: []const Opcode, labelMap: *std.StringHashMap(usize), allocator: std.mem.Allocator, offset: u16, diag: ?*AssemblerDiagnostics) AssemblerError![]u8 {
     var accumulatedOpcodeSize = try allocator.alloc(usize, input.len + 1);
     defer allocator.free(accumulatedOpcodeSize);
 
@@ -4539,7 +4543,13 @@ pub fn assembler(input: []const Opcode, labelMap: *std.StringHashMap(usize), all
     // Encode opcodes and remember label references
     accumulatedOpcodeSize[0] = 0;
     for (input, 0..) |opcode, idx| {
-        const bytes: []u8 = try opcode.encode(&result, std.testing.allocator);
+        const bytes: []u8 = opcode.encode(&result, std.testing.allocator) catch |e| {
+            if (diag) |d| {
+                d.line = opcode.line;
+                d.label = null;
+            }
+            return e;
+        };
         const accumulated: usize = accumulatedOpcodeSize[idx];
         accumulatedOpcodeSize[idx + 1] = accumulated + bytes.len;
 
@@ -4577,8 +4587,11 @@ pub fn assembler(input: []const Opcode, labelMap: *std.StringHashMap(usize), all
             const label = pair.key_ptr.*;
             const location = labelMap.get(label);
             if (location == null) {
-                logger.err("Undefined label {s}", .{label});
-                return AssemblerError.UndefinedLabel;
+                if (diag) |d| {
+                    d.line = null;
+                    d.label = label;
+                }
+                return EncodingError.UndefinedLabel;
             }
             const address = location.? + offset;
             const lsb: u8 = @intCast(address & 0xFF);
@@ -4635,7 +4648,7 @@ test "assembler" {
         0b00000001, 0x00, 0x00,
     };
 
-    const actual = try assembler(opcodes, &labelMap, std.testing.allocator, 0);
+    const actual = try assembler(opcodes, &labelMap, std.testing.allocator, 0, null);
     defer std.testing.allocator.free(actual);
 
     try std.testing.expectEqualSlices(u8, &expected, actual);
@@ -4665,7 +4678,7 @@ test "assembler offset" {
         0b00000001, 0x05, 0x00,
     };
 
-    const actual = try assembler(opcodes, &labelMap, std.testing.allocator, 0x5);
+    const actual = try assembler(opcodes, &labelMap, std.testing.allocator, 0x5, null);
     defer std.testing.allocator.free(actual);
 
     try std.testing.expectEqualSlices(u8, &expected, actual);
@@ -4683,9 +4696,9 @@ test "assembler bad argument" {
     defer freeLabelMap(&labelMap, std.testing.allocator);
     defer freeOpcodes(opcodes, std.testing.allocator);
 
-    const actual = assembler(opcodes, &labelMap, std.testing.allocator, 0);
+    const actual = assembler(opcodes, &labelMap, std.testing.allocator, 0, null);
 
-    try std.testing.expectError(AssemblerError.InvalidInstructionArguments, actual);
+    try std.testing.expectError(EncodingError.InvalidInstructionArguments, actual);
 }
 
 test "assembler bad label" {
@@ -4700,16 +4713,17 @@ test "assembler bad label" {
     defer freeLabelMap(&labelMap, std.testing.allocator);
     defer freeOpcodes(opcodes, std.testing.allocator);
 
-    const actual = assembler(opcodes, &labelMap, std.testing.allocator, 0);
+    const actual = assembler(opcodes, &labelMap, std.testing.allocator, 0, null);
 
-    try std.testing.expectError(AssemblerError.UndefinedLabel, actual);
+    try std.testing.expectError(EncodingError.UndefinedLabel, actual);
 }
 
-pub const AssemblerDiagnostics = union(enum) {
+pub const TranslateDiagnostics = union(enum) {
     parser: ParserDiagnostics,
+    assembler: AssemblerDiagnostics,
 };
 
-pub fn translate(code: []const u8, allocator: std.mem.Allocator, offset: u16, diag: ?*AssemblerDiagnostics) ![]u8 {
+pub fn translate(code: []const u8, allocator: std.mem.Allocator, offset: u16, diag: ?*TranslateDiagnostics) TranslateError![]u8 {
     const tokens = try lexer(code, allocator);
     defer allocator.free(tokens);
 
@@ -4726,10 +4740,16 @@ pub fn translate(code: []const u8, allocator: std.mem.Allocator, offset: u16, di
     defer freeLabelMap(&labelMap, allocator);
     defer freeOpcodes(opcodes, allocator);
 
-    return assembler(opcodes, &labelMap, allocator, offset);
+    var assembler_diag: AssemblerDiagnostics = undefined;
+    return assembler(opcodes, &labelMap, allocator, offset, &assembler_diag) catch |e| {
+        if (diag) |d| {
+            d.assembler = assembler_diag;
+        }
+        return e;
+    };
 }
 
-pub fn formatNext(stream: []const u8, writer: *std.Io.Writer) ![]const u8 {
+pub fn formatNext(stream: []const u8, writer: *std.Io.Writer) std.Io.Writer.Error![]const u8 {
     const opcode, const next = Opcode.decode(stream) catch {
         try writer.writeAll("<UNK>");
         return stream[1..];

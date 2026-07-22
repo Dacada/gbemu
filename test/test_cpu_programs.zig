@@ -5,12 +5,21 @@ const runProgram = testutil.runProgram;
 const TestCpuState = testutil.TestCpuState;
 
 fn translate_with_error(code: []const u8, allocator: std.mem.Allocator) ![]const u8 {
-    var diag: lib.assembler.AssemblerDiagnostics = undefined;
+    var diag: lib.assembler.TranslateDiagnostics = undefined;
     return lib.assembler.translate(code, allocator, 0, &diag) catch |e| {
         std.debug.print("ERROR: {s}\n", .{@errorName(e)});
         switch (diag) {
             .parser => |p| {
-                std.debug.print("Parsing Error\nLine: {d}\nContext: {s}", .{ p.line, p.context });
+                std.debug.print("Parsing Error\nLine: {d}\nContext: {s}\n", .{ p.line, p.context });
+            },
+            .assembler => |a| {
+                std.debug.print("Assembling Error\n", .{});
+                if (a.line) |line| {
+                    std.debug.print("Line: {d}\n", .{line});
+                }
+                if (a.label) |label| {
+                    std.debug.print("Label: {s}\n", .{label});
+                }
             },
         }
         return e;
