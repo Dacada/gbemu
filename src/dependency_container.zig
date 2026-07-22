@@ -14,6 +14,7 @@ pub const ContainerConfig = struct {
     } = .real,
     cartridge: enum {
         real,
+        real_nowarn,
         mock,
         dummy,
     } = .real,
@@ -97,7 +98,8 @@ pub fn Container(comptime cfg: ContainerConfig) type {
     const c_Cartridge = switch (cfg.cartridge) {
         .dummy => Dummy,
         .mock => cartridge.MockCartridge,
-        .real => cartridge.Cartridge,
+        .real_nowarn => cartridge.Cartridge(false),
+        .real => cartridge.Cartridge(true),
     };
 
     const c_Interrupt = switch (cfg.interrupt) {
@@ -231,6 +233,7 @@ pub fn Container(comptime cfg: ContainerConfig) type {
         fn make_cartridge(_: *This) Cartridge {
             return switch (cfg.cartridge) {
                 .real => Cartridge.init(),
+                .real_nowarn => Cartridge.init(),
                 .mock => Cartridge{},
                 .dummy => Cartridge{},
             };

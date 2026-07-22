@@ -7,7 +7,9 @@ const logger = std.log.scoped(.cartridge);
 pub const CartridgeHeaderParseError = error{
     NoHeader,
     NoRom,
-    UnsupportedCartridgeType,
+    UnsupportedRomType,
+    UnsupportedRomSize,
+    UnsupportedRamSize,
 };
 
 const logo = [_]u8{
@@ -26,134 +28,152 @@ var static_ram: [0x2000]u8 = undefined;
 var static_init_ram: [0x2000]bool = undefined;
 
 // https://gbdev.io/pandocs/The_Cartridge_Header.html
-pub const Cartridge = struct {
-    // DMG ONLY -- We interpret the title simply, however in "newer cartridges" this has a more complicated meaning
-    title: []const u8,
-    checksum: u8,
+pub fn Cartridge(comptime warn: bool) type {
+    return struct {
+        const This = @This();
 
-    // TODO: licensee code (old and new), CGB/SGB flag, destination code, version number, global checksum
+        // DMG ONLY -- We interpret the title simply, however in "newer cartridges" this has a more complicated meaning
+        title: []const u8,
+        checksum: u8,
 
-    pub const Rom = struct {
-        pub fn read(_: *Cartridge, addr: u16) struct { MemoryFlag, u8 } {
-            const val = static_rom[addr];
-            return .{ .{}, val };
-        }
+        // TODO: licensee code (old and new), CGB/SGB flag, destination code, version number, global checksum
 
-        pub fn write(_: *Cartridge, _: u16, _: u8) MemoryFlag {
-            return .{ .illegal = true };
-        }
-
-        pub fn peek(_: *Cartridge, addr: u16) u8 {
-            return static_rom[addr];
-        }
-        pub fn poke(_: *Cartridge, addr: u16, val: u8) void {
-            static_rom[addr] = val;
-        }
-    };
-
-    pub const Ram = struct {
-        pub fn read(_: *Cartridge, addr: u16) struct { MemoryFlag, u8 } {
-            const val = static_ram[addr];
-            const flags = MemoryFlag{ .uninitialized = !static_init_ram[addr] };
-            return .{ flags, val };
-        }
-
-        pub fn write(_: *Cartridge, addr: u16, val: u8) MemoryFlag {
-            static_ram[addr] = val;
-            static_init_ram[addr] = true;
-            return .{};
-        }
-
-        pub fn peek(_: *Cartridge, addr: u16) u8 {
-            return static_ram[addr];
-        }
-        pub fn poke(_: *Cartridge, addr: u16, val: u8) void {
-            static_ram[addr] = val;
-        }
-    };
-
-    pub fn init() Cartridge {
-        return Cartridge{
-            .title = "",
-            .checksum = 0,
-        };
-    }
-
-    pub fn loadFromBuffer(self: *Cartridge, rom: []const u8) !void {
-        const offset = 0x0100;
-
-        if (rom.len < offset + 0x50) {
-            logger.err(
-                "could not find a header in the rom: rom is only 0x{X} bytes",
-                .{rom.len},
-            );
-            return CartridgeHeaderParseError.NoHeader;
-        }
-
-        const header = rom[offset..][0..0x50];
-
-        if (!std.mem.eql(u8, &logo, header[0x0004..0x0034])) {
-            logger.warn("could not find expected logo in cartridge header", .{});
-        }
-
-        const title = try Cartridge.getTitleFromHeader(header);
-
-        const rom_type = header[0x47];
-        if (rom_type != 0x00) {
-            logger.err("unsupported cartridge type: 0x{X}", .{rom_type});
-            return CartridgeHeaderParseError.UnsupportedCartridgeType;
-        }
-
-        const rom_size_code = header[0x48];
-        if (rom_size_code != 0x00) {
-            logger.err("unsupported rom size code: 0x{X}", .{rom_size_code});
-            return CartridgeHeaderParseError.UnsupportedCartridgeType;
-        }
-
-        const ram_size_code = header[0x49];
-        if (ram_size_code != 0x00) {
-            logger.err("unsupported ram size code: 0x{X}", .{ram_size_code});
-            return CartridgeHeaderParseError.UnsupportedCartridgeType;
-        }
-
-        var checksum: u8 = 0;
-        for (0x34..0x4D) |idx| {
-            checksum = checksum -% header[idx] -% 1;
-        }
-
-        if (checksum != header[0x4D]) {
-            logger.warn(
-                "header checksum does not match (0x{X} vs 0x{X})",
-                .{ checksum, header[0x4D] },
-            );
-        }
-
-        if (rom.len != static_rom.len) {
-            logger.err(
-                "unexpected cartridge size: got 0x{X} bytes but expected 0x{X}",
-                .{ rom.len, static_rom.len },
-            );
-            return CartridgeHeaderParseError.NoRom;
-        }
-
-        @memcpy(&static_rom, rom);
-        @memset(&static_init_ram, false);
-
-        self.title = title;
-        self.checksum = checksum;
-    }
-
-    fn getTitleFromHeader(buff: []const u8) ![]const u8 {
-        var len: usize = 0;
-        for (buff[0x34..0x44]) |c| {
-            if (c == 0x00) {
-                break;
+        pub const Rom = struct {
+            pub fn read(_: *This, addr: u16) struct { MemoryFlag, u8 } {
+                const val = static_rom[addr];
+                return .{ .{}, val };
             }
-            len += 1;
+
+            pub fn write(_: *This, _: u16, _: u8) MemoryFlag {
+                return .{ .illegal = true };
+            }
+
+            pub fn peek(_: *This, addr: u16) u8 {
+                return static_rom[addr];
+            }
+            pub fn poke(_: *This, addr: u16, val: u8) void {
+                static_rom[addr] = val;
+            }
+        };
+
+        pub const Ram = struct {
+            pub fn read(_: *This, addr: u16) struct { MemoryFlag, u8 } {
+                const val = static_ram[addr];
+                const flags = MemoryFlag{ .uninitialized = !static_init_ram[addr] };
+                return .{ flags, val };
+            }
+
+            pub fn write(_: *This, addr: u16, val: u8) MemoryFlag {
+                static_ram[addr] = val;
+                static_init_ram[addr] = true;
+                return .{};
+            }
+
+            pub fn peek(_: *This, addr: u16) u8 {
+                return static_ram[addr];
+            }
+            pub fn poke(_: *This, addr: u16, val: u8) void {
+                static_ram[addr] = val;
+            }
+        };
+
+        pub fn init() This {
+            return This{
+                .title = "",
+                .checksum = 0,
+            };
         }
-        return buff[0x34..(0x34 + len)];
-    }
-};
+
+        pub const Diagnostics = struct {
+            rom_type: ?u8,
+            rom_size_code: ?u8,
+            ram_size_code: ?u8,
+        };
+
+        pub fn loadFromBuffer(self: *This, rom: []const u8, diag: ?*Diagnostics) !void {
+            const offset = 0x0100;
+
+            if (rom.len < offset + 0x50) {
+                return CartridgeHeaderParseError.NoHeader;
+            }
+
+            const header = rom[offset..][0..0x50];
+
+            if (!std.mem.eql(u8, &logo, header[0x0004..0x0034])) {
+                if (warn) {
+                    logger.warn("could not find expected logo in cartridge header", .{});
+                }
+            }
+
+            const title = try This.getTitleFromHeader(header);
+
+            if (diag) |d| {
+                d.rom_type = null;
+                d.rom_size_code = null;
+                d.ram_size_code = null;
+            }
+
+            const rom_type = header[0x47];
+            if (diag) |d| {
+                d.rom_type = rom_type;
+            }
+            if (rom_type != 0x00) {
+                return CartridgeHeaderParseError.UnsupportedRomType;
+            }
+
+            const rom_size_code = header[0x48];
+            if (diag) |d| {
+                d.rom_size_code = rom_size_code;
+            }
+            if (rom_size_code != 0x00) {
+                return CartridgeHeaderParseError.UnsupportedRomSize;
+            }
+
+            const ram_size_code = header[0x49];
+            if (diag) |d| {
+                d.ram_size_code = ram_size_code;
+            }
+            if (ram_size_code != 0x00) {
+                return CartridgeHeaderParseError.UnsupportedRamSize;
+            }
+
+            var checksum: u8 = 0;
+            for (0x34..0x4D) |idx| {
+                checksum = checksum -% header[idx] -% 1;
+            }
+
+            if (checksum != header[0x4D]) {
+                if (warn) {
+                    logger.warn(
+                        "header checksum does not match (0x{X} vs 0x{X})",
+                        .{ checksum, header[0x4D] },
+                    );
+                }
+            }
+
+            if (rom.len != static_rom.len) {
+                return CartridgeHeaderParseError.NoRom;
+            }
+
+            @memcpy(&static_rom, rom);
+            @memset(&static_init_ram, false);
+
+            self.title = title;
+            self.checksum = checksum;
+        }
+
+        fn getTitleFromHeader(buff: []const u8) ![]const u8 {
+            var len: usize = 0;
+            for (buff[0x34..0x44]) |c| {
+                if (c == 0x00) {
+                    break;
+                }
+                len += 1;
+            }
+            return buff[0x34..(0x34 + len)];
+        }
+    };
+}
 
 var mock_static_memory = [_]u8{0xAA} ** 0xA000;
 
@@ -221,8 +241,8 @@ test "Cartridge loadFromBuffer loads valid ROM successfully" {
         break :blk sum;
     });
 
-    var cartridge = Cartridge.init();
-    try cartridge.loadFromBuffer(&rom_buffer);
+    var cartridge = Cartridge(false).init();
+    try cartridge.loadFromBuffer(&rom_buffer, null);
 
     try std.testing.expectEqualStrings("VALID", cartridge.title);
 }
@@ -243,8 +263,8 @@ test "Cartridge loadFromBuffer rejects invalid logo" {
     });
 
     // The logo warning is not fatal, so loading should still succeed
-    var cartridge = Cartridge.init();
-    try cartridge.loadFromBuffer(&rom_buffer);
+    var cartridge = Cartridge(false).init();
+    try cartridge.loadFromBuffer(&rom_buffer, null);
     try std.testing.expectEqualStrings("INVALID", cartridge.title);
 }
 
@@ -261,8 +281,8 @@ test "Cartridge loadFromBuffer rejects unsupported cartridge type" {
 
     rom_buffer[0x147] = 0x01; // Unsupported type
 
-    var cartridge = Cartridge.init();
-    try std.testing.expectError(CartridgeHeaderParseError.UnsupportedCartridgeType, cartridge.loadFromBuffer(&rom_buffer));
+    var cartridge = Cartridge(false).init();
+    try std.testing.expectError(CartridgeHeaderParseError.UnsupportedRomType, cartridge.loadFromBuffer(&rom_buffer, null));
 }
 
 test "Cartridge loadFromBuffer rejects unsupported rom size" {
@@ -278,8 +298,8 @@ test "Cartridge loadFromBuffer rejects unsupported rom size" {
 
     rom_buffer[0x148] = 0x01; // Unsupported rom size
 
-    var cartridge = Cartridge.init();
-    try std.testing.expectError(CartridgeHeaderParseError.UnsupportedCartridgeType, cartridge.loadFromBuffer(&rom_buffer));
+    var cartridge = Cartridge(false).init();
+    try std.testing.expectError(CartridgeHeaderParseError.UnsupportedRomSize, cartridge.loadFromBuffer(&rom_buffer, null));
 }
 
 test "Cartridge loadFromBuffer rejects unsupported ram size" {
@@ -295,8 +315,8 @@ test "Cartridge loadFromBuffer rejects unsupported ram size" {
 
     rom_buffer[0x149] = 0x01; // Unsupported ram size
 
-    var cartridge = Cartridge.init();
-    try std.testing.expectError(CartridgeHeaderParseError.UnsupportedCartridgeType, cartridge.loadFromBuffer(&rom_buffer));
+    var cartridge = Cartridge(false).init();
+    try std.testing.expectError(CartridgeHeaderParseError.UnsupportedRamSize, cartridge.loadFromBuffer(&rom_buffer, null));
 }
 
 test "Cartridge loadFromBuffer warns on bad header checksum but still loads" {
@@ -304,7 +324,7 @@ test "Cartridge loadFromBuffer warns on bad header checksum but still loads" {
 
     craftValidRomBuffer(&rom_buffer, "BADCHK", 0x00); // Wrong checksum on purpose
 
-    var cartridge = Cartridge.init();
-    try cartridge.loadFromBuffer(&rom_buffer);
+    var cartridge = Cartridge(false).init();
+    try cartridge.loadFromBuffer(&rom_buffer, null);
     try std.testing.expectEqualStrings("BADCHK", cartridge.title);
 }

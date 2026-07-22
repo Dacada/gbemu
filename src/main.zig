@@ -30,7 +30,7 @@ pub fn main(init: std.process.Init) !void {
     debugger.setWriter(writer);
 
     const cart = container.get_cartridge();
-    try cart.loadFromBuffer(&romBuffer);
+    try cart.loadFromBuffer(&romBuffer, null);
 
     const mmu = container.get_mmu();
     lib.emulator.initializeMemory(Mmu, mmu);
