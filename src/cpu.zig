@@ -111,7 +111,7 @@ pub const CpuFlag = packed struct {
     double_halt: bool = false,
 };
 
-pub fn Cpu(Mmu: type, Interrupt: type) type {
+pub fn Cpu(Mmu: type, Interrupt: type, warn: bool) type {
     const interrupt_vectors = [_]u16{ 0x40, 0x48, 0x50, 0x58, 0x60 };
 
     const MemoryReference = MemoryReferenceFn(Mmu);
@@ -471,7 +471,9 @@ pub fn Cpu(Mmu: type, Interrupt: type) type {
 
         fn executeIllegalInstruction(self: *This) SelfRefCpuMethod {
             self.flags.illegal = true;
-            logger.warn("Attempt to decode illegal instruction 0x{X:0>2} on address 0x{X:0>4}", .{ self.reg.ir, self.reg.pc });
+            if (warn) {
+                logger.warn("Attempt to decode illegal instruction 0x{X:0>2} on address 0x{X:0>4}", .{ self.reg.ir, self.reg.pc });
+            }
             // close enough for now, this should stall the cpu in a state where it never services interrupts, etc
             return SelfRefCpuMethod.init(This.decodeOpcode);
         }
@@ -489,9 +491,13 @@ pub fn Cpu(Mmu: type, Interrupt: type) type {
                 // https://gbdev.io/pandocs/halt.html#halt
                 self.reg.pc +%= 1;
             } else {
-                logger.warn("halt bug: failing to increment PC", .{});
+                if (warn) {
+                    logger.warn("halt bug: failing to increment PC", .{});
+                }
                 if (self.reg.ir == 0b01_110_110) { // halt again
-                    logger.warn("double halt bug detected: CPU is stalled", .{});
+                    if (warn) {
+                        logger.warn("double halt bug detected: CPU is stalled", .{});
+                    }
                     self.flags.double_halt = true;
                 }
             }

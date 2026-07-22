@@ -2,6 +2,7 @@ const std = @import("std");
 const lib = @import("lib");
 
 const Container = lib.dependency_container.Container(.{
+    .cpu = .real_nowarn,
     .mmu = .mock,
     .debugger = .mock,
 });

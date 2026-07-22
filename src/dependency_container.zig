@@ -58,6 +58,7 @@ pub const ContainerConfig = struct {
     } = .real,
     cpu: enum {
         real,
+        real_nowarn,
         mock,
     } = .real,
     debugger: enum {
@@ -150,7 +151,8 @@ pub fn Container(comptime cfg: ContainerConfig) type {
     };
 
     const c_Cpu = switch (cfg.cpu) {
-        .real => cpu.Cpu(c_Mmu, c_Interrupt),
+        .real => cpu.Cpu(c_Mmu, c_Interrupt, true),
+        .real_nowarn => cpu.Cpu(c_Mmu, c_Interrupt, false),
         .mock => cpu.MockCpu(c_Mmu),
     };
 
@@ -319,6 +321,7 @@ pub fn Container(comptime cfg: ContainerConfig) type {
         fn make_cpu(self: *This) Cpu {
             return switch (cfg.cpu) {
                 .real => Cpu.init(self.get_mmu(), self.get_interrupt()),
+                .real_nowarn => Cpu.init(self.get_mmu(), self.get_interrupt()),
                 .mock => Cpu.init(self.get_mmu()),
             };
         }
