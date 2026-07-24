@@ -95,17 +95,9 @@ pub fn Ppu(VideoBackend: type) type {
 
         mode: Mode,
 
-        current_oam_row: u5,
-        corrupting_oam_read: bool,
-        corrupting_oam_write: bool,
-
         pub fn init(_: *VideoBackend) This {
             return This{
                 .mode = undefined,
-
-                .current_oam_row = 0,
-                .corrupting_oam_read = false,
-                .corrupting_oam_write = false,
             };
         }
 
