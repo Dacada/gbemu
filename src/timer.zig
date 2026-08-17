@@ -69,21 +69,21 @@ pub fn Timer(Apu: type, Interrupt: type) type {
                     if (self.div.is_init()) {
                         return .{ .{}, @intCast(self.div.get() >> 8) };
                     } else {
-                        return .{ .{ .undefined = true }, 0x00 };
+                        return .{ .{ .uninitialized = true }, 0x00 };
                     }
                 },
                 1 => {
                     if (self.tima.is_init()) {
                         return .{ .{}, self.tima.get() };
                     } else {
-                        return .{ .{ .undefined = true }, 0x00 };
+                        return .{ .{ .uninitialized = true }, 0x00 };
                     }
                 },
                 2 => {
                     if (self.tma.is_init()) {
                         return .{ .{}, self.tma.get() };
                     } else {
-                        return .{ .{ .undefined = true }, 0x00 };
+                        return .{ .{ .uninitialized = true }, 0x00 };
                     }
                 },
                 3 => {
@@ -94,7 +94,7 @@ pub fn Timer(Apu: type, Interrupt: type) type {
                         val |= self.clock_select.get();
                         return .{ .{}, val };
                     } else {
-                        return .{ .{ .undefined = true }, 0x00 };
+                        return .{ .{ .uninitialized = true }, 0x00 };
                     }
                 },
                 else => unreachable,
@@ -202,6 +202,7 @@ test "timer does not increment TIMA when disabled" {
     timer.div.set(0b00000001111111111); // bit 9 set
     timer.enable.set(0); // disabled
     timer.clock_select.set(0); // bit 9
+    timer.tima.set(0xAB);
 
     const startTima = timer.tima.get();
     timer.tick();
@@ -251,7 +252,8 @@ test "writing to DIV causes TIMA tick if falling edge is triggered" {
     timer.enable.set(1); // enabled
     timer.clock_select.set(0); // bit 9
     timer.div.set(0b00000001111111111); // bit 9 set
-    const startTima = timer.tima.get();
+    const startTima = 0xAB;
+    timer.tima.set(startTima);
 
     _ = timer.write(0, 0x00); // reset DIV to 0, falling edge of bit 9
     try std.testing.expectEqual(startTima + 1, timer.tima.get());
@@ -289,8 +291,9 @@ test "no tick occurs when no falling edge on selected bit" {
     timer.div.set(0b0000000000000000);
     timer.enable.set(1);
     timer.clock_select.set(0);
+    const startTima = 0xAB;
+    timer.tima.set(startTima);
 
-    const startTima = timer.tima.get();
     timer.tick();
     try std.testing.expectEqual(startTima, timer.tima.get());
 }

@@ -33,10 +33,3 @@ pub fn TrackedValue(Inner: type) type {
         }
     };
 }
-
-pub fn read_tracked_values_helper(vals: anytype, build_fn: *const fn (vals: anytype) u8, default: u8) struct { MemoryFlag, u8 } {
-    // iterate vals
-    //  if any is undefined, bail
-    // call function with vals
-    // return whatever function returns
-}
