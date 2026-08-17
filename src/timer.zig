@@ -1,5 +1,7 @@
 const MemoryFlag = @import("memory_flag.zig").MemoryFlag;
-const TrackedValue = @import("tracked_value.zig").TrackedValue;
+const tracked_value = @import("tracked_value.zig");
+const TrackedValue = tracked_value.TrackedValue;
+const trackedMaybeAll = tracked_value.maybeAll;
 const InterruptKind = @import("interrupt_kind.zig").InterruptKind;
 
 pub fn Timer(Apu: type, Interrupt: type) type {
@@ -66,32 +68,33 @@ pub fn Timer(Apu: type, Interrupt: type) type {
         pub fn read(self: *This, addr: u16) struct { MemoryFlag, u8 } {
             switch (addr) {
                 0 => {
-                    if (self.div.is_init()) {
-                        return .{ .{}, @intCast(self.div.get() >> 8) };
+                    if (self.div.maybe()) |v| {
+                        return .{ .{}, @intCast(v >> 8) };
                     } else {
                         return .{ .{ .uninitialized = true }, 0x00 };
                     }
                 },
                 1 => {
-                    if (self.tima.is_init()) {
-                        return .{ .{}, self.tima.get() };
+                    if (self.tima.maybe()) |tima| {
+                        return .{ .{}, tima };
                     } else {
                         return .{ .{ .uninitialized = true }, 0x00 };
                     }
                 },
                 2 => {
-                    if (self.tma.is_init()) {
-                        return .{ .{}, self.tma.get() };
+                    if (self.tma.maybe()) |tma| {
+                        return .{ .{}, tma };
                     } else {
                         return .{ .{ .uninitialized = true }, 0x00 };
                     }
                 },
                 3 => {
-                    if (self.enable.is_init() and self.clock_select.is_init()) {
+                    if (trackedMaybeAll(.{ self.enable, self.clock_select })) |v| {
+                        const enable, const clock_select = v;
                         var val: u8 = 0;
-                        val |= self.enable.get();
+                        val |= enable;
                         val <<= 2;
-                        val |= self.clock_select.get();
+                        val |= clock_select;
                         return .{ .{}, val };
                     } else {
                         return .{ .{ .uninitialized = true }, 0x00 };

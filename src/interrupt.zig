@@ -89,15 +89,15 @@ pub const Interrupt = struct {
     pub fn read(self: *Interrupt, addr: u16) struct { MemoryFlag, u8 } {
         switch (addr) {
             0 => {
-                if (self.@"if".is_init()) {
-                    return .{ .{}, self.@"if".get() };
+                if (self.@"if".maybe()) |@"if"| {
+                    return .{ .{}, @"if" };
                 } else {
                     return .{ .{ .uninitialized = true }, 0x00 };
                 }
             },
             1 => {
-                if (self.ie.is_init()) {
-                    return .{ .{}, self.ie.get() };
+                if (self.ie.maybe()) |ie| {
+                    return .{ .{}, ie };
                 } else {
                     return .{ .{ .uninitialized = true }, 0x00 };
                 }
