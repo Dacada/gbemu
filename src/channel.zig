@@ -1,4 +1,7 @@
 const MemoryFlag = @import("memory_flag.zig").MemoryFlag;
+const tracked_value = @import("tracked_value.zig");
+const TrackedValue = tracked_value.TrackedValue;
+const trackedMaybeAll = tracked_value.maybeAll;
 
 inline fn dac(sample: u4) f32 {
     return switch (sample) {
@@ -25,9 +28,9 @@ fn SweepPeriodUnit(number: comptime_int) type {
     return struct {
         const This = @This();
 
-        pace: u3,
-        individual_step: u3,
-        direction: u1,
+        pace: TrackedValue(u3),
+        individual_step: TrackedValue(u3),
+        direction: TrackedValue(u1),
 
         counter: u3,
         enabled: bool,
@@ -35,9 +38,9 @@ fn SweepPeriodUnit(number: comptime_int) type {
 
         fn init() This {
             return This{
-                .pace = undefined,
-                .individual_step = undefined,
-                .direction = undefined,
+                .pace = .{},
+                .individual_step = .{},
+                .direction = .{},
 
                 .counter = 0,
                 .enabled = false,
@@ -47,28 +50,28 @@ fn SweepPeriodUnit(number: comptime_int) type {
 
         fn tick(self: *This, control: *ControlUnit, period: *PeriodUnit(number)) void {
             self.counter +%= 1;
-            if (self.counter < self.pace) {
+            if (self.counter < self.pace.get()) {
                 return;
             }
             self.counter = 0;
 
             // Entire confusing and weird implementation from Pan Docs
-            if (self.enabled and self.pace != 0) {
+            if (self.enabled and self.pace.get() != 0) {
                 const new_period = self.periodCalculation();
                 self.overflowCheck(new_period, control);
-                if (new_period <= 0x7FF and self.individual_step != 0) {
+                if (new_period <= 0x7FF and self.individual_step.get() != 0) {
                     self.shadow = @intCast(new_period);
-                    period.period = @intCast(new_period);
+                    period.period.set(@intCast(new_period));
                     self.overflowCheck(self.periodCalculation(), control);
                 }
             }
         }
 
         fn periodCalculation(self: *const This) u12 {
-            const shifted = self.shadow >> self.individual_step;
+            const shifted = self.shadow >> self.individual_step.get();
             // store it as a u12 to check for "overflow" later
             var new_period: u12 = @intCast(self.shadow);
-            if (self.direction == 0) {
+            if (self.direction.get() == 0) {
                 new_period += @intCast(shifted);
             } else {
                 // shifted will always be smaller since it's the result of right shifting that value
@@ -85,12 +88,14 @@ fn SweepPeriodUnit(number: comptime_int) type {
         }
 
         fn reset(self: *This, period: *const PeriodUnit(number), control: *ControlUnit) void {
-            self.shadow = period.period;
+            if (period.period.maybe()) |val| {
+                self.shadow = val;
+            }
             self.counter = 0;
-            self.enabled = self.pace != 0 or self.individual_step != 0;
+            self.enabled = self.pace.get() != 0 or self.individual_step.get() != 0;
 
             // Pan Docs says: If the individual step is non-zero, frequency calculation and overflow check are performed immediately.
-            if (self.individual_step != 0) {
+            if (self.individual_step.get() != 0) {
                 self.overflowCheck(self.periodCalculation(), control);
             }
         }
@@ -98,18 +103,18 @@ fn SweepPeriodUnit(number: comptime_int) type {
 }
 
 const VolumeUnit = struct {
-    pace: u3,
-    direction: u1,
-    initial_volume: u4,
+    pace: TrackedValue(u3),
+    direction: TrackedValue(u1),
+    initial_volume: TrackedValue(u4),
 
     counter: u3,
     volume: u4,
 
     inline fn init() VolumeUnit {
         return VolumeUnit{
-            .pace = undefined,
-            .direction = undefined,
-            .initial_volume = undefined,
+            .pace = .{},
+            .direction = .{},
+            .initial_volume = .{},
 
             .counter = 0,
             .volume = 0,
@@ -117,14 +122,14 @@ const VolumeUnit = struct {
     }
 
     fn tick(self: *VolumeUnit) void {
-        if (self.pace == 0) {
+        if (self.pace.get() == 0) {
             return;
         }
 
         self.counter +%= 1;
-        if (self.counter >= self.pace) {
+        if (self.counter >= self.pace.get()) {
             self.counter = 0;
-            if (self.direction == 0) {
+            if (self.direction.get() == 0) {
                 self.volume -|= 1;
             } else {
                 self.volume +|= 1;
@@ -134,7 +139,7 @@ const VolumeUnit = struct {
 
     fn reset(self: *VolumeUnit) void {
         self.counter = 0;
-        self.volume = self.initial_volume;
+        self.volume = self.initial_volume.get();
     }
 };
 
@@ -142,14 +147,14 @@ fn PeriodUnit(number: comptime_int) type {
     return struct {
         const This = @This();
 
-        period: u11,
+        period: TrackedValue(u11),
 
         divider: if (number != 3) u1 else void,
         counter: u11,
 
         inline fn init() This {
             return This{
-                .period = undefined,
+                .period = .{},
                 .divider = if (number != 3) 0 else {},
                 .counter = 0,
             };
@@ -184,7 +189,7 @@ fn PeriodUnit(number: comptime_int) type {
         }
 
         fn reset(self: *This) void {
-            self.counter = self.period;
+            self.counter = self.period.get();
         }
     };
 }
@@ -215,8 +220,8 @@ fn LengthUnit(number: comptime_int) type {
     return struct {
         const This = @This();
 
-        enable: u1,
-        initial_counter: if (number == 3) u8 else u6,
+        enable: TrackedValue(u1),
+        initial_counter: TrackedValue(if (number == 3) u8 else u6),
 
         counter: if (number == 3) u8 else u6,
 
@@ -224,14 +229,14 @@ fn LengthUnit(number: comptime_int) type {
             if (number != 1 and number != 2 and number != 3 and number != 4) @compileError("Invalid channel number.");
 
             return This{
-                .enable = undefined,
-                .initial_counter = undefined,
+                .enable = .{},
+                .initial_counter = .{},
                 .counter = 0,
             };
         }
 
         fn tick(self: *This, control: *ControlUnit) void {
-            if (self.enable == 0) {
+            if (self.enable.get() == 0) {
                 return;
             }
             self.counter +%= 1;
@@ -241,19 +246,21 @@ fn LengthUnit(number: comptime_int) type {
         }
 
         fn reset(self: *This) void {
-            self.counter = self.initial_counter;
+            if (self.initial_counter.maybe()) |val| {
+                self.counter = val;
+            }
         }
     };
 }
 
 const SquareWaveUnit = struct {
-    duty: u2,
+    duty: TrackedValue(u2),
 
     counter: u3,
 
     inline fn init() SquareWaveUnit {
         return SquareWaveUnit{
-            .duty = undefined,
+            .duty = .{},
             .counter = 0,
         };
     }
@@ -266,14 +273,14 @@ const SquareWaveUnit = struct {
             .{ true, false, false, false, false, false, false, true },
         };
         defer self.counter +%= 1;
-        return waveforms[self.duty][self.counter];
+        return waveforms[self.duty.get()][self.counter];
     }
 };
 
 const LfsrUnit = struct {
-    clock_shift: u4,
-    width: u1,
-    clock_div: u3,
+    clock_shift: TrackedValue(u4),
+    width: TrackedValue(u1),
+    clock_div: TrackedValue(u3),
 
     register: u16,
     tick_counter: u20,
@@ -281,9 +288,9 @@ const LfsrUnit = struct {
 
     inline fn init() LfsrUnit {
         return LfsrUnit{
-            .clock_shift = undefined,
-            .width = undefined,
-            .clock_div = undefined,
+            .clock_shift = .{},
+            .width = .{},
+            .clock_div = .{},
 
             .register = 0,
             .tick_counter = 0,
@@ -301,10 +308,10 @@ const LfsrUnit = struct {
     }
 
     fn updateTarget(self: *LfsrUnit) void {
-        self.target = if (self.clock_div == 0)
-            @as(u20, 1) << (@as(u5, @intCast(self.clock_shift)) + 1)
+        self.target = if (self.clock_div.get() == 0)
+            @as(u20, 1) << (@as(u5, @intCast(self.clock_shift.get())) + 1)
         else
-            @as(u20, @intCast(self.clock_div)) << (@as(u5, @intCast(self.clock_shift)) + 2);
+            @as(u20, @intCast(self.clock_div.get())) << (@as(u5, @intCast(self.clock_shift.get())) + 2);
     }
 
     fn sample(self: *LfsrUnit) bool {
@@ -313,7 +320,7 @@ const LfsrUnit = struct {
         const nxor: u1 = ~(bit0 ^ bit1);
 
         var mask: u16 = nxor;
-        if (self.width == 1) {
+        if (self.width.get() == 1) {
             mask <<= 8;
             mask |= nxor;
             mask <<= 7;
@@ -335,17 +342,17 @@ const LfsrUnit = struct {
 };
 
 const OutputLevelUnit = struct {
-    output_level: u2,
+    output_level: TrackedValue(u2),
 
     inline fn init() OutputLevelUnit {
         return OutputLevelUnit{
-            .output_level = undefined,
+            .output_level = .{},
         };
     }
 
     fn scale(self: *const OutputLevelUnit, sample: u4) u4 {
-        if (self.output_level == 0) return 0;
-        return sample >> (self.output_level - 1);
+        if (self.output_level.get() == 0) return 0;
+        return sample >> (self.output_level.get() - 1);
     }
 };
 
@@ -528,85 +535,137 @@ pub fn Channel(number: comptime_int) type {
         }
 
         pub fn peek(self: *This, addr: u16) u8 {
+            _, const val = self.read(addr);
+            return val;
+        }
+
+        pub fn read(self: *This, addr: u16) struct { MemoryFlag, u8 } {
             switch (addr) {
                 0 => {
                     if (number == 1) {
-                        var ret: u8 = 0;
-                        ret |= 1;
-                        ret <<= 3;
-                        ret |= self.period_sweep.pace;
-                        ret <<= 1;
-                        ret |= self.period_sweep.direction;
-                        ret <<= 3;
-                        ret |= self.period_sweep.individual_step;
-                        return ret;
+                        if (trackedMaybeAll(.{ self.period_sweep.pace, self.period_sweep.direction, self.period_sweep.individual_step })) |v| {
+                            const pace, const direction, const individual_step = v;
+
+                            var ret: u8 = 0;
+                            ret |= 1;
+                            ret <<= 3;
+                            ret |= pace;
+                            ret <<= 1;
+                            ret |= direction;
+                            ret <<= 3;
+                            ret |= individual_step;
+                            return .{ .{}, ret };
+                        } else {
+                            return .{ .{ .uninitialized = true }, 0xFF };
+                        }
                     }
                     if (number == 3) {
                         var ret: u8 = 0;
                         ret |= @intFromBool(self.control.dac_enabled);
                         ret <<= 7;
                         ret |= 0b111_1111;
-                        return ret;
+                        return .{ .{}, ret };
                     }
-                    return 0xFF;
+                    return .{ .{ .illegal = true }, 0xFF};
                 },
                 1 => {
                     if (number == 3) {
-                        return self.length.initial_counter;
+                        if (self.length.initial_counter.maybe()) |initial_counter| {
+                            return .{ .{}, initial_counter};
+                        } else {
+                            return .{ .{ .uninitialized = true }, 0xFF};
+                        }
                     }
-                    var ret: u8 = 0;
+
                     if (number == 1 or number == 2) {
-                        ret |= self.square.duty;
-                        ret <<= 6;
+                        if (trackedMaybeAll(.{self.square.duty, self.length.initial_counter})) |v| {
+                            const duty, const initial_counter = v;
+
+                            var ret: u8 = 0;
+                            if (number == 1 or number == 2) {
+                                ret |= duty;
+                                ret <<= 6;
+                        }
+                            ret |= initial_counter;
+                            return .{ .{}, ret };
+                        } else {
+                            return .{ .{ .uninitialized = true }, 0xFF};
+                        }
                     }
-                    ret |= self.length.initial_counter;
-                    return ret;
+
+                    return .{ .{ .illegal = true }, 0xFF};
                 },
                 2 => {
                     if (number == 3) {
-                        var ret: u8 = 0;
-                        ret |= 1;
-                        ret <<= 2;
-                        ret |= self.output_level.output_level;
-                        ret <<= 5;
-                        ret |= 0b11111;
-                        return ret;
+                        if (self.output_level.output_level.maybe()) |output_level| {
+                            var ret: u8 = 0;
+                            ret |= 1;
+                            ret <<= 2;
+                            ret |= output_level;
+                            ret <<= 5;
+                            ret |= 0b11111;
+                            return .{ .{}, ret };
+                        } else {
+                            return .{ .{ .uninitialized = true }, 0xFF};
+                        }
                     }
-                    var ret: u8 = 0;
-                    ret |= self.volume.initial_volume;
-                    ret <<= 1;
-                    ret |= self.volume.direction;
-                    ret <<= 3;
-                    ret |= self.volume.pace;
-                    return ret;
+                    if (trackedMaybeAll(.{self.volume.initial_volume, self.volume.direction, self.volume.pace})) |v| {
+                        const initial_volume, const direction, const pace = v;
+                        var ret: u8 = 0;
+                        ret |= initial_volume;
+                        ret <<= 1;
+                        ret |= direction;
+                        ret <<= 3;
+                        ret |= pace;
+                        return .{ .{}, ret };
+                    } else {
+                        return .{ .{ .uninitialized = true }, 0xFF};
+                    }
                 },
                 3 => {
                     if (number == 4) {
-                        var ret: u8 = 0;
-                        ret |= self.lfsr.clock_shift;
-                        ret <<= 1;
-                        ret |= self.lfsr.width;
-                        ret <<= 3;
-                        ret |= self.lfsr.clock_div;
-                        return ret;
+                        if (trackedMaybeAll(.{self.lfsr.clock_shift, self.lfsr.width, self.lfsr.clock_div})) |v| {
+                            const clock_shift, const width, const clock_div = v;
+                            var ret: u8 = 0;
+                            ret |= clock_shift;
+                            ret <<= 1;
+                            ret |= width;
+                            ret <<= 3;
+                            ret |= clock_div;
+                            return .{ .{}, ret };
+                        } else {
+                            return .{ .{ .uninitialized = true }, 0xFF};
+                        }
                     }
-                    return @intCast(self.period.period & 0xFF);
+                    if (self.period.period.maybe()) |period| {
+                        return .{ .{}, @intCast(period & 0xFF) };
+                    } else {
+                        return .{ .{ .uninitialized = true }, 0xFF};
+                    }
                 },
                 4 => {
-                    var ret: u8 = 0;
-                    ret |= 1;
-                    ret <<= 1;
-                    ret |= self.length.enable;
-                    ret <<= 3;
-                    ret |= 0b111;
-                    if (number == 4) {
+                    if (self.length.enable.maybe()) |enable| {
+                        var ret: u8 = 0;
+                        ret |= 1;
+                        ret <<= 1;
+                        ret |= enable;
                         ret <<= 3;
                         ret |= 0b111;
+                        if (number == 4) {
+                            ret <<= 3;
+                            ret |= 0b111;
+                        } else {
+                            if (self.period.period.maybe()) |period| {
+                                ret <<= 3;
+                                ret |= @intCast((period & 0x700) >> 8);
+                            } else {
+                                return .{ .{ .uninitialized = true }, 0xFF};
+                            }
+                        }
+                        return .{ .{}, ret };
                     } else {
-                        ret <<= 3;
-                        ret |= @intCast((self.period.period & 0x700) >> 8);
+                        return .{ .{ .uninitialized = true }, 0xFF};
                     }
-                    return ret;
                 },
                 else => unreachable,
             }
@@ -616,9 +675,9 @@ pub fn Channel(number: comptime_int) type {
             switch (addr) {
                 0 => {
                     if (number == 1) {
-                        self.period_sweep.pace = @intCast((val & 0b0111_0000) >> 4);
-                        self.period_sweep.direction = @intCast((val & 0b0000_1000) >> 3);
-                        self.period_sweep.individual_step = @intCast(val & 0b0000_0111);
+                        self.period_sweep.pace.set(@intCast((val & 0b0111_0000) >> 4));
+                        self.period_sweep.direction.set(@intCast((val & 0b0000_1000) >> 3));
+                        self.period_sweep.individual_step.set(@intCast(val & 0b0000_0111));
                     }
                     if (number == 3) {
                         self.control.dac_enabled = val & 0b1000_0000 != 0;
@@ -626,48 +685,49 @@ pub fn Channel(number: comptime_int) type {
                 },
                 1 => {
                     if (number == 3) {
-                        self.length.initial_counter = val;
+                        self.length.initial_counter.set(val);
                     } else {
                         if (number == 1 or number == 2) {
-                            self.square.duty = @intCast((val & 0b11_000000) >> 6);
+                            self.square.duty.set(@intCast((val & 0b11_000000) >> 6));
                         }
-                        self.length.initial_counter = @intCast(val & 0b00_111111);
+                        self.length.initial_counter.set(@intCast(val & 0b00_111111));
                     }
                 },
                 2 => {
                     if (number == 3) {
-                        self.output_level.output_level = @intCast((val & 0b0110_0000) >> 5);
+                        self.output_level.output_level.set(@intCast((val & 0b0110_0000) >> 5));
                     } else {
-                        self.volume.initial_volume = @intCast((val & 0xF0) >> 4);
-                        self.volume.direction = @intCast((val & 0b0000_1000) >> 3);
-                        self.volume.pace = @intCast(val & 0b0000_0111);
+                        self.volume.initial_volume.set(@intCast((val & 0xF0) >> 4));
+                        self.volume.direction.set(@intCast((val & 0b0000_1000) >> 3));
+                        self.volume.pace.set(@intCast(val & 0b0000_0111));
                     }
                 },
                 3 => {
                     if (number == 4) {
-                        self.lfsr.clock_shift = @intCast((val & 0xF0) >> 4);
-                        self.lfsr.width = @intCast((val & 0b0000_1000) >> 3);
-                        self.lfsr.clock_div = @intCast(val & 0b0000_0111);
+                        self.lfsr.clock_shift.set(@intCast((val & 0xF0) >> 4));
+                        self.lfsr.width.set(@intCast((val & 0b0000_1000) >> 3));
+                        self.lfsr.clock_div.set(@intCast(val & 0b0000_0111));
                         self.lfsr.updateTarget();
                     } else {
-                        self.period.period = (self.period.period & 0x700) | val;
+                        if (self.period.period.maybe()) |period| {
+                            self.period.period.set((period & 0x700) | val);
+                        } else {
+                            self.period.period.set(val);
+                        }
                     }
                 },
                 4 => {
-                    self.length.enable = @intCast((val & 0b0100_0000) >> 6);
+                    self.length.enable.set(@intCast((val & 0b0100_0000) >> 6));
                     if (number != 4) {
-                        self.period.period = (self.period.period & 0x0FF) | (@as(u11, @intCast(val & 0b0000_0111)) << 8);
+                        if (self.period.period.maybe()) |period| {
+                            self.period.period.set((period & 0x0FF) | (@as(u11, @intCast(val & 0b0000_0111)) << 8));
+                        } else {
+                            self.period.period.set(@as(u11, @intCast(val & 0b0000_0111)) << 8);
+                        }
                     }
                 },
                 else => unreachable,
             }
-        }
-
-        pub fn read(self: *This, addr: u16) struct { MemoryFlag, u8 } {
-            if (addr == 0 and number != 1 and number != 3) {
-                return .{ .{ .illegal = true }, self.peek(addr) };
-            }
-            return .{ .{}, self.peek(addr) };
         }
 
         pub fn write(self: *This, addr: u16, val: u8) MemoryFlag {
@@ -678,10 +738,15 @@ pub fn Channel(number: comptime_int) type {
                 self.poke(addr, val);
             }
             if (number != 3) { // channel 3 uses a direct bit write instead of a side effect
-                if (self.volume.direction == 0 and self.volume.initial_volume == 0) {
-                    self.control.dac_enabled = false;
+                if (trackedMaybeAll(.{self.volume.direction, self.volume.initial_volume})) |v| {
+                    const direction, const initial_volume = v;
+                    if (direction == 0 and initial_volume == 0) {
+                        self.control.dac_enabled = false;
+                    } else {
+                        self.control.dac_enabled = true;
+                    }
                 } else {
-                    self.control.dac_enabled = true;
+                    // No change if both aren't defined I guess
                 }
             }
             if (!self.powered_off and addr == 4 and val & 0b1000_0000 != 0) {
@@ -755,10 +820,10 @@ test "trigger sets active, length, volume envelope and period counters" {
 
     try std.testing.expect(ch.control.active);
     try std.testing.expectEqual(init_len, ch.length.counter);
-    try std.testing.expectEqual(@as(u11, 0x7FF), ch.period.period);
+    try std.testing.expectEqual(@as(u11, 0x7FF), ch.period.period.get());
     try std.testing.expectEqual(@as(u11, 0x7FF), ch.period.counter);
     try std.testing.expectEqual(init_vol, ch.volume.volume);
-    try std.testing.expectEqual(@as(u3, 0), ch.volume.pace);
+    try std.testing.expectEqual(@as(u3, 0), ch.volume.pace.get());
 }
 
 test "tick() obeys dacEnabled and active; waveform progression matches table" {
@@ -841,7 +906,7 @@ test "poweroff blocks writes (except NR21 on DMG) and prevents trigger" {
 
     // Write to NR23 while powered off should be ignored
     _ = ch.write(3, 0xAA);
-    try std.testing.expectEqual(@as(u11, 0), ch.period.period & 0xFF);
+    try std.testing.expectEqual(@as(u11, 0), ch.period.period.get() & 0xFF);
 
     // NR21 is still writable on power-off (DMG quirk in this implementation)
     _ = ch.write(1, (0b11 << 6) | 17);
@@ -920,13 +985,13 @@ test "Channel(1) period sweep subtract updates period on schedule (pace=2 -> 1 u
 
     try std.testing.expect(ch.control.active);
     try std.testing.expect(ch.period_sweep.enabled);
-    try std.testing.expectEqual(@as(u11, 0x400), ch.period.period);
+    try std.testing.expectEqual(@as(u11, 0x400), ch.period.period.get());
 
     // Sweep ticks every 4 divticks; with pace=2 we need 2 sweep ticks -> 8 divticks total
     inline for (0..8) |_| ch.divtick();
 
     // New period = P - (P >> 1) = 0x400 - 0x200 = 0x200
-    try std.testing.expectEqual(@as(u11, 0x200), ch.period.period);
+    try std.testing.expectEqual(@as(u11, 0x200), ch.period.period.get());
     try std.testing.expect(ch.control.active); // still active, no overflow
 }
 
@@ -948,12 +1013,12 @@ test "Channel(1) paced increment may overflow on a subsequent step (pace=1)" {
 
     try std.testing.expect(ch.control.active);
     try std.testing.expect(ch.period_sweep.enabled);
-    try std.testing.expectEqual(@as(u11, 0x500), ch.period.period);
+    try std.testing.expectEqual(@as(u11, 0x500), ch.period.period.get());
 
     // One sweep step after 4 divticks (pace=1)
     inline for (0..4) |_| ch.divtick();
     // First update: 0x500 + (0x500 >> 1) = 0x500 + 0x280 = 0x780 (no overflow)
-    try std.testing.expectEqual(@as(u11, 0x780), ch.period.period);
+    try std.testing.expectEqual(@as(u11, 0x780), ch.period.period.get());
     // However, the overflow check takes place early, so the channel is already disabled here
     try std.testing.expect(!ch.control.active);
 }
@@ -1005,7 +1070,7 @@ test "Channel(4) NR44 (addr 4) peek exposes LEN enable and fixed ones; trigger w
     _ = ch.write(4, 0b1100_0000); // lengthEnable=1, trigger=1
     try std.testing.expect(ch.control.active);
     try std.testing.expectEqual(@as(u16, 0), ch.lfsr.register); // reset() sets register=0
-    try std.testing.expectEqual(ch.volume.initial_volume, ch.volume.volume);
+    try std.testing.expectEqual(ch.volume.initial_volume.get(), ch.volume.volume);
 }
 
 test "Channel(4) DAC gating: write(2) enables/disables; tick() respects DAC and active" {
@@ -1038,7 +1103,7 @@ test "Channel(4) LFSR.sample() basic sequences: width=0 vs width=1" {
     ch.lfsr.reset();
 
     // width=0: first 14 samples low (0), then high (0xF) afterwards
-    ch.lfsr.width = 0;
+    ch.lfsr.width.set(0);
     inline for (0..14) |i| {
         _ = i;
         try std.testing.expectEqual(false, ch.lfsr.sample());
@@ -1047,7 +1112,7 @@ test "Channel(4) LFSR.sample() basic sequences: width=0 vs width=1" {
 
     // Reset and use width=1: the tap changes; the 7th sample becomes high
     ch.lfsr.reset();
-    ch.lfsr.width = 1;
+    ch.lfsr.width.set(1);
     inline for (0..6) |i| {
         _ = i;
         try std.testing.expectEqual(false, ch.lfsr.sample());
@@ -1082,9 +1147,9 @@ test "Channel(4) poweroff blocks writes (except NR41) and prevents trigger" {
 
     // Writes to NR43 while powered off are ignored
     _ = ch.write(3, 0xA5);
-    try std.testing.expectEqual(@as(u4, 0), ch.lfsr.clock_shift);
-    try std.testing.expectEqual(@as(u1, 0), ch.lfsr.width);
-    try std.testing.expectEqual(@as(u3, 0), ch.lfsr.clock_div);
+    try std.testing.expectEqual(@as(u4, 0), ch.lfsr.clock_shift.get());
+    try std.testing.expectEqual(@as(u1, 0), ch.lfsr.width.get());
+    try std.testing.expectEqual(@as(u3, 0), ch.lfsr.clock_div.get());
 
     // NR41 (addr 1, length) remains writable on power-off (DMG quirk in this impl)
     _ = ch.write(1, 17);
@@ -1131,13 +1196,13 @@ test "Channel(3) NR31/NR32/NR33/NR34 poke/peek basics" {
 
     // NR32: output level in bits 6..5; others read back as 1s with bit7=1
     _ = ch.write(2, 0b0110_0000); // output_level=0b11
-    try std.testing.expectEqual(@as(u2, 0b11), ch.output_level.output_level);
+    try std.testing.expectEqual(@as(u2, 0b11), ch.output_level.output_level.get());
     try std.testing.expectEqual(@as(u8, 0b1_11_11111), ch.peek(2));
 
     // NR33 low period, NR34 high period + length enable + trigger bit
     _ = ch.write(3, 0x34);
     _ = ch.write(4, 0b0100_0010); // len.enable=1, upper period=0b010, no trigger
-    try std.testing.expectEqual(@as(u11, 0b010_00110100), ch.period.period);
+    try std.testing.expectEqual(@as(u11, 0b010_00110100), ch.period.period.get());
 
     // peek(4): 7:1, 6:length.enable, 5..3:111, 2..0: upper period
     try std.testing.expectEqual(@as(u8, 0b1_1_111_010), ch.peek(4));
