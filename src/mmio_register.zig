@@ -50,3 +50,16 @@ pub const TAC = packed struct(u8) {
     enable: bool,
     _: u5 = 0b11111,
 };
+
+// FF08-FF0E
+// Unused
+
+// FF0F
+pub const IF = packed struct(u8) {
+    vblank: bool,
+    lcd: bool,
+    timer: bool,
+    serial: bool,
+    joypad: bool,
+    _: u3 = 0b111,
+};
