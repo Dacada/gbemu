@@ -260,3 +260,109 @@ pub const NR52 = packed struct(u8) {
 
 // FF30-FF3F
 // Wave RAM is not structured
+
+// FF40
+pub const LCDC = packed struct(u8) {
+    const ObjSize = enum(u1) {
+        size_8x8 = 0,
+        size_8x16 = 1,
+    };
+
+    const TileMapArea = enum(u1) {
+        addr_9800_to_9BFF = 0,
+        addr_9C00_to_9FFF = 1,
+    };
+
+    const TileDataArea = enum(u1) {
+        addr_8800_to_97FF = 0,
+        addr_8000_to_8FFF = 1,
+    };
+
+    bg_window_enable: bool, // DMG ONLY -- Different meaning in CGB
+    obj_enable: bool,
+    obj_size: ObjSize,
+    bg_tile_map_area: TileMapArea,
+    bg_window_tile_data_area: TileDataArea,
+    window_enable: bool,
+    window_tile_map_area: TileMapArea,
+    ppu_enable: bool,
+};
+
+// FF41
+pub const STAT = packed struct(u8) {
+    const PPUMode = enum(u2) {
+        Mode0 = 0,
+        Mode1 = 1,
+        Mode2 = 2,
+        Mode3 = 3,
+    };
+
+    ppu_mode: PPUMode,
+    lyc_eq_ly: bool,
+    mode_0_int_select: bool,
+    mode_1_int_select: bool,
+    mode_2_int_select: bool,
+    lyc_int_select: bool,
+    _: u1 = 0b1,
+};
+
+// FF42
+// SCY is not structured
+
+// FF43
+// SCX is not structured
+
+// FF44
+// LY is not structured
+
+// FF45
+// LYC is not structured
+
+// FF46
+// DMA is not structured
+
+// FF47
+pub const BGP = packed struct(u8) {
+    // DMG ONLY -- Meaningful only for DMG, CGB takes its palettes from elsewhere
+    const Color(u2) {
+        white,
+        light_gray,
+        dark_gray,
+        black,
+    };
+
+    id0: Color,
+    id1: Color,
+    id2: Color,
+    id3: Color,
+};
+
+// FF48
+pub const OBP0 = BGP;
+
+// FF49
+pub const OBP1 = BGP;
+
+// FF4A
+// WY is not structured
+
+// FF4B
+// WX is not structured
+
+// FF4C
+// Unused // DMG ONLY -- On GCB this is KEY0
+
+// FF4E
+// Unused // DMG ONLY -- On GCB this is KEY1
+
+// FF4F
+// Unused // DMG ONLY -- On GCB this is VBK
+
+// FF50
+// BANK is not structured
+
+// FF51-FFFE
+// Unused // DMG ONLY -- ON GCB there are several used ranges here
+
+// FFFF
+pub const IE = IF;
