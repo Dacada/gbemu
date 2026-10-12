@@ -184,7 +184,7 @@ pub const NR30 = packed struct(u8) {
 pub const NR32 = packed struct(u8) {
     pub const OutputLevel = enum(u2) {
         mute = 0b00,
-        voume_100 = 0b01,
+        volume_100 = 0b01,
         volume_50 = 0b10,
         volume_25 = 0b11,
     };
