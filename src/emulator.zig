@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub fn Emulator(Cpu: type, Apu: type, Ppu: type, Timer: type, Scheduler: type, Debugger: type) type {
+pub fn Emulator(Cpu: type, Apu: type, Ppu: type, Timer: type, Scheduler: type, Joypad: type, Debugger: type) type {
     return struct {
         const This = @This();
 
@@ -9,17 +9,19 @@ pub fn Emulator(Cpu: type, Apu: type, Ppu: type, Timer: type, Scheduler: type, D
         ppu: *Ppu,
         timer: *Timer,
         sched: *Scheduler,
+        joypad: *Joypad,
         dbg: *Debugger,
 
         divider: u2,
 
-        pub inline fn init(cpu: *Cpu, apu: *Apu, ppu: *Ppu, timer: *Timer, sched: *Scheduler, dbg: *Debugger) This {
+        pub inline fn init(cpu: *Cpu, apu: *Apu, ppu: *Ppu, timer: *Timer, sched: *Scheduler, joypad: *Joypad, dbg: *Debugger) This {
             return This{
                 .cpu = cpu,
                 .apu = apu,
                 .ppu = ppu,
                 .timer = timer,
                 .sched = sched,
+                .joypad = joypad,
                 .dbg = dbg,
                 .divider = 0,
             };
@@ -51,6 +53,9 @@ pub fn Emulator(Cpu: type, Apu: type, Ppu: type, Timer: type, Scheduler: type, D
                 }
             }
             self.sched.tick();
+
+            // This is probably a bad idea, we might not want to poll inputs millions of times per second
+            self.joypad.poll();
 
             self.divider +%= 1;
             return false;

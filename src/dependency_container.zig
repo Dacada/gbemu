@@ -1,6 +1,9 @@
 const std = @import("std");
 
 pub const ContainerConfig = struct {
+    joypad_backend: enum {
+        mock_nil,
+    } = .mock_nil,
     audio_backend: enum {
         mock_wav,
         mock_nil,
@@ -82,6 +85,10 @@ pub fn Container(comptime cfg: ContainerConfig) type {
     const Dummy = mmu.Dummy(false);
     const DummyWithTickArgument = mmu.Dummy(true);
 
+    const c_JoypadBackend = switch (cfg.joypad_backend) {
+        .mock_nil => backend.NullJoypadBackend,
+    };
+
     const c_AudioBackend = switch (cfg.audio_backend) {
         .mock_wav => backend.WavAudioBackend,
         .mock_nil => backend.NullAudioBackend,
@@ -110,7 +117,7 @@ pub fn Container(comptime cfg: ContainerConfig) type {
     };
 
     const c_Joypad = switch (cfg.joypad) {
-        .real => @import("joypad.zig").Joypad(c_Interrupt),
+        .real => @import("joypad.zig").Joypad(c_Interrupt, c_JoypadBackend),
         .dummy => Dummy,
     };
 
@@ -161,11 +168,12 @@ pub fn Container(comptime cfg: ContainerConfig) type {
         .mock => debugger.MockDebugger,
     };
 
-    const c_Emulator = @import("emulator.zig").Emulator(c_Cpu, c_Apu, c_Ppu, c_Timer, c_Scheduler, c_Debugger);
+    const c_Emulator = @import("emulator.zig").Emulator(c_Cpu, c_Apu, c_Ppu, c_Timer, c_Scheduler, c_Joypad, c_Debugger);
 
     return struct {
         const This = @This();
 
+        pub const JoypadBackend = c_JoypadBackend;
         pub const AudioBackend = c_AudioBackend;
         pub const VideoBackend = c_VideoBackend;
         pub const Scheduler = c_Scheduler;
@@ -183,6 +191,7 @@ pub fn Container(comptime cfg: ContainerConfig) type {
         pub const Debugger = c_Debugger;
         pub const Emulator = c_Emulator;
 
+        joypad_backend: ?JoypadBackend = null,
         audio_backend: ?AudioBackend = null,
         video_backend: ?VideoBackend = null,
         scheduler: ?Scheduler = null,
@@ -210,6 +219,12 @@ pub fn Container(comptime cfg: ContainerConfig) type {
                 @field(inst, what) = @field(This, std.fmt.comptimePrint("make_{s}", .{what}))(inst);
             }
             return &@field(inst, what).?;
+        }
+
+        fn make_joypad_backend(_: *This) JoypadBackend {
+            return switch (cfg.joypad_backend) {
+                .mock_nil => JoypadBackend.init(),
+            };
         }
 
         fn make_audio_backend(_: *This) AudioBackend {
@@ -251,7 +266,7 @@ pub fn Container(comptime cfg: ContainerConfig) type {
 
         fn make_joypad(self: *This) Joypad {
             return switch (cfg.joypad) {
-                .real => Joypad.init(self.get_interrupt()),
+                .real => Joypad.init(self.get_interrupt(), self.get_joypad_backend()),
                 .dummy => Dummy{},
             };
         }
@@ -334,7 +349,11 @@ pub fn Container(comptime cfg: ContainerConfig) type {
         }
 
         fn make_emulator(self: *This) Emulator {
-            return Emulator.init(self.get_cpu(), self.get_apu(), self.get_ppu(), self.get_timer(), self.get_scheduler(), self.get_debugger());
+            return Emulator.init(self.get_cpu(), self.get_apu(), self.get_ppu(), self.get_timer(), self.get_scheduler(), self.get_joypad(), self.get_debugger());
+        }
+
+        pub fn get_joypad_backend(self: *This) *JoypadBackend {
+            return get_or_make(JoypadBackend, "joypad_backend", self);
         }
 
         pub fn get_audio_backend(self: *This) *AudioBackend {

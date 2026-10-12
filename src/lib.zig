@@ -21,6 +21,7 @@ pub const backend = @import("backend.zig");
 pub const channel = @import("channel.zig");
 pub const tracker = @import("tracker.zig");
 pub const dependency_container = @import("dependency_container.zig");
+pub const mmio_register = @import("mmio_register.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());

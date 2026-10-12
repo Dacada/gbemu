@@ -1,7 +1,7 @@
 const MemoryFlag = @import("memory_flag.zig").MemoryFlag;
 const InterruptKind = @import("interrupt_kind.zig").InterruptKind;
+const JOYP = @import("mmio_register.zig").JOYP;
 
-/// true -> button is pressed
 pub const JoypadButtons = packed struct {
     start: bool,
     select: bool,
@@ -13,40 +13,29 @@ pub const JoypadButtons = packed struct {
     right: bool,
 };
 
-pub fn Joypad(Interrupt: type) type {
+pub fn Joypad(Interrupt: type, JoypadBackend: type) type {
     return struct {
         const This = @This();
 
-        select_buttons: u1,
-        select_dpad: u1,
-        buttons: u4,
-        dpad: u4,
-        intr: *Interrupt,
+        select_buttons: bool,
+        select_dpad: bool,
+        joypad: JoypadButtons,
 
-        pub inline fn init(intr: *Interrupt) This {
+        intr: *Interrupt,
+        backend: *JoypadBackend,
+
+        pub inline fn init(intr: *Interrupt, backend: *JoypadBackend) This {
             return This{
                 .select_buttons = undefined,
                 .select_dpad = undefined,
-                .buttons = undefined,
-                .dpad = undefined,
+                .joypad = undefined,
+
                 .intr = intr,
+                .backend = backend,
             };
         }
 
-        pub inline fn getActive(self: *const This) JoypadButtons {
-            const allbuttons: u8 = (@as(u8, @intCast(~self.buttons)) << 4) | ~self.dpad;
-            return @bitCast(allbuttons);
-        }
-
-        /// Triggers interrupts!
-        pub inline fn setActive(self: *This, allbuttons: JoypadButtons) void {
-            // TODO: emulate bouncing?
-            const old_regval = self.peek(undefined) & 0xF;
-
-            const allbuttonsint: u8 = @bitCast(allbuttons);
-            self.buttons = (~allbuttonsint >> 4) & 0x0F;
-            self.dpad = ~allbuttonsint & 0x0F;
-
+        fn check_trigger_interrupt(self: *This, old_regval: u8) void {
             const new_regval = self.peek(undefined) & 0xF;
 
             // if any bit was 1 but is now 0
@@ -55,35 +44,55 @@ pub fn Joypad(Interrupt: type) type {
             }
         }
 
-        pub fn peek(self: *This, _: u16) u8 {
-            var lower: u4 = 0xF;
-            if (self.select_buttons == 0) {
-                lower &= self.buttons;
-            }
-            if (self.select_dpad == 0) {
-                lower &= self.dpad;
-            }
-
-            var result: u8 = 0b110;
-            result |= self.select_buttons;
-            result <<= 1;
-            result |= self.select_dpad;
-            result <<= 4;
-            result |= lower;
-
-            return result;
+        /// Reads button states from backend and triggers interrupts
+        pub inline fn poll(self: *This) void {
+            const old_regval = self.peek(undefined) & 0xF;
+            self.joypad = self.backend.poll();
+            self.check_trigger_interrupt(old_regval);
         }
 
-        pub fn poke(self: *This, _: u16, val: u8) void {
-            _ = self.write(undefined, val);
+        pub fn peek(self: *This, _: u16) u8 {
+            var result: JOYP = @bitCast(@as(u8, 0xFF));
 
-            // We allow poke to set the joypad button state
-            // TODO: This is forever now, but when this is actually using proper input, it should probably be until after the next read (not peek)
-            if (self.select_buttons == 0) {
-                self.buttons = @intCast(val & 0x0F);
+            if (self.select_buttons) {
+                result.a_or_right_active_low &= !self.joypad.a;
+                result.b_or_left_active_low &= !self.joypad.b;
+                result.select_or_up_active_low &= !self.joypad.select;
+                result.start_or_down_active_low &= !self.joypad.start;
             }
-            if (self.select_dpad == 0) {
-                self.dpad = @intCast(val & 0x0F);
+
+            if (self.select_dpad) {
+                result.a_or_right_active_low &= !self.joypad.right;
+                result.b_or_left_active_low &= !self.joypad.left;
+                result.select_or_up_active_low &= !self.joypad.up;
+                result.start_or_down_active_low &= !self.joypad.down;
+            }
+
+            result.select_buttons_active_low = !self.select_buttons;
+            result.select_d_pad_active_low = !self.select_dpad;
+
+            return @bitCast(result);
+        }
+
+        /// For debugging, as these values aren't usually writeable. No interrupts.
+        pub fn poke(self: *This, _: u16, val: u8) void {
+            const reg: JOYP = @bitCast(val);
+
+            self.select_buttons = !reg.select_buttons_active_low;
+            self.select_dpad = !reg.select_d_pad_active_low;
+
+            if (self.select_buttons) {
+                self.joypad.a = !reg.a_or_right_active_low;
+                self.joypad.b = !reg.b_or_left_active_low;
+                self.joypad.select = !reg.select_or_up_active_low;
+                self.joypad.start = !reg.start_or_down_active_low;
+            }
+
+            if (self.select_dpad) {
+                self.joypad.right = !reg.a_or_right_active_low;
+                self.joypad.left = !reg.b_or_left_active_low;
+                self.joypad.up = !reg.select_or_up_active_low;
+                self.joypad.down = !reg.start_or_down_active_low;
             }
         }
 
@@ -91,9 +100,15 @@ pub fn Joypad(Interrupt: type) type {
             return .{ .{}, self.peek(undefined) };
         }
 
+        /// May trigger an interrupt
         pub fn write(self: *This, _: u16, val: u8) MemoryFlag {
-            self.select_buttons = @intCast((val & 0b0010_0000) >> 5);
-            self.select_dpad = @intCast((val & 0b0001_0000) >> 4);
+            const reg: JOYP = @bitCast(val);
+
+            const old_regval = self.peek(undefined) & 0xF;
+            self.select_buttons = !reg.select_buttons_active_low;
+            self.select_dpad = !reg.select_d_pad_active_low;
+            self.check_trigger_interrupt(old_regval);
+
             return .{};
         }
     };
@@ -103,177 +118,132 @@ const std = @import("std");
 
 const TestContainer = @import("dependency_container.zig").Container(.{
     .interrupt = .mock,
+    .joypad_backend = .mock_nil,
 });
 
-test "Joypad initial state reads 0xFF" {
-    var container = TestContainer.init();
-    var joypad = container.get_joypad();
-    joypad.select_buttons = 1;
-    joypad.select_dpad = 1;
-    joypad.buttons = 0b0000;
-    joypad.dpad = 0b0000;
-
-    _, const result = joypad.read(0x00);
-    try std.testing.expectEqual(0xFF, result);
-}
-
-test "Joypad button selection returns button state" {
-    var container = TestContainer.init();
-    var joypad = container.get_joypad();
-    joypad.select_buttons = 0;
-    joypad.select_dpad = 1;
-    joypad.buttons = 0b0000;
-
-    joypad.poke(0x00, 0b1101_1010);
-    try std.testing.expectEqual(0b1010, joypad.buttons);
-
-    _, const result = joypad.read(0x00);
-    try std.testing.expectEqual(0b1101_1010, result);
-}
-
-test "Joypad dpad selection returns dpad state" {
-    var container = TestContainer.init();
-    var joypad = container.get_joypad();
-    joypad.select_buttons = 1;
-    joypad.select_dpad = 0;
-    joypad.buttons = 0b0000;
-    joypad.dpad = 0b0000;
-
-    joypad.poke(0x00, 0b1110_0101);
-    try std.testing.expectEqual(0b0101, joypad.dpad);
-
-    _, const result = joypad.read(0x00);
-    try std.testing.expectEqual(0b1110_0101, result);
-}
-
-test "Joypad selection bits update correctly" {
-    var container = TestContainer.init();
-    var joypad = container.get_joypad();
-    joypad.select_buttons = 1;
-    joypad.select_dpad = 1;
-    joypad.buttons = 0b0000;
-    joypad.dpad = 0b0000;
-
-    _ = joypad.write(0x00, 0b1110_0000);
-    try std.testing.expectEqual(1, joypad.select_buttons);
-    try std.testing.expectEqual(0, joypad.select_dpad);
-
-    _ = joypad.write(0x00, 0b1101_0000);
-    try std.testing.expectEqual(0, joypad.select_buttons);
-    try std.testing.expectEqual(1, joypad.select_dpad);
-}
-
-test "Joypad preserves unselected group state" {
-    var container = TestContainer.init();
-    var joypad = container.get_joypad();
-    joypad.select_buttons = 0;
-    joypad.select_dpad = 0;
-    joypad.buttons = 0b0000;
-    joypad.dpad = 0b1111;
-
-    joypad.poke(0x00, 0b1111_0011);
-    try std.testing.expectEqual(0b0000, joypad.buttons);
-    try std.testing.expectEqual(0b1111, joypad.dpad);
-}
-
-test "getActive and setActive round-trip" {
-    var container = TestContainer.init();
-    var joypad = container.get_joypad();
-
-    const original = JoypadButtons{
-        .start = true,
-        .select = false,
-        .b = true,
+fn init_joypad(joypad: *TestContainer.Joypad) void {
+    joypad.select_buttons = false;
+    joypad.select_dpad = false;
+    joypad.joypad = .{
         .a = false,
-        .down = true,
-        .up = false,
-        .left = true,
-        .right = false,
-    };
-
-    joypad.setActive(original);
-    const result = joypad.getActive();
-
-    try std.testing.expectEqual(original, result);
-}
-
-test "setActive sets internal button states correctly" {
-    var container = TestContainer.init();
-    var joypad = container.get_joypad();
-
-    const state = JoypadButtons{
-        .start = true,
-        .select = true,
         .b = false,
-        .a = false,
-        .down = false,
-        .up = true,
-        .left = true,
-        .right = false,
-    };
-
-    joypad.setActive(state);
-
-    const allbuttons: u8 = @bitCast(state);
-    const expected_buttons = (~allbuttons >> 4) & 0x0F;
-    const expected_dpad = ~allbuttons & 0x0F;
-
-    try std.testing.expectEqual(expected_buttons, joypad.buttons);
-    try std.testing.expectEqual(expected_dpad, joypad.dpad);
-}
-
-test "setActive triggers interrupt on new press" {
-    var container = TestContainer.init();
-    const intr = container.get_interrupt();
-    var joypad = container.get_joypad();
-
-    // Initial state: all released (1s)
-    joypad.buttons = 0xF;
-    joypad.dpad = 0xF;
-
-    // Configure select to check both button and dpad
-    joypad.select_buttons = 0;
-    joypad.select_dpad = 0;
-
-    // Press "start" and "down" (previously unpressed)
-    const pressed = JoypadButtons{
-        .start = true,
         .select = false,
-        .b = false,
-        .a = false,
-        .down = true,
-        .up = false,
-        .left = false,
-        .right = false,
-    };
-
-    joypad.setActive(pressed);
-
-    try std.testing.expect(intr.requested != null);
-}
-
-test "setActive does not trigger interrupt when unchanged" {
-    var container = TestContainer.init();
-    var intr = container.get_interrupt();
-    var joypad = container.get_joypad();
-
-    joypad.select_buttons = 0;
-    joypad.select_dpad = 0;
-
-    const state = JoypadButtons{
         .start = false,
-        .select = false,
-        .b = false,
-        .a = false,
         .down = false,
-        .up = false,
         .left = false,
         .right = false,
+        .up = false,
     };
+}
 
-    joypad.setActive(state);
-    intr.requested = null; // reset flag
-    joypad.setActive(state); // same state again
+test "JOYP reads selected buttons with active-low semantics" {
+    var container = TestContainer.init();
+    const backend = container.get_joypad_backend();
+    const joypad = container.get_joypad();
 
-    try std.testing.expect(intr.requested == null);
+    init_joypad(joypad);
+
+    backend.set(.{
+        .a = true,
+        .b = false,
+        .select = false,
+        .start = true,
+        .down = false,
+        .left = true,
+        .right = false,
+        .up = true,
+    });
+    joypad.poll();
+
+    // No group selected.
+    try std.testing.expectEqual(@as(u8, 0xFF), joypad.peek(0));
+
+    // Action buttons: A and Start pressed.
+    _ = joypad.write(0, 0xDF);
+    try std.testing.expectEqual(@as(u8, 0xD6), joypad.peek(0));
+
+    // D-pad: Left and Up pressed.
+    _ = joypad.write(0, 0xEF);
+    try std.testing.expectEqual(@as(u8, 0xE9), joypad.peek(0));
+
+    // Both groups: active-low bits combine.
+    _ = joypad.write(0, 0xCF);
+    try std.testing.expectEqual(@as(u8, 0xC0), joypad.peek(0));
+}
+
+test "JOYP interrupts only on falling edges" {
+    var container = TestContainer.init();
+    const backend = container.get_joypad_backend();
+    const interrupt = container.get_interrupt();
+    const joypad = container.get_joypad();
+
+    init_joypad(joypad);
+    _ = joypad.write(0, 0xDF); // Select action buttons.
+
+    var buttons = joypad.joypad;
+
+    // Press A.
+    buttons.a = true;
+    backend.set(buttons);
+    joypad.poll();
+    try std.testing.expectEqual(
+        InterruptKind.joypad,
+        interrupt.requested.?,
+    );
+
+    // Same state: no new interrupt.
+    interrupt.requested = null;
+    joypad.poll();
+    try std.testing.expect(interrupt.requested == null);
+
+    // Release A: rising edge, no interrupt.
+    buttons.a = false;
+    backend.set(buttons);
+    joypad.poll();
+    try std.testing.expect(interrupt.requested == null);
+
+    // Press B: another falling edge.
+    buttons.b = true;
+    backend.set(buttons);
+    joypad.poll();
+    try std.testing.expectEqual(
+        InterruptKind.joypad,
+        interrupt.requested.?,
+    );
+}
+
+test "JOYP selection changes can trigger interrupts" {
+    var container = TestContainer.init();
+    const backend = container.get_joypad_backend();
+    const interrupt = container.get_interrupt();
+    const joypad = container.get_joypad();
+
+    init_joypad(joypad);
+
+    var buttons = joypad.joypad;
+    buttons.a = true;
+    backend.set(buttons);
+
+    // A is pressed, but neither group is selected.
+    joypad.poll();
+    try std.testing.expect(interrupt.requested == null);
+
+    // Selecting action buttons exposes the pressed A.
+    _ = joypad.write(0, 0xDF);
+    try std.testing.expectEqual(
+        InterruptKind.joypad,
+        interrupt.requested.?,
+    );
+
+    // Deselecting produces no falling edge.
+    interrupt.requested = null;
+    _ = joypad.write(0, 0xFF);
+    try std.testing.expect(interrupt.requested == null);
+
+    // Selecting again produces another falling edge.
+    _ = joypad.write(0, 0xDF);
+    try std.testing.expectEqual(
+        InterruptKind.joypad,
+        interrupt.requested.?,
+    );
 }

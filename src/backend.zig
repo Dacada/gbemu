@@ -1,4 +1,32 @@
 const std = @import("std");
+const JoypadButtons = @import("joypad.zig").JoypadButtons;
+
+pub const NullJoypadBackend = struct {
+    state: JoypadButtons,
+
+    pub inline fn init() NullJoypadBackend {
+        return NullJoypadBackend{
+            .state = .{
+                .a = false,
+                .b = false,
+                .down = false,
+                .left = false,
+                .right = false,
+                .select = false,
+                .start = false,
+                .up = false,
+            },
+        };
+    }
+
+    pub inline fn set(self: *NullJoypadBackend, state: JoypadButtons) void {
+        self.state = state;
+    }
+
+    pub inline fn poll(self: *NullJoypadBackend) JoypadButtons {
+        return self.state;
+    }
+};
 
 pub const NullAudioBackend = struct {
     pub const SamplingRate = 44_100.0;
