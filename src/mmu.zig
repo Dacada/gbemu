@@ -269,6 +269,9 @@ pub fn Dummy(comptime tick_receives_arg: bool) type {
 
         lastval: u8 = 0,
 
+        // Needed for the joystick interface
+        pub fn poll(_: anytype) void {}
+
         pub fn peek(self: anytype, _: u16) u8 {
             return self.lastval;
         }
