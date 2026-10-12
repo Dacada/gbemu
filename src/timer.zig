@@ -1,5 +1,6 @@
 const MemoryFlag = @import("memory_flag.zig").MemoryFlag;
 const InterruptKind = @import("interrupt_kind.zig").InterruptKind;
+const TAC = @import("mmio_register.zig").TAC;
 
 pub fn Timer(Apu: type, Interrupt: type) type {
     return struct {
@@ -11,8 +12,8 @@ pub fn Timer(Apu: type, Interrupt: type) type {
         div: u16,
         tima: u8,
         tma: u8,
-        enable: u1,
-        clock_select: u2,
+        enable: bool,
+        clock_select: TAC.ClockSelect,
 
         tima_overflow_next_tick: bool,
         wrote_tima_this_tick: bool,
@@ -49,13 +50,10 @@ pub fn Timer(Apu: type, Interrupt: type) type {
                 0 => @intCast(self.div >> 8),
                 1 => self.tima,
                 2 => self.tma,
-                3 => blk: {
-                    var val: u8 = 0;
-                    val |= self.enable;
-                    val <<= 2;
-                    val |= self.clock_select;
-                    break :blk val;
-                },
+                3 => @bitCast(TAC{
+                    .clock_select = self.clock_select,
+                    .enable = self.enable,
+                }),
                 else => unreachable,
             };
         }
@@ -66,8 +64,9 @@ pub fn Timer(Apu: type, Interrupt: type) type {
                 1 => self.tima = val,
                 2 => self.tma = val,
                 3 => {
-                    self.enable = @intCast((val & 0b100) >> 2);
-                    self.clock_select = @intCast(val & 0b11);
+                    const reg: TAC = @bitCast(val);
+                    self.enable = reg.enable;
+                    self.clock_select = reg.clock_select;
                 },
                 else => unreachable,
             }
@@ -106,7 +105,7 @@ pub fn Timer(Apu: type, Interrupt: type) type {
         }
 
         // TODO: check if worth optimizing
-        fn triggerTimerTick(self: *This, prev_div: u16, prev_enable: u1, prev_clock_select: u2) void {
+        fn triggerTimerTick(self: *This, prev_div: u16, prev_enable: bool, prev_clock_select: TAC.ClockSelect) void {
             // DMG ONLY -- DIV-APU event uses a different bit in CGB in double speed mode
             if (prev_div & (1 << 10) != 0 and self.div & (1 << 10) == 0) {
                 self.apu.divtick();
@@ -120,8 +119,8 @@ pub fn Timer(Apu: type, Interrupt: type) type {
             const bit = self.div & mask != 0;
             const prev_bit = prev_div & prev_mask != 0;
 
-            const curr = bit and self.enable == 1;
-            const prev = prev_bit and prev_enable == 1;
+            const curr = bit and self.enable;
+            const prev = prev_bit and prev_enable;
 
             if (prev and !curr) {
                 self.doTimerTick();
@@ -140,13 +139,13 @@ pub fn Timer(Apu: type, Interrupt: type) type {
             }
         }
 
-        fn getBitMaskForDiv(sel: u2) u16 {
+        fn getBitMaskForDiv(sel: TAC.ClockSelect) u16 {
             // can be computed with bitwise operations but this looks cleaner
             return switch (sel) {
-                0b00 => 1 << 9,
-                0b01 => 1 << 3,
-                0b10 => 1 << 5,
-                0b11 => 1 << 7,
+                .freq_262144 => 1 << 3,
+                .freq_65536 => 1 << 5,
+                .freq_16384 => 1 << 7,
+                .freq_4096 => 1 << 9,
             };
         }
     };
@@ -164,8 +163,8 @@ test "timer increments TIMA when enabled and selected DIV bit falls" {
     var container = TestContainer.init();
     var timer = container.get_timer();
     timer.div = 0b00000001111111111; // bit 9 set
-    timer.enable = 1; // enable
-    timer.clock_select = 0; // select bit 9
+    timer.enable = true; // enable
+    timer.clock_select = .freq_4096; // select bit 9
     timer.tima = 0xAB;
 
     timer.tick(); // fall of bit 9
@@ -176,8 +175,8 @@ test "timer does not increment TIMA when disabled" {
     var container = TestContainer.init();
     var timer = container.get_timer();
     timer.div = 0b00000001111111111; // bit 9 set
-    timer.enable = 0; // disabled
-    timer.clock_select = 0; // bit 9
+    timer.enable = false; // disabled
+    timer.clock_select = .freq_4096; // bit 9
 
     const startTima = timer.tima;
     timer.tick();
@@ -188,8 +187,8 @@ test "TIMA overflows and sets interrupt on next tick" {
     var container = TestContainer.init();
     const intr = container.get_interrupt();
     var timer = container.get_timer();
-    timer.enable = 1; // enabled
-    timer.clock_select = 0; // bit 9
+    timer.enable = true; // enabled
+    timer.clock_select = .freq_4096; // bit 9
     timer.tma = 0xAB;
     timer.div = 0b00000001111111111; // bit 9 set
 
@@ -208,8 +207,8 @@ test "writing to TIMA cancels overflow latching" {
     var container = TestContainer.init();
     const intr = container.get_interrupt();
     var timer = container.get_timer();
-    timer.enable = 1;
-    timer.clock_select = 0;
+    timer.enable = true;
+    timer.clock_select = .freq_4096;
     timer.tma = 0x55;
     timer.div = 0b00000001111111111; // bit 9 set
     timer.tima = 0xFF;
@@ -224,8 +223,8 @@ test "writing to TIMA cancels overflow latching" {
 test "writing to DIV causes TIMA tick if falling edge is triggered" {
     var container = TestContainer.init();
     var timer = container.get_timer();
-    timer.enable = 1; // enabled
-    timer.clock_select = 0; // bit 9
+    timer.enable = true; // enabled
+    timer.clock_select = .freq_4096; // bit 9
     timer.div = 0b00000001111111111; // bit 9 set
     const startTima = timer.tima;
 
@@ -237,8 +236,8 @@ test "writing to TAC can cause immediate TIMA increment if falling edge is trigg
     var container = TestContainer.init();
     var timer = container.get_timer();
     timer.div = 0b00000001111111111; // bit 9 set
-    timer.enable = 1;
-    timer.clock_select = 0;
+    timer.enable = true;
+    timer.clock_select = .freq_4096;
     timer.tima = 0xAB;
 
     _ = timer.write(3, 0b00000000); // disable, select bit 9 — triggers fall
@@ -249,8 +248,8 @@ test "writing to TMA during pending overflow updates TIMA correctly" {
     var container = TestContainer.init();
     var timer = container.get_timer();
     timer.div = 0b00000001111111111; // bit 9 set
-    timer.enable = 1; // enabled
-    timer.clock_select = 0; // bit 9
+    timer.enable = true; // enabled
+    timer.clock_select = .freq_4096; // bit 9
     timer.tima = 0xFF;
 
     timer.tick(); // latch overflow
@@ -263,8 +262,8 @@ test "no tick occurs when no falling edge on selected bit" {
     var container = TestContainer.init();
     var timer = container.get_timer();
     timer.div = 0b0000000000000000;
-    timer.enable = 1;
-    timer.clock_select = 0;
+    timer.enable = true;
+    timer.clock_select = .freq_4096;
 
     const startTima = timer.tima;
     timer.tick();
@@ -272,8 +271,8 @@ test "no tick occurs when no falling edge on selected bit" {
 }
 
 test "correct bit selected for various TAC inputs" {
-    try std.testing.expectEqual(@as(u16, 1 << 9), TestTimer.getBitMaskForDiv(0b00000000));
-    try std.testing.expectEqual(@as(u16, 1 << 3), TestTimer.getBitMaskForDiv(0b00000001));
-    try std.testing.expectEqual(@as(u16, 1 << 5), TestTimer.getBitMaskForDiv(0b00000010));
-    try std.testing.expectEqual(@as(u16, 1 << 7), TestTimer.getBitMaskForDiv(0b00000011));
+    try std.testing.expectEqual(@as(u16, 1 << 9), TestTimer.getBitMaskForDiv(.freq_4096));
+    try std.testing.expectEqual(@as(u16, 1 << 3), TestTimer.getBitMaskForDiv(.freq_262144));
+    try std.testing.expectEqual(@as(u16, 1 << 5), TestTimer.getBitMaskForDiv(.freq_65536));
+    try std.testing.expectEqual(@as(u16, 1 << 7), TestTimer.getBitMaskForDiv(.freq_16384));
 }

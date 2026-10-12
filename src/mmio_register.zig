@@ -23,3 +23,30 @@ pub const SC = packed struct(u8) {
     _: u6 = 0b111111, // DMG ONLY -- Clock speed added by CGB
     transfer_enable: bool,
 };
+
+// FF03
+// Unused
+
+// FF04
+// DIV is not structured
+
+// FF05
+// TIMA is not structured
+
+// FF06
+// TMA is not structured
+
+// FF07
+pub const TAC = packed struct(u8) {
+    // DMG ONLY -- Different meanings in CGB double-speed mode
+    pub const ClockSelect = enum(u2) {
+        freq_4096 = 0b00,
+        freq_262144 = 0b01,
+        freq_65536 = 0b10,
+        freq_16384 = 0b11,
+    };
+
+    clock_select: ClockSelect,
+    enable: bool,
+    _: u5 = 0b11111,
+};
