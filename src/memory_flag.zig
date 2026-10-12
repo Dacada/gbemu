@@ -1,4 +1,4 @@
-pub const MemoryFlag = packed struct {
+pub const MemoryFlag = struct {
     illegal: bool = false,
     uninitialized: bool = false,
 

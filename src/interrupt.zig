@@ -41,7 +41,7 @@ pub const MockInterrupt = struct {
     }
 };
 
-pub const Interrupt = packed struct {
+pub const Interrupt = struct {
     ie: u8,
     @"if": u8,
 

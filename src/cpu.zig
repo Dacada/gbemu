@@ -105,7 +105,7 @@ const RegisterBank = struct {
     ime: u1,
 };
 
-pub const CpuFlag = packed struct {
+pub const CpuFlag = struct {
     illegal: bool = false,
     breakpoint: bool = false,
     double_halt: bool = false,

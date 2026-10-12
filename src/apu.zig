@@ -62,7 +62,7 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
 
         const ApuTickRate = 2_097_152;
 
-        const Accumulator = packed struct {
+        const Accumulator = struct {
             sum: f32 = 0,
             count: u64 = 0,
             prev: f32 = 0,
