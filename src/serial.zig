@@ -1,5 +1,6 @@
 const MemoryFlag = @import("memory_flag.zig").MemoryFlag;
 const InterruptKind = @import("interrupt_kind.zig").InterruptKind;
+const SC = @import("mmio_register.zig").SC;
 
 // TODO: stub, always open bus
 
@@ -12,9 +13,9 @@ pub fn Serial(Scheduler: type, Interrupt: type) type {
         running: bool,
 
         data: u8,
-        transfer_enable: u1,
+        transfer_enable: bool,
         // DMG ONLY -- Clock speed added by CGB
-        clock_select: u1,
+        clock_select: SC.ClockSelect,
 
         pub fn init(sched: *Scheduler, intr: *Interrupt) This {
             return This{
@@ -30,13 +31,10 @@ pub fn Serial(Scheduler: type, Interrupt: type) type {
         pub fn peek(self: *This, addr: u16) u8 {
             return switch (addr) {
                 0 => self.data,
-                1 => blk: {
-                    var output: u8 = 0x00;
-                    output |= self.transfer_enable;
-                    output <<= 7;
-                    output |= self.clock_select;
-                    break :blk output;
-                },
+                1 => @bitCast(SC{
+                    .clock_select = self.clock_select,
+                    .transfer_enable = self.transfer_enable,
+                }),
                 else => unreachable,
             };
         }
@@ -45,8 +43,9 @@ pub fn Serial(Scheduler: type, Interrupt: type) type {
             switch (addr) {
                 0 => self.data = val,
                 1 => {
-                    self.transfer_enable = @intCast((val & 0b1000_0000) >> 7);
-                    self.clock_select = @intCast(val & 0b0000_0001);
+                    const reg: SC = @bitCast(val);
+                    self.transfer_enable = reg.transfer_enable;
+                    self.clock_select = reg.clock_select;
                 },
                 else => unreachable,
             }
@@ -59,7 +58,7 @@ pub fn Serial(Scheduler: type, Interrupt: type) type {
         pub fn write(self: *This, addr: u16, val: u8) MemoryFlag {
             self.poke(addr, val);
 
-            if (addr == 1 and !self.running and self.transfer_enable == 1 and self.clock_select == 1) {
+            if (addr == 1 and !self.running and self.transfer_enable and self.clock_select == .master) {
                 self.startTransfer();
                 for (1..8) |i| {
                     self.sched.schedule(.{ .context = self, .callback = doShift }, i * 512);
@@ -83,7 +82,7 @@ pub fn Serial(Scheduler: type, Interrupt: type) type {
             const self: *This = @ptrCast(@alignCast(selfptr));
             doShift(selfptr);
             self.running = false;
-            self.transfer_enable = 0;
+            self.transfer_enable = false;
             self.intr.request(InterruptKind.serial);
         }
     };
@@ -145,8 +144,8 @@ test "Serial transfer completion" {
     var serial = container.get_serial();
 
     serial.data = 0x00;
-    serial.transfer_enable = 1;
-    serial.clock_select = 1;
+    serial.transfer_enable = true;
+    serial.clock_select = .master;
 
     serial.startTransfer();
     try std.testing.expect(serial.running);
@@ -158,5 +157,5 @@ test "Serial transfer completion" {
 
     TestSerial.finishTransfer(serial);
     try std.testing.expect(!serial.running);
-    try std.testing.expectEqual(serial.transfer_enable, 0);
+    try std.testing.expectEqual(serial.transfer_enable, false);
 }
