@@ -175,7 +175,7 @@ pub fn Cartridge(comptime warn: bool) type {
     };
 }
 
-var mock_static_memory = [_]u8{0xAA} ** 0xA000;
+var mock_static_memory: [0xA000]u8 = @splat(0xAA);
 
 pub const MockCartridge = struct {
     pub const Rom = struct {
@@ -221,7 +221,7 @@ pub const MockCartridge = struct {
 
 fn craftValidRomBuffer(buff: []u8, title: []const u8, checksum: u8) void {
     std.mem.copyForwards(u8, buff[0x104..], &logo);
-    std.mem.copyForwards(u8, buff[0x134..0x144], &([_]u8{0} ** 0x10));
+    @memset(buff[0x134..0x144], 0);
     std.mem.copyForwards(u8, buff[0x134..], title);
     buff[0x147] = 0x00;
     buff[0x148] = 0x00;
@@ -230,7 +230,7 @@ fn craftValidRomBuffer(buff: []u8, title: []const u8, checksum: u8) void {
 }
 
 test "Cartridge loadFromBuffer loads valid ROM successfully" {
-    var rom_buffer = [_]u8{0} ** 0x8000;
+    var rom_buffer: [0x8000]u8 = @splat(0);
 
     // Calculate a correct header checksum
     craftValidRomBuffer(&rom_buffer, "VALID", blk: {
@@ -248,7 +248,7 @@ test "Cartridge loadFromBuffer loads valid ROM successfully" {
 }
 
 test "Cartridge loadFromBuffer rejects invalid logo" {
-    var rom_buffer = [_]u8{0} ** 0x8000;
+    var rom_buffer: [0x8000]u8 = @splat(0);
 
     // Corrupt the logo
     rom_buffer[0x104] = 0x00;
@@ -269,7 +269,7 @@ test "Cartridge loadFromBuffer rejects invalid logo" {
 }
 
 test "Cartridge loadFromBuffer rejects unsupported cartridge type" {
-    var rom_buffer = [_]u8{0} ** 0x8000;
+    var rom_buffer: [0x8000]u8 = @splat(0);
 
     craftValidRomBuffer(&rom_buffer, "BADTYPE", blk: {
         var sum: u8 = 0;
@@ -286,7 +286,7 @@ test "Cartridge loadFromBuffer rejects unsupported cartridge type" {
 }
 
 test "Cartridge loadFromBuffer rejects unsupported rom size" {
-    var rom_buffer = [_]u8{0} ** 0x8000;
+    var rom_buffer: [0x8000]u8 = @splat(0);
 
     craftValidRomBuffer(&rom_buffer, "BADSIZE", blk: {
         var sum: u8 = 0;
@@ -303,7 +303,7 @@ test "Cartridge loadFromBuffer rejects unsupported rom size" {
 }
 
 test "Cartridge loadFromBuffer rejects unsupported ram size" {
-    var rom_buffer = [_]u8{0} ** 0x8000;
+    var rom_buffer: [0x8000]u8 = @splat(0);
 
     craftValidRomBuffer(&rom_buffer, "BADRAM", blk: {
         var sum: u8 = 0;
@@ -320,7 +320,7 @@ test "Cartridge loadFromBuffer rejects unsupported ram size" {
 }
 
 test "Cartridge loadFromBuffer warns on bad header checksum but still loads" {
-    var rom_buffer = [_]u8{0} ** 0x8000;
+    var rom_buffer: [0x8000]u8 = @splat(0);
 
     craftValidRomBuffer(&rom_buffer, "BADCHK", 0x00); // Wrong checksum on purpose
 

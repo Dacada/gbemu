@@ -5,10 +5,10 @@ const std = @import("std");
 const MemoryFlag = @import("memory_flag.zig").MemoryFlag;
 // TODO: this may need to be non global
 var static_vram: [0x2000]u8 = undefined;
-var static_init_vram = [_]bool{false} ** 0x2000;
+var static_init_vram: [0x2000]bool = @splat(false);
 
 var static_oam: [0xA0]u8 = undefined;
-var static_init_oam = [_]bool{false} ** 0xA0;
+var static_init_oam: [0xA0]bool = @splat(false);
 
 pub fn Ppu(VideoBackend: type) type {
     return struct {
@@ -202,15 +202,15 @@ pub fn Ppu(VideoBackend: type) type {
 
                     ret |= @intFromBool(self.enable);
                     ret <<= 1;
-                    ret |= @intFromEnum(self.window_tile_map_area_start);
+                    ret |= @backingInt(self.window_tile_map_area_start);
                     ret <<= 1;
                     ret |= @intFromBool(self.window_enable);
                     ret <<= 1;
-                    ret |= @intFromEnum(self.bg_window_tile_data_area_start);
+                    ret |= @backingInt(self.bg_window_tile_data_area_start);
                     ret <<= 1;
-                    ret |= @intFromEnum(self.bg_tile_map_area_start);
+                    ret |= @backingInt(self.bg_tile_map_area_start);
                     ret <<= 1;
-                    ret |= @intFromEnum(self.obj_size);
+                    ret |= @backingInt(self.obj_size);
                     ret <<= 1;
                     ret |= @intFromBool(self.obj_enable);
                     ret <<= 1;
@@ -234,7 +234,7 @@ pub fn Ppu(VideoBackend: type) type {
                     ret |= @intFromBool(self.lcd_y_coordinate == self.lcd_y_coordinate_compare);
 
                     const mode: u8 = if (self.enable)
-                        @intFromEnum(self.mode)
+                        @backingInt(self.mode)
                     else
                         0;
 
@@ -262,7 +262,7 @@ pub fn Ppu(VideoBackend: type) type {
                     var ret: u8 = 0;
                     for (0..4) |i| {
                         const ii: u2 = @intCast(i);
-                        ret |= @intFromEnum(self.bg_palette[ii]);
+                        ret |= @backingInt(self.bg_palette[ii]);
                         ret <<= ii * 2;
                     }
                     return ret;
@@ -271,7 +271,7 @@ pub fn Ppu(VideoBackend: type) type {
                     var ret: u8 = 0;
                     for (0..3) |i| {
                         const ii: u2 = @intCast(i);
-                        ret |= @intFromEnum(self.obj_palettes[addr - 8][ii]);
+                        ret |= @backingInt(self.obj_palettes[addr - 8][ii]);
                         ret <<= ii * 2;
                     }
                     ret <<= 2;
@@ -292,11 +292,11 @@ pub fn Ppu(VideoBackend: type) type {
             switch (addr) {
                 0 => {
                     self.enable = val & 0b1000_0000 != 0;
-                    self.window_tile_map_area_start = @enumFromInt((val & 0b0100_0000) >> 6);
+                    self.window_tile_map_area_start = @fromBackingInt(@intCast((val & 0b0100_0000) >> 6));
                     self.window_enable = val & 0b0010_0000 != 0;
-                    self.bg_window_tile_data_area_start = @enumFromInt((val & 0b0001_0000) >> 4);
-                    self.bg_tile_map_area_start = @enumFromInt((val & 0b0000_1000) >> 3);
-                    self.obj_size = @enumFromInt((val & 0b0000_0100) >> 2);
+                    self.bg_window_tile_data_area_start = @fromBackingInt(@intCast((val & 0b0001_0000) >> 4));
+                    self.bg_tile_map_area_start = @fromBackingInt(@intCast((val & 0b0000_1000) >> 3));
+                    self.obj_size = @fromBackingInt(@intCast((val & 0b0000_0100) >> 2));
                     self.obj_enable = val & 0b0000_0010 != 0;
                     self.bg_and_window_enable = val & 0b0000_0001 != 0;
                 },
@@ -327,7 +327,7 @@ pub fn Ppu(VideoBackend: type) type {
                         const shift: u3 = ii * 2;
                         var mask: u8 = 0b0000_0011;
                         mask <<= shift;
-                        self.bg_palette[i] = @enumFromInt((val & mask) >> shift);
+                        self.bg_palette[i] = @fromBackingInt(@intCast((val & mask) >> shift));
                     }
                 },
                 8, 9 => {
@@ -336,7 +336,7 @@ pub fn Ppu(VideoBackend: type) type {
                         const shift: u3 = (ii + 1) * 2;
                         var mask: u8 = 0b0000_0011;
                         mask <<= shift;
-                        self.obj_palettes[addr - 1][i] = @enumFromInt((val & mask) >> shift);
+                        self.obj_palettes[addr - 1][i] = @fromBackingInt(@intCast((val & mask) >> shift));
                     }
                 },
                 0xA => {

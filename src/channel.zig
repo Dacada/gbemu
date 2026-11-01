@@ -276,7 +276,7 @@ const SquareWaveUnit = struct {
             .{ true, false, false, false, false, false, false, true },
         };
         defer self.counter +%= 1;
-        return waveforms[@intFromEnum(self.duty)][self.counter];
+        return waveforms[@backingInt(self.duty)][self.counter];
     }
 };
 
@@ -355,7 +355,7 @@ const OutputLevelUnit = struct {
 
     fn scale(self: *const OutputLevelUnit, sample: u4) u4 {
         if (self.output_level == .mute) return 0;
-        return sample >> (@intFromEnum(self.output_level) - 1);
+        return sample >> (@backingInt(self.output_level) - 1);
     }
 };
 
@@ -401,7 +401,7 @@ const WaveSamplerUnit = struct {
 
     inline fn init() WaveSamplerUnit {
         return WaveSamplerUnit{
-            .samples = .{0} ** 16,
+            .samples = @splat(0),
 
             .current_value = 0,
             .next_index = 1,

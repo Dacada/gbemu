@@ -10,11 +10,11 @@ const logger = std.log.scoped(.mmu);
 
 // TODO: May need to make this non global
 // DMG ONLY -- In CGB, the second half is a switchable bank
-var static_wram = [_]u8{0x00} ** 0x2000;
-var static_init_wram = [_]bool{false} ** 0x2000;
+var static_wram: [0x2000]u8 = @splat(0x00);
+var static_init_wram: [0x2000]bool = @splat(false);
 
-var static_hram = [_]u8{0x00} ** 0x7F;
-var static_init_hram = [_]bool{false} ** 0x7F;
+var static_hram: [0x7F]u8 = @splat(0x00);
+var static_init_hram: [0x7F]bool = @splat(false);
 
 pub fn Mmu(Cartridge: type, Ppu: type, Mmio: type) type {
     return struct {
@@ -227,7 +227,7 @@ pub fn Mmu(Cartridge: type, Ppu: type, Mmio: type) type {
 
 pub const MockMmu = struct {
     // TODO: might need to make this non global
-    pub var backing_array = [_]u8{0x00} ** 0x10000;
+    pub var backing_array: [0x10000]u8 = @splat(0x00);
 
     flags: MemoryFlag = .{},
 

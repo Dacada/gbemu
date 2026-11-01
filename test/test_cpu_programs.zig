@@ -516,7 +516,7 @@ test "Prime Sieve" {
 
     try std.testing.expectEqual(program.len, cpu.reg.pc);
 
-    var primes = [_]u8{1} ** 256;
+    var primes: [256]u8 = @splat(1);
     primes[0] = 0;
     primes[1] = 0;
 

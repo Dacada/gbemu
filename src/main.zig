@@ -1,8 +1,6 @@
 const std = @import("std");
 const lib = @import("lib");
 
-var array = [_]u8{0x00} ** 0x100;
-
 const Container = lib.dependency_container.Container(.{});
 const Mmu = Container.Mmu;
 const Cpu = Container.Cpu;

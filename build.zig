@@ -122,9 +122,7 @@ const Executable = struct {
 
 fn createCmdArgs(b: *std.Build, executable: Executable) void {
     // Allow to pass parameters to the emulator executable
-    if (b.args) |args| {
-        executable.exe.addArgs(args);
-    }
+    executable.exe.addPassthruArgs();
 
     // Create a bunch of cmd args
     const run_step = b.step("run", "Run the emulator");

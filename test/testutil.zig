@@ -227,7 +227,7 @@ fn expectCpuState(cpu: *const Cpu, state: *TestCpuState, program: []const u8) !v
     try std.testing.expectEqual(state.reg_pc, cpu.reg.pc);
     try std.testing.expectEqual(state.reg_ime, cpu.reg.ime);
 
-    var expect_memory = [_]u8{0} ** (0xFFFF + 1);
+    var expect_memory: [0xFFFF + 1]u8 = @splat(0);
     for (program, 0..) |instr, i| {
         expect_memory[i] = instr;
     }

@@ -300,7 +300,7 @@ pub fn Debugger(Cpu: type, Mmu: type) type {
                 .writer = null,
                 .stepping_cycles = false,
                 .stepping = false,
-                .breakpoints = [_]?u16{null} ** 0x10,
+                .breakpoints = @splat(null),
             };
         }
 
@@ -375,9 +375,9 @@ pub fn Debugger(Cpu: type, Mmu: type) type {
             // Use std.Io.Writer.Discarding for a writer that outputs nothing
             std.debug.assert(self.writer != null);
 
-            var prompt_buff = [_]u8{undefined} ** 256;
+            var prompt_buff: [256]u8 = undefined;
             // show pc - 1 as that is the currently fetched opcode's location
-            const prompt = try std.fmt.bufPrintZ(&prompt_buff, "[0x{X:0>4}] dbg> ", .{self.cpu.reg.pc - 1});
+            const prompt = try std.fmt.bufPrintSentinel(&prompt_buff, "[0x{X:0>4}] dbg> ", .{self.cpu.reg.pc - 1}, 0);
 
             while (true) {
                 const input = readline(prompt);
@@ -401,10 +401,10 @@ pub fn Debugger(Cpu: type, Mmu: type) type {
         }
 
         fn handleCommand(self: *This, command: []const u8, it: *std.mem.TokenIterator(u8, .scalar), writer: *std.Io.Writer) !?DebuggerResult {
-            inline for (@typeInfo(Commands(This)).@"struct".decls) |decl| {
-                if (decl.name[0] == '_') continue;
-                if (std.mem.eql(u8, decl.name, command)) {
-                    const func = @field(Commands(This), decl.name);
+            inline for (@typeInfo(Commands(This)).@"struct".decl_names) |decl_name| {
+                if (decl_name[0] == '_') continue;
+                if (std.mem.eql(u8, decl_name, command)) {
+                    const func = @field(Commands(This), decl_name);
                     return func(self, it, writer);
                 }
             }
