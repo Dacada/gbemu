@@ -6,8 +6,6 @@ const GenericRouter = router.Router;
 const GenericRange = router.Range;
 const GenericTargetField = router.TargetField;
 
-const logger = std.log.scoped(.mmio);
-
 pub fn Mmio(Joypad: type, Serial: type, Timer: type, Interrupt: type, Apu: type, Ppu: type, BootRom: type) type {
     return struct {
         const This = @This();
