@@ -111,12 +111,45 @@ pub const CpuFlag = struct {
     double_halt: bool = false,
 };
 
+fn MicroOpTracker(State: type) type {
+    return struct {
+        const This = @This();
+        const Tag = std.meta.Tag(State);
+
+        unchecked_state: State = .none,
+
+        fn init() This {
+            return .{
+                .unchecked_state = .{
+                    .none = {},
+                },
+            };
+        }
+
+        fn set(self: *This, value: State) void {
+            self.unchecked_state = value;
+        }
+
+        fn reset(self: *This) void {
+            self.unchecked_state = .{ .none = {} };
+        }
+
+        fn resolve(self: This, comptime which: Tag) @FieldType(State, @tagName(which)) {
+            if (std.meta.activeTag(self.unchecked_state) != which) {
+                @panic("Incorrect CPU micro-op state");
+            }
+            return @field(self.unchecked_state, @tagName(which));
+        }
+    };
+}
+
 pub fn Cpu(Mmu: type, Interrupt: type, warn: bool) type {
     const interrupt_vectors = [_]u16{ 0x40, 0x48, 0x50, 0x58, 0x60 };
 
     const MemoryReference = MemoryReferenceFn(Mmu);
 
-    const CpuOp1Union = union {
+    const CpuOp1Union = union(enum) {
+        none: void,
         aux_intermediate: u8,
         next_alu_op: *const fn (*GeneralRegister, u8) u8,
         next_alu_op_bit: *const fn (u8, u3) u8,
@@ -127,13 +160,15 @@ pub fn Cpu(Mmu: type, Interrupt: type, warn: bool) type {
         pending_interrupt: InterruptKind,
     };
 
-    const CpuOp2Union = union {
+    const CpuOp2Union = union(enum) {
+        none: void,
         bit_idx: u3,
         from_8bit: MemoryReference,
         jump_sets_ime: bool,
     };
 
-    const CpuOp3Union = union {
+    const CpuOp3Union = union(enum) {
+        none: void,
         extended_alu_op_target: MemoryReference,
     };
 
@@ -155,9 +190,9 @@ pub fn Cpu(Mmu: type, Interrupt: type, warn: bool) type {
         reg: RegisterBank,
 
         next_tick: SelfRefCpuMethod,
-        next_op_1: CpuOp1Union,
-        next_op_2: CpuOp2Union,
-        next_op_3: CpuOp3Union,
+        next_op_1: MicroOpTracker(CpuOp1Union),
+        next_op_2: MicroOpTracker(CpuOp2Union),
+        next_op_3: MicroOpTracker(CpuOp3Union),
 
         should_enable_interrupt_after_next_instruction: bool,
         should_enable_interrupt_after_current_instruction: bool,
@@ -172,20 +207,44 @@ pub fn Cpu(Mmu: type, Interrupt: type, warn: bool) type {
                 .mmu = mmu,
                 .intr = intr,
                 .reg = .{
-                    .af = undefined,
-                    .bc = undefined,
-                    .de = undefined,
-                    .hl = undefined,
-                    .sp = undefined,
-                    .pc = undefined,
+                    .af = .{
+                        .hi = 0xAA,
+                        .lo = .{
+                            .c = 1,
+                            .h = 1,
+                            .n = 1,
+                            .z = 1,
+                            .rest = 0xA,
+                        },
+                    },
+                    .bc = .{
+                        .hi = 0xAA,
+                        .lo = 0xAA,
+                    },
+                    .de = .{
+                        .hi = 0xAA,
+                        .lo = 0xAA,
+                    },
+                    .hl = .{
+                        .hi = 0xAA,
+                        .lo = 0xAA,
+                    },
+                    .sp = .{
+                        .hi = 0xAA,
+                        .lo = 0xAA,
+                    },
+                    .pc = 0xAAAA,
                     .ir = 0x00, // nop
-                    .wz = undefined,
-                    .ime = undefined,
+                    .wz = .{
+                        .hi = 0xAA,
+                        .lo = 0xAA,
+                    },
+                    .ime = 1,
                 },
                 .next_tick = SelfRefCpuMethod.init(This.decodeOpcode),
-                .next_op_1 = undefined,
-                .next_op_2 = undefined,
-                .next_op_3 = undefined,
+                .next_op_1 = .init(),
+                .next_op_2 = .init(),
+                .next_op_3 = .init(),
                 .should_enable_interrupt_after_next_instruction = false,
                 .should_enable_interrupt_after_current_instruction = false,
                 .breakpoint_instruction = null,
@@ -231,6 +290,10 @@ pub fn Cpu(Mmu: type, Interrupt: type, warn: bool) type {
         }
 
         fn onInstructionStart(self: *This) void {
+            self.next_op_1.reset();
+            self.next_op_2.reset();
+            self.next_op_3.reset();
+
             if (self.should_enable_interrupt_after_next_instruction) {
                 self.should_enable_interrupt_after_next_instruction = false;
                 self.should_enable_interrupt_after_current_instruction = true;
@@ -454,7 +517,7 @@ pub fn Cpu(Mmu: type, Interrupt: type, warn: bool) type {
         fn decodePushPopRegister(self: *This) void {
             const reg: u2 = @intCast((self.reg.ir & 0b00_11_0000) >> 4);
             const reg_ptr = self.ptrRegStack(reg);
-            self.next_op_1 = CpuOp1Union{ .ptr_reg_stack = reg_ptr };
+            self.next_op_1.set(.{ .ptr_reg_stack = reg_ptr });
         }
 
         fn decodeHighRamReferenceFromImmediate(self: *This) MemoryReference {
@@ -529,12 +592,12 @@ pub fn Cpu(Mmu: type, Interrupt: type, warn: bool) type {
             const from_ptr = self.ptrReg8Bit(from);
             const to_ptr = self.ptrReg8Bit(to);
 
-            self.next_op_1 = CpuOp1Union{ .to_8bit = to_ptr };
-            self.next_op_2 = CpuOp2Union{ .from_8bit = from_ptr };
+            self.next_op_1.set(.{ .to_8bit = to_ptr });
+            self.next_op_2.set(.{ .from_8bit = from_ptr });
 
             if (from == 0b110) { // from indirect HL
                 self.reg.wz.lo = from_ptr.read();
-                self.next_op_2 = CpuOp2Union{ .from_8bit = MemoryReference.fromPointer(&self.reg.wz.lo) };
+                self.next_op_2.set(.{ .from_8bit = MemoryReference.fromPointer(&self.reg.wz.lo) });
                 return SelfRefCpuMethod.init(This.load8BitAndFetch);
             }
 
@@ -543,8 +606,8 @@ pub fn Cpu(Mmu: type, Interrupt: type, warn: bool) type {
 
         fn executeLoadImmediateToRegister8Bit(self: *This) SelfRefCpuMethod {
             const to: u3 = @intCast((self.reg.ir & 0b00_111_000) >> 3);
-            self.next_op_1 = CpuOp1Union{ .to_8bit = self.ptrReg8Bit(to) };
-            self.next_op_2 = CpuOp2Union{ .from_8bit = MemoryReference.fromPointer(&self.reg.wz.lo) };
+            self.next_op_1.set(.{ .to_8bit = self.ptrReg8Bit(to) });
+            self.next_op_2.set(.{ .from_8bit = MemoryReference.fromPointer(&self.reg.wz.lo) });
             return self.load8BitAndFetch();
         }
 
@@ -560,31 +623,31 @@ pub fn Cpu(Mmu: type, Interrupt: type, warn: bool) type {
             const to_accumulator = (self.reg.ir & 0b00_001_000) != 0;
             const is_indirect_hl = (self.reg.ir & 0b00_100_000) != 0;
 
-            var addr: u16 = undefined;
-            if (is_indirect_hl) {
-                addr = self.reg.hl.all();
+            const addr = if (is_indirect_hl) blk: {
+                const addr = self.reg.hl.all();
                 const is_decrement = (self.reg.ir & 0b00_010_000) != 0;
                 if (is_decrement) {
                     self.dec16Bit(&self.reg.hl);
                 } else {
                     self.inc16Bit(&self.reg.hl);
                 }
-            } else {
+                break :blk addr;
+            } else blk: {
                 const reg: u2 = @intCast((self.reg.ir & 0b00_010_000) >> 4);
                 const reg_ptr = self.ptrReg16Bit(reg);
-                addr = reg_ptr.all();
-            }
+                break :blk reg_ptr.all();
+            };
 
             const accumulator_reference = MemoryReference.fromPointer(&self.reg.af.hi);
 
             if (to_accumulator) {
                 self.reg.wz.lo = self.mmu.read(addr);
-                self.next_op_1 = CpuOp1Union{ .to_8bit = accumulator_reference };
-                self.next_op_2 = CpuOp2Union{ .from_8bit = MemoryReference.fromPointer(&self.reg.wz.lo) };
+                self.next_op_1.set(.{ .to_8bit = accumulator_reference });
+                self.next_op_2.set(.{ .from_8bit = MemoryReference.fromPointer(&self.reg.wz.lo) });
                 return SelfRefCpuMethod.init(This.load8BitAndFetch);
             } else {
-                self.next_op_1 = CpuOp1Union{ .to_8bit = MemoryReference.fromMemory(self.mmu, addr) };
-                self.next_op_2 = CpuOp2Union{ .from_8bit = accumulator_reference };
+                self.next_op_1.set(.{ .to_8bit = MemoryReference.fromMemory(self.mmu, addr) });
+                self.next_op_2.set(.{ .from_8bit = accumulator_reference });
                 return self.load8BitAndFetch();
             }
         }
@@ -597,12 +660,12 @@ pub fn Cpu(Mmu: type, Interrupt: type, warn: bool) type {
 
             if (to_accumulator) {
                 self.reg.wz.lo = self.mmu.read(addr);
-                self.next_op_1 = CpuOp1Union{ .to_8bit = accumulator_reference };
-                self.next_op_2 = CpuOp2Union{ .from_8bit = MemoryReference.fromPointer(&self.reg.wz.lo) };
+                self.next_op_1.set(.{ .to_8bit = accumulator_reference });
+                self.next_op_2.set(.{ .from_8bit = MemoryReference.fromPointer(&self.reg.wz.lo) });
                 return SelfRefCpuMethod.init(This.load8BitAndFetch);
             } else {
-                self.next_op_1 = CpuOp1Union{ .to_8bit = MemoryReference.fromMemory(self.mmu, addr) };
-                self.next_op_2 = CpuOp2Union{ .from_8bit = accumulator_reference };
+                self.next_op_1.set(.{ .to_8bit = MemoryReference.fromMemory(self.mmu, addr) });
+                self.next_op_2.set(.{ .from_8bit = accumulator_reference });
                 return self.load8BitAndFetch();
             }
         }
@@ -620,7 +683,7 @@ pub fn Cpu(Mmu: type, Interrupt: type, warn: bool) type {
         fn executeLoad16BitRegisterFetchHighByte(self: *This) SelfRefCpuMethod {
             const reg: u2 = @intCast((self.reg.ir & 0b00_11_0000) >> 4);
             const reg_ptr = self.ptrReg16Bit(reg);
-            self.next_op_1 = CpuOp1Union{ .ptr_reg_16bit = reg_ptr };
+            self.next_op_1.set(.{ .ptr_reg_16bit = reg_ptr });
             return self.fetchImmediateHighAndContinue(This.loadTempRegisterTo16BitRegister);
         }
 
@@ -652,15 +715,15 @@ pub fn Cpu(Mmu: type, Interrupt: type, warn: bool) type {
         fn executeIncDecRegister8Bit(self: *This) SelfRefCpuMethod {
             const reg: u3 = @intCast((self.reg.ir & 0b00_111_000) >> 3);
             const reg_ptr = self.ptrReg8Bit(reg);
-            self.next_op_1 = CpuOp1Union{ .to_8bit = reg_ptr };
+            self.next_op_1.set(.{ .to_8bit = reg_ptr });
 
             if (reg == 0b110) { // indirect HL
                 self.reg.wz.lo = reg_ptr.read();
-                self.next_op_2 = CpuOp2Union{ .from_8bit = MemoryReference.fromPointer(&self.reg.wz.lo) };
+                self.next_op_2.set(.{ .from_8bit = MemoryReference.fromPointer(&self.reg.wz.lo) });
                 return SelfRefCpuMethod.init(This.doIncDecRegister);
             }
 
-            self.next_op_2 = CpuOp2Union{ .from_8bit = reg_ptr };
+            self.next_op_2.set(.{ .from_8bit = reg_ptr });
             return self.doIncDecRegister();
         }
 
@@ -699,14 +762,14 @@ pub fn Cpu(Mmu: type, Interrupt: type, warn: bool) type {
         fn executeAddRegister16BitToRegisterHL(self: *This) SelfRefCpuMethod {
             const reg_code: u2 = @intCast((self.reg.ir & 0b00_11_0000) >> 4);
             const reg_ptr = self.ptrReg16Bit(reg_code);
-            self.next_op_1 = CpuOp1Union{ .ptr_reg_16bit = reg_ptr };
+            self.next_op_1.set(.{ .ptr_reg_16bit = reg_ptr });
 
             self.reg.hl.lo = self.reg.af.addReturn(self.reg.hl.lo, reg_ptr.lo, 0, self.reg.af.lo.z);
             return SelfRefCpuMethod.init(This.executeAddRegister16BitToRegisterHLHighByte);
         }
 
         fn executeAddRegister16BitToRegisterHLHighByte(self: *This) SelfRefCpuMethod {
-            const reg_ptr = self.next_op_1.ptr_reg_16bit;
+            const reg_ptr = self.next_op_1.resolve(.ptr_reg_16bit);
             self.reg.hl.hi = self.reg.af.addReturn(self.reg.hl.hi, reg_ptr.hi, 1, self.reg.af.lo.z);
             return self.fetchOpcode();
         }
@@ -736,13 +799,13 @@ pub fn Cpu(Mmu: type, Interrupt: type, warn: bool) type {
         }
 
         fn executeAddToStackPointerRelative(self: *This) SelfRefCpuMethod {
-            self.next_op_1 = CpuOp1Union{ .aux_intermediate = self.reg.wz.lo };
-            self.reg.wz.lo = self.reg.af.addReturn(self.reg.sp.lo, self.next_op_1.aux_intermediate, 0, 0);
+            self.next_op_1.set(.{ .aux_intermediate = self.reg.wz.lo });
+            self.reg.wz.lo = self.reg.af.addReturn(self.reg.sp.lo, self.next_op_1.resolve(.aux_intermediate), 0, 0);
             return SelfRefCpuMethod.init(This.addToStackPointerRelativeHighByte);
         }
 
         fn executeJumpToHL(self: *This) SelfRefCpuMethod {
-            self.next_op_1 = CpuOp1Union{ .ptr_reg_16bit = &self.reg.hl };
+            self.next_op_1.set(.{ .ptr_reg_16bit = &self.reg.hl });
             return self.jumpToRegister();
         }
 
@@ -790,14 +853,14 @@ pub fn Cpu(Mmu: type, Interrupt: type, warn: bool) type {
         }
 
         fn executeReturn(self: *This) SelfRefCpuMethod {
-            self.next_op_2 = CpuOp2Union{ .jump_sets_ime = false };
+            self.next_op_2.set(.{ .jump_sets_ime = false });
             return self.returnFirstByte();
         }
 
         fn executeReturnConditional(self: *This) SelfRefCpuMethod {
             const cond: u2 = @intCast((self.reg.ir & 0b000_11_000) >> 3);
             if (self.reg.af.cond(cond)) {
-                self.next_op_2 = CpuOp2Union{ .jump_sets_ime = false };
+                self.next_op_2.set(.{ .jump_sets_ime = false });
                 return SelfRefCpuMethod.init(This.returnFirstByte);
             } else {
                 return SelfRefCpuMethod.init(This.fetchOpcode);
@@ -805,7 +868,7 @@ pub fn Cpu(Mmu: type, Interrupt: type, warn: bool) type {
         }
 
         fn executeReturnFromInterrupt(self: *This) SelfRefCpuMethod {
-            self.next_op_2 = CpuOp2Union{ .jump_sets_ime = true };
+            self.next_op_2.set(.{ .jump_sets_ime = true });
             return self.returnFirstByte();
         }
 
@@ -818,7 +881,7 @@ pub fn Cpu(Mmu: type, Interrupt: type, warn: bool) type {
             const op2: u3 = @intCast((self.reg.ir & 0b00_111_000) >> 3);
             const regIdx: u3 = @intCast(self.reg.ir & 0b00_000_111);
             const ref = self.ptrReg8Bit(regIdx);
-            self.next_op_3 = CpuOp3Union{ .extended_alu_op_target = ref };
+            self.next_op_3.set(.{ .extended_alu_op_target = ref });
 
             if (ref == .mem_ref) {
                 self.reg.wz.lo = ref.read();
@@ -826,7 +889,7 @@ pub fn Cpu(Mmu: type, Interrupt: type, warn: bool) type {
 
             switch (op1) {
                 0b00 => { // shift/rotate/swap
-                    self.next_op_1 = CpuOp1Union{ .next_alu_op = switch (op2) {
+                    self.next_op_1.set(.{ .next_alu_op = switch (op2) {
                         0b000 => GeneralRegister.rlc,
                         0b001 => GeneralRegister.rrc,
                         0b010 => GeneralRegister.rl,
@@ -835,33 +898,33 @@ pub fn Cpu(Mmu: type, Interrupt: type, warn: bool) type {
                         0b101 => GeneralRegister.sra,
                         0b110 => GeneralRegister.swap,
                         0b111 => GeneralRegister.srl,
-                    } };
+                    } });
                     if (ref == .mem_ref) {
                         return SelfRefCpuMethod.init(This.extendedAluOpOnMemory);
                     }
-                    ref.write(self.next_op_1.next_alu_op(&self.reg.af, ref.read()));
+                    ref.write(self.next_op_1.resolve(.next_alu_op)(&self.reg.af, ref.read()));
                     return self.fetchOpcode();
                 },
                 0b01 => { // bit test
-                    self.next_op_1 = CpuOp1Union{ .next_alu_op_bit_test = GeneralRegister.bit };
+                    self.next_op_1.set(.{ .next_alu_op_bit_test = GeneralRegister.bit });
                     if (ref == .mem_ref) {
-                        self.next_op_2 = CpuOp2Union{ .bit_idx = op2 };
+                        self.next_op_2.set(.{ .bit_idx = op2 });
                         return SelfRefCpuMethod.init(This.extendedAluOpOnMemoryBitsTest);
                     }
-                    self.next_op_1.next_alu_op_bit_test(&self.reg.af, ref.read(), op2);
+                    self.next_op_1.resolve(.next_alu_op_bit_test)(&self.reg.af, ref.read(), op2);
                     return self.fetchOpcode();
                 },
                 else => { // bit set/reset
-                    self.next_op_1 = CpuOp1Union{ .next_alu_op_bit = switch (op1) {
+                    self.next_op_1.set(.{ .next_alu_op_bit = switch (op1) {
                         0b10 => GeneralRegister.res,
                         0b11 => GeneralRegister.set,
                         else => unreachable,
-                    } };
+                    } });
                     if (ref == .mem_ref) {
-                        self.next_op_2 = CpuOp2Union{ .bit_idx = op2 };
+                        self.next_op_2.set(.{ .bit_idx = op2 });
                         return SelfRefCpuMethod.init(This.extendedAluOpOnMemoryBits);
                     }
-                    ref.write(self.next_op_1.next_alu_op_bit(ref.read(), op2));
+                    ref.write(self.next_op_1.resolve(.next_alu_op_bit)(ref.read(), op2));
                     return self.fetchOpcode();
                 },
             }
@@ -921,9 +984,9 @@ pub fn Cpu(Mmu: type, Interrupt: type, warn: bool) type {
         }
 
         fn load8BitAndFetch(self: *This) SelfRefCpuMethod {
-            self.next_op_1.to_8bit.write(self.next_op_2.from_8bit.read());
+            self.next_op_1.resolve(.to_8bit).write(self.next_op_2.resolve(.from_8bit).read());
 
-            if (self.next_op_1.to_8bit == .mem_ref or self.next_op_2.from_8bit == .mem_ref) {
+            if (self.next_op_1.resolve(.to_8bit) == .mem_ref or self.next_op_2.resolve(.from_8bit) == .mem_ref) {
                 return SelfRefCpuMethod.init(This.fetchOpcode);
             } else {
                 return self.fetchOpcode();
@@ -932,25 +995,25 @@ pub fn Cpu(Mmu: type, Interrupt: type, warn: bool) type {
 
         fn loadMemoryToTempRegisterThenAccumulator(self: *This) SelfRefCpuMethod {
             self.reg.wz.lo = self.mmu.read(self.reg.wz.all());
-            self.next_op_1 = CpuOp1Union{ .to_8bit = MemoryReference.fromPointer(&self.reg.af.hi) };
-            self.next_op_2 = CpuOp2Union{ .from_8bit = MemoryReference.fromPointer(&self.reg.wz.lo) };
+            self.next_op_1.set(.{ .to_8bit = MemoryReference.fromPointer(&self.reg.af.hi) });
+            self.next_op_2.set(.{ .from_8bit = MemoryReference.fromPointer(&self.reg.wz.lo) });
             return SelfRefCpuMethod.init(This.load8BitAndFetch);
         }
 
         fn loadAddrOnTempRegisterFromAccumulator(self: *This) SelfRefCpuMethod {
-            self.next_op_1 = CpuOp1Union{ .to_8bit = MemoryReference.fromMemory(self.mmu, self.reg.wz.all()) };
-            self.next_op_2 = CpuOp2Union{ .from_8bit = MemoryReference.fromPointer(&self.reg.af.hi) };
+            self.next_op_1.set(.{ .to_8bit = MemoryReference.fromMemory(self.mmu, self.reg.wz.all()) });
+            self.next_op_2.set(.{ .from_8bit = MemoryReference.fromPointer(&self.reg.af.hi) });
             return self.load8BitAndFetch();
         }
 
         fn loadTempRegisterToAccumulator(self: *This) SelfRefCpuMethod {
-            self.next_op_1 = CpuOp1Union{ .to_8bit = MemoryReference.fromPointer(&self.reg.af.hi) };
-            self.next_op_2 = CpuOp2Union{ .from_8bit = MemoryReference.fromPointer(&self.reg.wz.lo) };
+            self.next_op_1.set(.{ .to_8bit = MemoryReference.fromPointer(&self.reg.af.hi) });
+            self.next_op_2.set(.{ .from_8bit = MemoryReference.fromPointer(&self.reg.wz.lo) });
             return self.load8BitAndFetch();
         }
 
         fn loadTempRegisterTo16BitRegister(self: *This) SelfRefCpuMethod {
-            self.next_op_1.ptr_reg_16bit.setAll(self.reg.wz.all());
+            self.next_op_1.resolve(.ptr_reg_16bit).setAll(self.reg.wz.all());
             return self.fetchOpcode();
         }
 
@@ -967,18 +1030,18 @@ pub fn Cpu(Mmu: type, Interrupt: type, warn: bool) type {
         fn loadStackPointerToTempRegisterIndirect(self: *This) SelfRefCpuMethod {
             self.mmu.write(self.reg.wz.all(), self.reg.sp.lo);
             self.inc16Bit(&self.reg.wz);
-            self.next_op_1 = CpuOp1Union{ .to_8bit = MemoryReference.fromMemory(self.mmu, self.reg.wz.all()) };
-            self.next_op_2 = CpuOp2Union{ .from_8bit = MemoryReference.fromPointer(&self.reg.sp.hi) };
+            self.next_op_1.set(.{ .to_8bit = MemoryReference.fromMemory(self.mmu, self.reg.wz.all()) });
+            self.next_op_2.set(.{ .from_8bit = MemoryReference.fromPointer(&self.reg.sp.hi) });
             return SelfRefCpuMethod.init(This.load8BitAndFetch);
         }
 
         fn pushHighByte(self: *This) SelfRefCpuMethod {
-            self.mmu.write(self.reg.sp.all(), self.next_op_1.ptr_reg_stack.hi());
+            self.mmu.write(self.reg.sp.all(), self.next_op_1.resolve(.ptr_reg_stack).hi());
             return self.decrementSPAndContinue(This.pushLowByte);
         }
 
         fn pushLowByte(self: *This) SelfRefCpuMethod {
-            self.mmu.write(self.reg.sp.all(), self.next_op_1.ptr_reg_stack.lo());
+            self.mmu.write(self.reg.sp.all(), self.next_op_1.resolve(.ptr_reg_stack).lo());
             return SelfRefCpuMethod.init(This.fetchOpcode);
         }
 
@@ -988,7 +1051,7 @@ pub fn Cpu(Mmu: type, Interrupt: type, warn: bool) type {
         }
 
         fn popCopyToRegister(self: *This) SelfRefCpuMethod {
-            self.next_op_1.ptr_reg_stack.setAll(self.reg.wz.all());
+            self.next_op_1.resolve(.ptr_reg_stack).setAll(self.reg.wz.all());
             return self.fetchOpcode();
         }
 
@@ -1044,15 +1107,15 @@ pub fn Cpu(Mmu: type, Interrupt: type, warn: bool) type {
         }
 
         fn doIncDecRegister(self: *This) SelfRefCpuMethod {
-            var val = self.next_op_2.from_8bit.read();
+            var val = self.next_op_2.resolve(.from_8bit).read();
             if (self.reg.ir & 0b00_000_001 == 0) {
                 val = self.reg.af.inc(val);
             } else {
                 val = self.reg.af.dec(val);
             }
-            self.next_op_1.to_8bit.write(val);
+            self.next_op_1.resolve(.to_8bit).write(val);
 
-            if (self.next_op_1.to_8bit == .mem_ref) {
+            if (self.next_op_1.resolve(.to_8bit) == .mem_ref) {
                 return SelfRefCpuMethod.init(This.fetchOpcode);
             } else {
                 return self.fetchOpcode();
@@ -1060,26 +1123,26 @@ pub fn Cpu(Mmu: type, Interrupt: type, warn: bool) type {
         }
 
         fn addToStackPointerRelativeHighByte(self: *This) SelfRefCpuMethod {
-            self.reg.wz.hi = self.reg.af.addAdj(self.reg.sp.hi, self.next_op_1.aux_intermediate);
-            self.next_op_1 = CpuOp1Union{ .ptr_reg_16bit = &self.reg.sp };
+            self.reg.wz.hi = self.reg.af.addAdj(self.reg.sp.hi, self.next_op_1.resolve(.aux_intermediate));
+            self.next_op_1.set(.{ .ptr_reg_16bit = &self.reg.sp });
             return SelfRefCpuMethod.init(This.loadTempRegisterTo16BitRegister);
         }
 
         fn jumpRelativeConditionalDoRelative(self: *This) SelfRefCpuMethod {
             const res = GeneralRegister.addInterpretSignedNoFlags(self.reg.pc, self.reg.wz.lo);
             self.reg.wz.setAll(res);
-            self.next_op_1 = CpuOp1Union{ .ptr_reg_16bit = &self.reg.wz };
+            self.next_op_1.set(.{ .ptr_reg_16bit = &self.reg.wz });
             return SelfRefCpuMethod.init(This.jumpToRegister);
         }
 
         fn jumpToRegister(self: *This) SelfRefCpuMethod {
-            self.reg.pc = self.next_op_1.ptr_reg_16bit.all();
+            self.reg.pc = self.next_op_1.resolve(.ptr_reg_16bit).all();
             return self.fetchOpcode();
         }
 
         fn jumpToRegisterLater(self: *This) SelfRefCpuMethod {
-            self.reg.pc = self.next_op_1.ptr_reg_16bit.all();
-            if (self.next_op_2.jump_sets_ime) {
+            self.reg.pc = self.next_op_1.resolve(.ptr_reg_16bit).all();
+            if (self.next_op_2.resolve(.jump_sets_ime)) {
                 self.reg.ime = 1;
             }
             return SelfRefCpuMethod.init(This.fetchOpcode);
@@ -1092,7 +1155,7 @@ pub fn Cpu(Mmu: type, Interrupt: type, warn: bool) type {
 
         fn returnSecondByte(self: *This) SelfRefCpuMethod {
             self.reg.wz.hi = self.mmu.read(self.reg.sp.all());
-            self.next_op_1 = CpuOp1Union{ .ptr_reg_16bit = &self.reg.wz };
+            self.next_op_1.set(.{ .ptr_reg_16bit = &self.reg.wz });
             return self.incrementSPAndContinue(This.jumpToRegisterLater);
         }
 
@@ -1122,19 +1185,19 @@ pub fn Cpu(Mmu: type, Interrupt: type, warn: bool) type {
         }
 
         fn extendedAluOpOnMemory(self: *This) SelfRefCpuMethod {
-            const res = self.next_op_1.next_alu_op(&self.reg.af, self.reg.wz.lo);
-            self.next_op_3.extended_alu_op_target.write(res);
+            const res = self.next_op_1.resolve(.next_alu_op)(&self.reg.af, self.reg.wz.lo);
+            self.next_op_3.resolve(.extended_alu_op_target).write(res);
             return SelfRefCpuMethod.init(This.fetchOpcode);
         }
 
         fn extendedAluOpOnMemoryBitsTest(self: *This) SelfRefCpuMethod {
-            self.next_op_1.next_alu_op_bit_test(&self.reg.af, self.reg.wz.lo, self.next_op_2.bit_idx);
+            self.next_op_1.resolve(.next_alu_op_bit_test)(&self.reg.af, self.reg.wz.lo, self.next_op_2.resolve(.bit_idx));
             return self.fetchOpcode();
         }
 
         fn extendedAluOpOnMemoryBits(self: *This) SelfRefCpuMethod {
-            const res = self.next_op_1.next_alu_op_bit(self.reg.wz.lo, self.next_op_2.bit_idx);
-            self.next_op_3.extended_alu_op_target.write(res);
+            const res = self.next_op_1.resolve(.next_alu_op_bit)(self.reg.wz.lo, self.next_op_2.resolve(.bit_idx));
+            self.next_op_3.resolve(.extended_alu_op_target).write(res);
             return SelfRefCpuMethod.init(This.fetchOpcode);
         }
 
