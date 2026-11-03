@@ -37,6 +37,8 @@ test "serial transfer" {
     const serial = container.get_serial();
     const sched = container.get_scheduler();
 
+    serial.should_panic();
+
     // Wait a few cycles
     try spin(emu, 100);
 
@@ -47,7 +49,7 @@ test "serial transfer" {
     // No changes yet
     try std.testing.expect(serial.running);
     try std.testing.expectEqual(8, sched.heap.count);
-    try std.testing.expectEqual(0b10101010, serial.data);
+    try std.testing.expectEqual(0b10101010, serial.data.resolve(null));
 
     // Run the cycle where the transfer supposedly started
     try spin(emu, 1);
@@ -58,7 +60,7 @@ test "serial transfer" {
     // Still no changes
     try std.testing.expect(serial.running);
     try std.testing.expectEqual(8, sched.heap.count);
-    try std.testing.expectEqual(0b10101010, serial.data);
+    try std.testing.expectEqual(0b10101010, serial.data.resolve(null));
 
     // One more cycle
     try spin(emu, 1);
@@ -66,7 +68,7 @@ test "serial transfer" {
     // First bit shifted
     try std.testing.expect(serial.running);
     try std.testing.expectEqual(7, sched.heap.count);
-    try std.testing.expectEqual(0b01010101, serial.data);
+    try std.testing.expectEqual(0b01010101, serial.data.resolve(null));
 
     // Run one cycle
     try spin(emu, 1);
@@ -74,7 +76,7 @@ test "serial transfer" {
     // No changes
     try std.testing.expect(serial.running);
     try std.testing.expectEqual(7, sched.heap.count);
-    try std.testing.expectEqual(0b01010101, serial.data);
+    try std.testing.expectEqual(0b01010101, serial.data.resolve(null));
 
     // Run the other 511 cycles
     try spin(emu, 511);
@@ -82,7 +84,7 @@ test "serial transfer" {
     // Another bit shift
     try std.testing.expect(serial.running);
     try std.testing.expectEqual(6, sched.heap.count);
-    try std.testing.expectEqual(0b10101011, serial.data);
+    try std.testing.expectEqual(0b10101011, serial.data.resolve(null));
 
     // Do 512*6-1 more cycles to be one shift away from being done
     try spin(emu, 512 * 6 - 1);
@@ -90,7 +92,7 @@ test "serial transfer" {
     // One shift left
     try std.testing.expect(serial.running);
     try std.testing.expectEqual(1, sched.heap.count);
-    try std.testing.expectEqual(0b01111111, serial.data);
+    try std.testing.expectEqual(0b01111111, serial.data.resolve(null));
 
     // Last cycle
     try spin(emu, 1);
@@ -98,5 +100,5 @@ test "serial transfer" {
     // We're done
     try std.testing.expect(!serial.running);
     try std.testing.expectEqual(0, sched.heap.count);
-    try std.testing.expectEqual(0b11111111, serial.data);
+    try std.testing.expectEqual(0b11111111, serial.data.resolve(null));
 }
