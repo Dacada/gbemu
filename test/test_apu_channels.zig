@@ -65,6 +65,7 @@ test "test channel 2" {
     const nr24_val = 0b1_1_000_000 | period_high;
 
     var channel = Channel2.init();
+    channel.should_panic();
 
     try std.testing.expect(!channel.write(1, 0).any());
     try std.testing.expect(!channel.write(2, 0).any());
@@ -108,6 +109,7 @@ test "test channel 1" {
     const nr14_val = 0b1_0_000_000 | period_high;
 
     var channel = Channel1.init();
+    channel.should_panic();
 
     try std.testing.expect(!channel.write(0, 0).any());
     try std.testing.expect(!channel.write(1, 0).any());
@@ -149,6 +151,7 @@ test "test channel 4" {
     const nr44_val = 0b1_1_000_000;
 
     var channel = Channel4.init();
+    channel.should_panic();
 
     try std.testing.expect(!channel.write(1, 0).any());
     try std.testing.expect(!channel.write(2, 0).any());
@@ -201,6 +204,7 @@ test "test channel 3" {
     const nr34_val = 0b1_1_000_000 | period2_high;
 
     var channel = Channel3.init();
+    channel.should_panic();
 
     try std.testing.expect(!channel.write(0, 0).any());
     try std.testing.expect(!channel.write(1, 0).any());

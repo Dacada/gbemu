@@ -70,6 +70,8 @@ fn testTrack(allocator: std.mem.Allocator, song: tracker.Song, comptime name: []
     var container = Container.init();
 
     var apu = container.get_apu();
+    apu.should_panic();
+
     var backend = container.get_audio_backend();
     try backend.setup(allocator);
 
@@ -78,6 +80,9 @@ fn testTrack(allocator: std.mem.Allocator, song: tracker.Song, comptime name: []
 
     const events = try tracker.play(song, allocator);
     defer allocator.free(events);
+
+    // keep exepected register state in a shadow register, initialized to 0
+    var shadow: [0x30]u8 = @splat(0);
 
     // Start sound system
     try std.testing.expect(!apu.write(0x16, 0b1000_0000).any());
@@ -89,9 +94,10 @@ fn testTrack(allocator: std.mem.Allocator, song: tracker.Song, comptime name: []
 
         for (event) |write| {
             //std.debug.print("addr={x} set={b} clear={b} | time={d}\n", .{ write.address, write.set_mask, write.clear_mask, total_ticks });
-            const read_flags, const val = apu.read(write.address);
-            try std.testing.expect(!read_flags.any());
-            const write_flags = apu.write(write.address, write.apply(val));
+            const addr = write.address;
+            shadow[addr] = write.apply(shadow[addr]);
+
+            const write_flags = apu.write(addr, shadow[addr]);
             try std.testing.expect(!write_flags.any());
         }
 
@@ -113,11 +119,11 @@ test "test_track_1" {
 
     song
         .compose(allocator)
-        .channel(null).enable().defaults()
-        .channel(.ch1).disable()
-        .channel(.ch3).disable()
-        .channel(.ch4).disable()
-        .channel(.ch2).enable().defaults()
+        .channel(null).setup(true)
+        .channel(.ch1).setup(false)
+        .channel(.ch3).setup(false)
+        .channel(.ch4).setup(false)
+        .channel(.ch2).setup(true)
         .phrase(&.{
             .{ "A4", meta.beat(1, 4) },
             .{ "G#4", meta.beat(1, 4) },
@@ -164,11 +170,11 @@ test "happy birthday" {
 
     song
         .compose(allocator)
-        .channel(null).enable().defaults()
-        .channel(.ch1).disable()
-        .channel(.ch3).disable()
-        .channel(.ch4).disable()
-        .channel(.ch2).enable().defaults()
+        .channel(null).setup(true)
+        .channel(.ch1).setup(false)
+        .channel(.ch3).setup(false)
+        .channel(.ch4).setup(false)
+        .channel(.ch2).setup(true)
         .phrase(&.{
             // Happy birthday to you
             .{ "G4", meta.beat(11, 32) }, .{ null, meta.beat(1, 32) },
@@ -265,11 +271,11 @@ test "showcase" {
     });
 
     var c = song.compose(allocator)
-        .channel(null).enable().defaults()
-        .channel(.ch1).enable().defaults().advance(1)
-        .channel(.ch2).enable().defaults().advance(1)
-        .channel(.ch3).enable().defaults().advance(1)
-        .channel(.ch4).enable().defaults().advance(1);
+        .channel(null).setup(true)
+        .channel(.ch1).setup(true).advance(1)
+        .channel(.ch2).setup(true).advance(1)
+        .channel(.ch3).setup(true).advance(1)
+        .channel(.ch4).setup(true).advance(1);
 
     c = c.channel(.ch1);
     var ear: usize = 1;

@@ -443,5 +443,12 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
             const ret, _ = Router.dispatch(self, addr, .write, val);
             return ret;
         }
+
+        pub fn should_panic(self: *This) void {
+            self.channel1.should_panic();
+            self.channel2.should_panic();
+            self.channel3.should_panic();
+            self.channel4.should_panic();
+        }
     };
 }

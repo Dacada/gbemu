@@ -117,14 +117,14 @@ const SongEventInternal = union(enum) {
 
             var res = HardwareEvent.init(0x15);
             if (self.left) {
-                res.setBit(@as(u3, @intCast(@intFromEnum(channel.?))) + 4);
+                res.setBit(@as(u3, @intCast(@backingInt(channel.?))) + 4);
             } else {
-                res.clearBit(@as(u3, @intCast(@intFromEnum(channel.?))) + 4);
+                res.clearBit(@as(u3, @intCast(@backingInt(channel.?))) + 4);
             }
             if (self.right) {
-                res.setBit(@intCast(@intFromEnum(channel.?)));
+                res.setBit(@intCast(@backingInt(channel.?)));
             } else {
-                res.clearBit(@intCast(@intFromEnum(channel.?)));
+                res.clearBit(@intCast(@backingInt(channel.?)));
             }
 
             return singleElementArray(res, allocator, null);
@@ -625,7 +625,7 @@ pub const SongComposer = struct {
         const cursor = if (self.selectedChannel == null)
             self.globalCursor
         else
-            self.cursors[@intFromEnum(self.selectedChannel.?)];
+            self.cursors[@backingInt(self.selectedChannel.?)];
         const beat = cursor / self.tpb;
         const tick = cursor % self.tpb;
 
@@ -643,12 +643,12 @@ pub const SongComposer = struct {
         const value = if (whom == null)
             self.globalCursor
         else
-            self.cursors[@intFromEnum(whom.?)];
+            self.cursors[@backingInt(whom.?)];
 
         const ref = if (self.selectedChannel == null)
             *self.globalCursor
         else
-            *self.cursors[@intFromEnum(self.selectedChannel.?)];
+            *self.cursors[@backingInt(self.selectedChannel.?)];
 
         ref.* = value;
 
@@ -671,12 +671,13 @@ pub const SongComposer = struct {
         }
     }
 
-    pub fn defaults(self: SongComposer) SongComposer {
+    pub fn setup(self: SongComposer, enabled: bool) SongComposer {
         if (self.selectedChannel == null) {
             return self
                 .vin(false, false)
                 .masterVolume(.left, 7)
-                .masterVolume(.right, 7);
+                .masterVolume(.right, 7)
+                .apu(enabled);
         }
         return switch (self.selectedChannel.?) {
             .ch1 => self
@@ -685,23 +686,23 @@ pub const SongComposer = struct {
                 .lengthTimer(null)
                 .duty(.one_in_two)
                 .envelope(null)
-                .volume(15),
+                .volume(if (enabled) 15 else 0),
             .ch2 => self
                 .pan(true, true)
                 .lengthTimer(null)
                 .duty(.one_in_two)
                 .envelope(null)
-                .volume(15),
+                .volume(if (enabled) 15 else 0),
             .ch3 => self
                 .pan(true, true)
                 .lengthTimer(null)
-                .dac(true)
+                .dac(enabled)
                 .outputLevel(.full),
             .ch4 => self
                 .pan(true, true)
                 .lengthTimer(null)
                 .envelope(null)
-                .volume(15),
+                .volume(if (enabled) 15 else 0),
         };
     }
 
@@ -724,7 +725,7 @@ pub const SongComposer = struct {
                 // other channels don't need a specific dac enable, just reset their volume to reenable their dac
                 self.addEvent(SongEventInternal{
                     .volume = .{
-                        .value = self.volumes[@intFromEnum(self.selectedChannel.?)],
+                        .value = self.volumes[@backingInt(self.selectedChannel.?)],
                     },
                 });
             } else {
@@ -842,7 +843,7 @@ pub const SongComposer = struct {
         var next = self;
         if (self.selectedChannel != null and value > 0) {
             // remember last nonzero value for when we want to reset the volume (.apu or .note)
-            next.volumes[@intFromEnum(self.selectedChannel.?)] = value;
+            next.volumes[@backingInt(self.selectedChannel.?)] = value;
         }
         next.addEvent(SongEventInternal{
             .volume = .{
@@ -899,7 +900,7 @@ pub const SongComposer = struct {
         else
             self
                 // set volume to latest in case previously we did a rest which sets it to 0
-                .volume(self.volumes[@intFromEnum(self.selectedChannel.?)])
+                .volume(self.volumes[@backingInt(self.selectedChannel.?)])
                 .pitch(data.@"0".?))
             .advance(data.@"1");
     }
@@ -936,7 +937,7 @@ pub const SongComposer = struct {
             @panic("attempt to advance global cursor (use .syncTo instead)");
         }
         var next = self;
-        next.cursors[@intFromEnum(self.selectedChannel.?)] += amount;
+        next.cursors[@backingInt(self.selectedChannel.?)] += amount;
         return next;
     }
 

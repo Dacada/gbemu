@@ -1,5 +1,6 @@
 const MemoryFlag = @import("memory_flag.zig").MemoryFlag;
 const mmio_register = @import("mmio_register.zig");
+const TrackedValue = @import("tracked_value.zig").TrackedValue;
 const NR10 = mmio_register.NR10;
 const NR11 = mmio_register.NR11;
 const NR12 = mmio_register.NR12;
@@ -35,9 +36,9 @@ fn SweepPeriodUnit(number: comptime_int) type {
     return struct {
         const This = @This();
 
-        pace: u3,
-        individual_step: u3,
-        direction: NR10.Direction,
+        pace: TrackedValue(u3),
+        individual_step: TrackedValue(u3),
+        direction: TrackedValue(NR10.Direction),
 
         counter: u3,
         enabled: bool,
@@ -45,9 +46,9 @@ fn SweepPeriodUnit(number: comptime_int) type {
 
         fn init() This {
             return This{
-                .pace = undefined,
-                .individual_step = undefined,
-                .direction = undefined,
+                .pace = .init(0b101),
+                .individual_step = .init(0b101),
+                .direction = .init(.addition),
 
                 .counter = 0,
                 .enabled = false,
@@ -56,29 +57,32 @@ fn SweepPeriodUnit(number: comptime_int) type {
         }
 
         fn tick(self: *This, control: *ControlUnit, period: *PeriodUnit(number)) void {
+            const pace = self.pace.resolve(null);
+
             self.counter +%= 1;
-            if (self.counter < self.pace) {
+            if (self.counter < pace) {
                 return;
             }
             self.counter = 0;
 
             // Entire confusing and weird implementation from Pan Docs
-            if (self.enabled and self.pace != 0) {
-                const new_period = self.periodCalculation();
+            if (self.enabled and pace != 0) {
+                const individual_step = self.individual_step.resolve(null);
+                const new_period = self.periodCalculation(null);
                 self.overflowCheck(new_period, control);
-                if (new_period <= 0x7FF and self.individual_step != 0) {
+                if (new_period <= 0x7FF and individual_step != 0) {
                     self.shadow = @intCast(new_period);
                     period.period = @intCast(new_period);
-                    self.overflowCheck(self.periodCalculation(), control);
+                    self.overflowCheck(self.periodCalculation(null), control);
                 }
             }
         }
 
-        fn periodCalculation(self: *const This) u12 {
-            const shifted = self.shadow >> self.individual_step;
+        fn periodCalculation(self: *const This, flags: ?*MemoryFlag) u12 {
+            const shifted = self.shadow >> self.individual_step.resolve(flags);
             // store it as a u12 to check for "overflow" later
             var new_period: u12 = @intCast(self.shadow);
-            if (self.direction == .addition) {
+            if (self.direction.resolve(flags) == .addition) {
                 new_period += @intCast(shifted);
             } else {
                 // shifted will always be smaller since it's the result of right shifting that value
@@ -94,15 +98,21 @@ fn SweepPeriodUnit(number: comptime_int) type {
             }
         }
 
-        fn reset(self: *This, period: *const PeriodUnit(number), control: *ControlUnit) void {
+        fn reset(self: *This, period: *const PeriodUnit(number), control: *ControlUnit, flags: *MemoryFlag) void {
             self.shadow = period.period;
             self.counter = 0;
-            self.enabled = self.pace != 0 or self.individual_step != 0;
+            self.enabled = self.pace.resolve(flags) != 0 or self.individual_step.resolve(flags) != 0;
 
             // Pan Docs says: If the individual step is non-zero, frequency calculation and overflow check are performed immediately.
-            if (self.individual_step != 0) {
-                self.overflowCheck(self.periodCalculation(), control);
+            if (self.individual_step.resolve(flags) != 0) {
+                self.overflowCheck(self.periodCalculation(flags), control);
             }
+        }
+
+        fn should_panic(self: *This) void {
+            self.pace.should_panic = true;
+            self.individual_step.should_panic = true;
+            self.direction.should_panic = true;
         }
     };
 }
@@ -526,7 +536,7 @@ pub fn Channel(number: comptime_int) type {
             }
         }
 
-        fn trigger(self: *This) void {
+        fn trigger(self: *This, flags: *MemoryFlag) void {
             self.control.active = true;
             if (self.length.counter == 0) {
                 self.length.reset();
@@ -534,57 +544,58 @@ pub fn Channel(number: comptime_int) type {
             if (number != 4) self.period.reset();
             if (number == 4) self.lfsr.reset();
             if (number != 3) self.volume.reset();
-            if (number == 1) self.period_sweep.reset(&self.period, &self.control);
+            if (number == 1) self.period_sweep.reset(&self.period, &self.control, flags);
         }
 
-        pub fn peek(self: *This, addr: u16) u8 {
-            switch (addr) {
-                0 => {
+        fn inner_read(self: *This, addr: u16) struct { MemoryFlag, u8 } {
+            var flags: MemoryFlag = .{};
+            const value: u8 = switch (addr) {
+                0 => blk: {
                     if (number == 1) {
-                        return @bitCast(NR10{
-                            .direction = self.period_sweep.direction,
-                            .individual_step = self.period_sweep.individual_step,
-                            .pace = self.period_sweep.pace,
+                        break :blk @bitCast(NR10{
+                            .direction = self.period_sweep.direction.resolve(&flags),
+                            .individual_step = self.period_sweep.individual_step.resolve(&flags),
+                            .pace = self.period_sweep.pace.resolve(&flags),
                         });
                     }
                     if (number == 3) {
-                        return @bitCast(NR30{
+                        break :blk @bitCast(NR30{
                             .dac_on = self.control.dac_enabled,
                         });
                     }
-                    return 0xFF;
+                    break :blk 0xFF;
                 },
-                1 => {
+                1 => blk: {
                     if (number == 3) {
-                        return self.length.initial_counter;
+                        break :blk self.length.initial_counter;
                     }
 
                     if (number == 1 or number == 2) {
-                        return @bitCast(NR11{ // NR21 is identical
+                        break :blk @bitCast(NR11{ // NR21 is identical
                             .wave_duty = self.square.duty,
                             .initial_length_timer = self.length.initial_counter,
                         });
                     }
 
-                    return @bitCast(NR41{
+                    break :blk @bitCast(NR41{
                         .initial_length_timer = self.length.initial_counter,
                     });
                 },
-                2 => {
+                2 => blk: {
                     if (number == 3) {
-                        return @bitCast(NR32{
+                        break :blk @bitCast(NR32{
                             .output_level = self.output_level.output_level,
                         });
                     }
-                    return @bitCast(NR12{ // NR22 and NR42 are identical
+                    break :blk @bitCast(NR12{ // NR22 and NR42 are identical
                         .env_dir = self.volume.direction,
                         .initial_volume = self.volume.initial_volume,
                         .sweep_pace = self.volume.pace,
                     });
                 },
-                3 => {
+                3 => blk: {
                     if (number == 4) {
-                        return @bitCast(NR43{
+                        break :blk @bitCast(NR43{
                             .clock_divider = self.lfsr.clock_div,
                             .clock_shift = self.lfsr.clock_shift,
                             .lfsr_width = self.lfsr.width,
@@ -595,11 +606,11 @@ pub fn Channel(number: comptime_int) type {
                         .length_enable = self.length.enable,
                         .trigger = true,
                     };
-                    return reg.lo();
+                    break :blk reg.lo();
                 },
-                4 => {
+                4 => blk: {
                     if (number == 4) {
-                        return @bitCast(NR44{
+                        break :blk @bitCast(NR44{
                             .length_enable = self.length.enable,
                             .trigger = true,
                         });
@@ -609,20 +620,22 @@ pub fn Channel(number: comptime_int) type {
                         .length_enable = self.length.enable,
                         .trigger = true,
                     };
-                    return reg.hi();
+                    break :blk reg.hi();
                 },
                 else => unreachable,
-            }
+            };
+
+            return .{ flags, value };
         }
 
-        pub fn poke(self: *This, addr: u16, val: u8) void {
+        fn inner_write(self: *This, addr: u16, val: u8) void {
             switch (addr) {
                 0 => {
                     if (number == 1) {
                         const reg: NR10 = @bitCast(val);
-                        self.period_sweep.pace = reg.pace;
-                        self.period_sweep.direction = reg.direction;
-                        self.period_sweep.individual_step = reg.individual_step;
+                        self.period_sweep.pace.set(reg.pace);
+                        self.period_sweep.direction.set(reg.direction);
+                        self.period_sweep.individual_step.set(reg.individual_step);
                     }
                     if (number == 3) {
                         const reg: NR30 = @bitCast(val);
@@ -690,20 +703,33 @@ pub fn Channel(number: comptime_int) type {
             }
         }
 
+        pub fn peek(self: *This, addr: u16) u8 {
+            return self.inner_read(addr).@"1";
+        }
+
+        pub fn poke(self: *This, addr: u16, val: u8) void {
+            self.inner_write(addr, val);
+        }
+
         pub fn read(self: *This, addr: u16) struct { MemoryFlag, u8 } {
+            var flags, const val = self.inner_read(addr);
             if (addr == 0 and number != 1 and number != 3) {
-                return .{ .{ .illegal = true }, self.peek(addr) };
+                flags.illegal = true;
             }
-            return .{ .{}, self.peek(addr) };
+            return .{ flags, val };
         }
 
         pub fn write(self: *This, addr: u16, val: u8) MemoryFlag {
+            var flags: MemoryFlag = .{};
+
             if (addr == 0 and number != 1 and number != 3) {
                 return .{ .illegal = true };
             }
+
             if (!self.powered_off or addr == 1) { // DMG ONLY -- Length timers are unaffected by power off only on monochrome models
-                self.poke(addr, val);
+                self.inner_write(addr, val);
             }
+
             if (number != 3) { // channel 3 uses a direct bit write instead of a side effect
                 if (self.volume.direction == .decrease and self.volume.initial_volume == 0) {
                     self.control.dac_enabled = false;
@@ -711,10 +737,18 @@ pub fn Channel(number: comptime_int) type {
                     self.control.dac_enabled = true;
                 }
             }
+
             if (!self.powered_off and addr == 4 and val & 0b1000_0000 != 0) {
-                self.trigger();
+                self.trigger(&flags);
             }
-            return .{};
+
+            return flags;
+        }
+
+        pub fn should_panic(self: *This) void {
+            if (number == 1) {
+                self.period_sweep.should_panic();
+            }
         }
     };
 }
@@ -732,6 +766,7 @@ test "dac() maps 4-bit samples to [-1,1]" {
 
 test "write(2) enables/disables DAC according to initial_volume/direction" {
     var ch = Channel(2).init();
+    ch.should_panic();
 
     // volume=0, direction=0 -> DAC disabled
     _ = ch.write(2, 0x00);
@@ -752,6 +787,7 @@ test "write(2) enables/disables DAC according to initial_volume/direction" {
 
 test "poke/peek round-trips for NR21 (addr 1) and NR23 (addr 3)" {
     var ch = Channel(2).init();
+    ch.should_panic();
 
     // NR21: duty in bits 7..6, length in bits 5..0
     const wd: u2 = 0b10;
@@ -766,6 +802,7 @@ test "poke/peek round-trips for NR21 (addr 1) and NR23 (addr 3)" {
 
 test "trigger sets active, length, volume envelope and period counters" {
     var ch = Channel(2).init();
+    ch.should_panic();
 
     // Set NR21 (duty + length)
     const duty: u2 = 0b01;
@@ -791,6 +828,7 @@ test "trigger sets active, length, volume envelope and period counters" {
 test "tick() obeys dacEnabled and active; waveform progression matches table" {
     const eps: f32 = 1e-6;
     var ch = Channel(2).init();
+    ch.should_panic();
 
     // 1) DAC disabled -> 0.0 output
     _ = ch.write(2, 0x00);
@@ -826,6 +864,7 @@ test "tick() obeys dacEnabled and active; waveform progression matches table" {
 
 test "length timer disables channel when enabled and wraps" {
     var ch = Channel(2).init();
+    ch.should_panic();
 
     // Prepare: length=63 so one length tick wraps to 0 and disables.
     _ = ch.write(1, (0b01 << 6) | 63); // any duty, length=63
@@ -843,6 +882,7 @@ test "length timer disables channel when enabled and wraps" {
 
 test "volume envelope pace increases/decreases volume as configured" {
     var ch = Channel(2).init();
+    ch.should_panic();
 
     // initial_volume=4, direction=1 (increase), pace=2
     _ = ch.write(2, (@as(u8, 4) << 4) | (1 << 3) | 2);
@@ -859,6 +899,7 @@ test "volume envelope pace increases/decreases volume as configured" {
 
 test "poweroff blocks writes (except NR21 on DMG) and prevents trigger" {
     var ch = Channel(2).init();
+    ch.should_panic();
 
     ch.poweroff();
 
@@ -877,6 +918,7 @@ test "poweroff blocks writes (except NR21 on DMG) and prevents trigger" {
 
 test "isActive only true when both active and DAC enabled" {
     var ch = Channel(2).init();
+    ch.should_panic();
 
     // Neither active nor DAC -> false
     try std.testing.expect(!ch.isActive());
@@ -896,6 +938,7 @@ test "isActive only true when both active and DAC enabled" {
 
 test "NR10 (addr 0) poke/peek round-trip for Channel(1)" {
     var ch = Channel(1).init();
+    ch.should_panic();
 
     // NR10 format: 1 | pace(3) | direction(1) | step(3)
     const pace: u3 = 0b101;
@@ -911,6 +954,7 @@ test "NR10 (addr 0) poke/peek round-trip for Channel(1)" {
 
 test "Channel(1) trigger with sweep step add checks overflow immediately and can disable on overflow" {
     var ch = Channel(1).init();
+    ch.should_panic();
 
     // Enable DAC so channel can become active
     _ = ch.write(2, 0x10); // initial_volume=1
@@ -932,6 +976,7 @@ test "Channel(1) trigger with sweep step add checks overflow immediately and can
 
 test "Channel(1) period sweep subtract updates period on schedule (pace=2 -> 1 update after 8 divticks)" {
     var ch = Channel(1).init();
+    ch.should_panic();
 
     // Enable DAC and set a known period
     _ = ch.write(2, 0x10); // initial_volume=1 enables DAC
@@ -959,6 +1004,7 @@ test "Channel(1) period sweep subtract updates period on schedule (pace=2 -> 1 u
 
 test "Channel(1) paced increment may overflow on a subsequent step (pace=1)" {
     var ch = Channel(1).init();
+    ch.should_panic();
 
     // Enable DAC and set period to a value that won't overflow on the first calc,
     // but will overflow on the second calc.
@@ -987,6 +1033,7 @@ test "Channel(1) paced increment may overflow on a subsequent step (pace=1)" {
 
 test "Channel(4) NR43 (addr 3) poke/peek round-trip + updateTarget math" {
     var ch = Channel(4).init();
+    ch.should_panic();
 
     // Case 1: clock_div = 0, clock_shift = 4, width = 0
     // Expected target = 1 << (shift + 1) = 1 << 5 = 32
@@ -1017,6 +1064,7 @@ test "Channel(4) NR43 (addr 3) poke/peek round-trip + updateTarget math" {
 
 test "Channel(4) NR44 (addr 4) peek exposes LEN enable and fixed ones; trigger works" {
     var ch = Channel(4).init();
+    ch.should_panic();
 
     // Enable DAC so triggering can make it 'active'
     _ = ch.write(2, 0x10); // initial_volume=1
@@ -1038,6 +1086,7 @@ test "Channel(4) NR44 (addr 4) peek exposes LEN enable and fixed ones; trigger w
 test "Channel(4) DAC gating: write(2) enables/disables; tick() respects DAC and active" {
     const eps: f32 = 1e-6;
     var ch = Channel(4).init();
+    ch.should_panic();
 
     // 1) DAC disabled -> tick returns 0.0
     _ = ch.write(2, 0x00);
@@ -1060,6 +1109,7 @@ test "Channel(4) DAC gating: write(2) enables/disables; tick() respects DAC and 
 
 test "Channel(4) LFSR.sample() basic sequences: width=0 vs width=1" {
     var ch = Channel(4).init();
+    ch.should_panic();
 
     // Start from a known state
     ch.lfsr.reset();
@@ -1084,6 +1134,7 @@ test "Channel(4) LFSR.sample() basic sequences: width=0 vs width=1" {
 
 test "Channel(4) length timer disables channel when enabled and wraps" {
     var ch = Channel(4).init();
+    ch.should_panic();
 
     // Prepare: length=63 so one length 'tick' wraps to 0 and disables.
     _ = ch.write(1, 63); // NR41 length only for channel 4
@@ -1100,6 +1151,7 @@ test "Channel(4) length timer disables channel when enabled and wraps" {
 
 test "Channel(4) poweroff blocks writes (except NR41) and prevents trigger" {
     var ch = Channel(4).init();
+    ch.should_panic();
 
     ch.poweroff();
 
@@ -1120,6 +1172,7 @@ test "Channel(4) poweroff blocks writes (except NR41) and prevents trigger" {
 
 test "Channel(4) illegal NRx0 access: read/write flag as illegal" {
     var ch = Channel(4).init();
+    ch.should_panic();
 
     // Write to addr 0 should be flagged illegal
     const wf = ch.write(0, 0x12);
@@ -1132,6 +1185,7 @@ test "Channel(4) illegal NRx0 access: read/write flag as illegal" {
 
 test "Channel(3) NR30 (addr 0) poke/peek round-trip + DAC gating" {
     var ch = Channel(3).init();
+    ch.should_panic();
 
     // Initially DAC disabled
     try std.testing.expect(!ch.control.dac_enabled);
@@ -1151,6 +1205,7 @@ test "Channel(3) NR30 (addr 0) poke/peek round-trip + DAC gating" {
 
 test "Channel(3) NR31/NR32/NR33/NR34 poke/peek basics" {
     var ch = Channel(3).init();
+    ch.should_panic();
 
     // NR31: 8-bit length, echoed directly by peek(1)
     _ = ch.write(1, 0xA5);
@@ -1173,6 +1228,7 @@ test "Channel(3) NR31/NR32/NR33/NR34 poke/peek basics" {
 test "Channel(3) tick() respects DAC and active; baseline when inactive" {
     const eps: f32 = 1e-6;
     var ch = Channel(3).init();
+    ch.should_panic();
 
     // 1) DAC disabled -> 0.0
     _ = ch.write(0, 0x00);
@@ -1194,6 +1250,7 @@ test "Channel(3) tick() respects DAC and active; baseline when inactive" {
 test "Channel(3) output-level scaling maps nibble -> attenuation correctly" {
     const eps: f32 = 1e-6;
     var ch = Channel(3).init();
+    ch.should_panic();
 
     // Prepare: set a known nibble path via wave.current_value directly by advancing once
     ch.wave.samples[0] = 0xFF;
@@ -1233,6 +1290,7 @@ test "Channel(3) output-level scaling maps nibble -> attenuation correctly" {
 
 test "WaveSamplerUnit.sample() returns nibbles in [hi, lo, hi, lo, ...] order starting at index 1" {
     var ch = Channel(3).init();
+    ch.should_panic();
 
     // Set first four bytes to known patterns: [AB, CD, EF, 01] in hex
     ch.wave.samples[0] = 0xAB; // A=high, B=low
@@ -1262,6 +1320,7 @@ test "WaveSamplerUnit.sample() returns nibbles in [hi, lo, hi, lo, ...] order st
 
 test "Channel(3) wave RAM access rules: illegal when active & not at sample tick; OK otherwise" {
     var ch = Channel(3).init();
+    ch.should_panic();
 
     // Helper alias
     const W = Channel(3).wave_memory_interface;
@@ -1303,6 +1362,7 @@ test "Channel(3) wave RAM access rules: illegal when active & not at sample tick
 
 test "Channel(3) length timer disables when enabled and wraps" {
     var ch = Channel(3).init();
+    ch.should_panic();
 
     // Length=255 so one length 'tick' wraps to 0 and disables when enabled
     _ = ch.write(1, 255);
@@ -1319,6 +1379,7 @@ test "Channel(3) length timer disables when enabled and wraps" {
 
 test "Channel(3) poweroff zeros NR30/NR32/NR33/NR34 (NR31 length spared on DMG quirk)" {
     var ch = Channel(3).init();
+    ch.should_panic();
 
     // Seed non-zero values
     _ = ch.write(0, 0x80);
@@ -1341,6 +1402,7 @@ test "Channel(3) poweroff zeros NR30/NR32/NR33/NR34 (NR31 length spared on DMG q
 
 test "Channel(3) illegal access flags: only NRx0 reads/writes are legal on ch3; others illegal" {
     var ch = Channel(3).init();
+    ch.should_panic();
 
     // addr 0 is legal (unlike ch2/ch4)
     const wf0 = ch.write(0, 0x80);
