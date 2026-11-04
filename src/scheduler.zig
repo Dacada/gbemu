@@ -1,13 +1,17 @@
 const std = @import("std");
-const Heap = @import("fixed_size_heap.zig").FixedSizeHeap(ScheduledEvent, 32, scheduledEventComp, true);
+const Heap = @import("fixed_size_heap.zig").FixedSizeHeap(ScheduledEventInner, 32, scheduledEventComp, true);
 
 pub const ScheduledEvent = struct {
     context: *anyopaque,
     callback: *const fn (*anyopaque) void,
-    scheduled_at_tick: u64 = undefined, // ignored when passing it into the .schedule method
 };
 
-fn scheduledEventComp(a: ScheduledEvent, b: ScheduledEvent) std.math.Order {
+const ScheduledEventInner = struct {
+    event: ScheduledEvent,
+    scheduled_at_tick: u64,
+};
+
+fn scheduledEventComp(a: ScheduledEventInner, b: ScheduledEventInner) std.math.Order {
     return std.math.order(a.scheduled_at_tick, b.scheduled_at_tick);
 }
 
@@ -23,15 +27,17 @@ pub const Scheduler = struct {
     }
 
     pub fn schedule(self: *Scheduler, event: ScheduledEvent, after_ticks: u64) void {
-        var e = event;
-        e.scheduled_at_tick = self.ticks + after_ticks;
+        const e: ScheduledEventInner = .{
+            .event = event,
+            .scheduled_at_tick = self.ticks + after_ticks,
+        };
         self.heap.push(e);
     }
 
     pub fn tick(self: *Scheduler) void {
         while (self.heap.peek()) |top| {
-            if (top.scheduled_at_tick == self.ticks) {
-                top.callback(top.context);
+            if (top.scheduled_at_tick <= self.ticks) {
+                top.event.callback(top.event.context);
                 _ = self.heap.pop();
             } else {
                 break;
@@ -89,7 +95,7 @@ fn record(ctx: *anyopaque) void {
 test "multiple events fire in correct order" {
     var scheduler = Scheduler.init();
 
-    var log: [4]u8 = undefined;
+    var log: [4]u8 = @splat(0);
     var index: usize = 0;
 
     var ctx1 = LogContext{ .log = &log, .index = &index, .value = 1 };
