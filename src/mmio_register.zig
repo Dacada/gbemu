@@ -102,62 +102,16 @@ pub const NR12 = packed struct(u8) {
     initial_volume: u4,
 };
 
-// FF13-FF14
-pub const NR13_14 = packed struct(u16) {
-    period: u11,
+// FF13
+// NR13 is not structured
+
+// FF14
+pub const NR14 = packed struct(u8) {
+    period_hi: u3,
     _: u3 = 0b111,
     length_enable: bool,
     trigger: bool,
-
-    pub fn lo(self: NR13_14) u8 {
-        return @truncate(@as(u16, @bitCast(self)));
-    }
-
-    pub fn setLo(self: *NR13_14, val: u8) void {
-        self.* = @bitCast((@as(u16, @bitCast(self.*)) & 0xFF00) | @as(u16, @intCast(val)));
-    }
-
-    pub fn hi(self: NR13_14) u8 {
-        return @truncate(@as(u16, @bitCast(self)) >> 8);
-    }
-
-    pub fn setHi(self: *NR13_14, val: u8) void {
-        self.* = @bitCast((@as(u16, @bitCast(self.*)) & 0x00FF) | (@as(u16, @intCast(val)) << 8));
-    }
 };
-
-test "NR13_14 byte accessors" {
-    const std = @import("std");
-    const expectEqual = std.testing.expectEqual;
-
-    var reg: NR13_14 = @bitCast(@as(u16, 0));
-
-    // Writing either byte must preserve the other.
-    reg.setLo(0xAB);
-    try expectEqual(@as(u8, 0xAB), reg.lo());
-    try expectEqual(@as(u8, 0x00), reg.hi());
-
-    reg.setHi(0xC5);
-    try expectEqual(@as(u8, 0xAB), reg.lo());
-    try expectEqual(@as(u8, 0xC5), reg.hi());
-
-    // Check the logical fields.
-    try expectEqual(@as(u11, 0x5AB), reg.period);
-    try expectEqual(true, reg.length_enable);
-    try expectEqual(true, reg.trigger);
-
-    // Overwriting the low byte must preserve the high byte.
-    reg.setLo(0x12);
-    try expectEqual(@as(u11, 0x512), reg.period);
-    try expectEqual(@as(u8, 0xC5), reg.hi());
-
-    // Overwriting the high byte must preserve the low byte.
-    reg.setHi(0x02);
-    try expectEqual(@as(u11, 0x212), reg.period);
-    try expectEqual(false, reg.length_enable);
-    try expectEqual(false, reg.trigger);
-    try expectEqual(@as(u8, 0x12), reg.lo());
-}
 
 // FF15
 // Unused
@@ -168,8 +122,11 @@ pub const NR21 = NR11;
 // FF17
 pub const NR22 = NR12;
 
-// FF18-19
-pub const NR23_24 = NR13_14;
+// FF18
+// NR23 is not structured
+
+// FF19
+pub const NR24 = NR14;
 
 // FF1A
 pub const NR30 = packed struct(u8) {
@@ -194,8 +151,11 @@ pub const NR32 = packed struct(u8) {
     __: u1 = 0b1,
 };
 
-// FF1D-FF1E
-pub const NR33_34 = NR13_14;
+// FF1D
+// NR33 is not structured
+
+// FF1E
+pub const NR34 = NR14;
 
 // FF1F
 // Unused

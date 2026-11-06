@@ -4,7 +4,7 @@ const TrackedValue = @import("tracked_value.zig").TrackedValue;
 const NR10 = mmio_register.NR10;
 const NR11 = mmio_register.NR11;
 const NR12 = mmio_register.NR12;
-const NR13_14 = mmio_register.NR13_14;
+const NR14 = mmio_register.NR14;
 const NR30 = mmio_register.NR30;
 const NR32 = mmio_register.NR32;
 const NR41 = mmio_register.NR41;
@@ -72,7 +72,7 @@ fn SweepPeriodUnit(number: comptime_int) type {
                 self.overflowCheck(new_period, control);
                 if (new_period <= 0x7FF and individual_step != 0) {
                     self.shadow = @intCast(new_period);
-                    period.period = @intCast(new_period);
+                    period.period.set(@intCast(new_period));
                     self.overflowCheck(self.periodCalculation(null), control);
                 }
             }
@@ -99,7 +99,7 @@ fn SweepPeriodUnit(number: comptime_int) type {
         }
 
         fn reset(self: *This, period: *const PeriodUnit(number), control: *ControlUnit, flags: *MemoryFlag) void {
-            self.shadow = period.period;
+            self.shadow = period.period.resolve(flags);
             self.counter = 0;
             self.enabled = self.pace.resolve(flags) != 0 or self.individual_step.resolve(flags) != 0;
 
@@ -118,18 +118,18 @@ fn SweepPeriodUnit(number: comptime_int) type {
 }
 
 const VolumeUnit = struct {
-    pace: u3,
-    direction: NR12.Direction,
-    initial_volume: u4,
+    pace: TrackedValue(u3),
+    direction: TrackedValue(NR12.Direction),
+    initial_volume: TrackedValue(u4),
 
     counter: u3,
     volume: u4,
 
     inline fn init() VolumeUnit {
         return VolumeUnit{
-            .pace = undefined,
-            .direction = undefined,
-            .initial_volume = undefined,
+            .pace = .init(0b101),
+            .direction = .init(NR12.Direction.increase),
+            .initial_volume = .init(0xA),
 
             .counter = 0,
             .volume = 0,
@@ -137,14 +137,14 @@ const VolumeUnit = struct {
     }
 
     fn tick(self: *VolumeUnit) void {
-        if (self.pace == 0) {
+        if (self.pace.resolve(null) == 0) {
             return;
         }
 
         self.counter +%= 1;
-        if (self.counter >= self.pace) {
+        if (self.counter >= self.pace.resolve(null)) {
             self.counter = 0;
-            if (self.direction == .decrease) {
+            if (self.direction.resolve(null) == .decrease) {
                 self.volume -|= 1;
             } else {
                 self.volume +|= 1;
@@ -152,24 +152,71 @@ const VolumeUnit = struct {
         }
     }
 
-    fn reset(self: *VolumeUnit) void {
+    fn reset(self: *VolumeUnit, flags: *MemoryFlag) void {
         self.counter = 0;
-        self.volume = self.initial_volume;
+        self.volume = self.initial_volume.resolve(flags);
+    }
+
+    fn should_panic(self: *VolumeUnit) void {
+        self.pace.should_panic = true;
+        self.direction.should_panic = true;
+        self.initial_volume.should_panic = true;
     }
 };
 
 fn PeriodUnit(number: comptime_int) type {
+    const TrackedPeriod = struct {
+        const This = @This();
+
+        hi: TrackedValue(u3),
+        lo: TrackedValue(u8),
+
+        inline fn init(default: u11) This {
+            const hi, const lo = decompose(default);
+            return This{
+                .hi = .init(hi),
+                .lo = .init(lo),
+            };
+        }
+
+        inline fn compose(hi: u3, lo: u8) u11 {
+            var val: u11 = hi;
+            val <<= 8;
+            val |= lo;
+            return val;
+        }
+
+        inline fn decompose(val: u11) struct { u3, u8 } {
+            return .{
+                @intCast((val & 0x700) >> 8),
+                @intCast(val & 0x0FF),
+            };
+        }
+
+        inline fn resolve(self: This, flag: ?*MemoryFlag) u11 {
+            const hi = self.hi.resolve(flag);
+            const lo = self.lo.resolve(flag);
+            return compose(hi, lo);
+        }
+
+        inline fn set(self: *This, value: u11) void {
+            const hi, const lo = decompose(value);
+            self.hi.set(hi);
+            self.lo.set(lo);
+        }
+    };
+
     return struct {
         const This = @This();
 
-        period: u11,
+        period: TrackedPeriod,
 
         divider: if (number != 3) u1 else void,
         counter: u11,
 
         inline fn init() This {
             return This{
-                .period = undefined,
+                .period = .init(0b10101010101),
                 .divider = if (number != 3) 0 else {},
                 .counter = 0,
             };
@@ -197,14 +244,19 @@ fn PeriodUnit(number: comptime_int) type {
 
             self.counter +%= 1;
             if (self.counter == 0) {
-                self.reset();
+                self.reset(null);
                 return true;
             }
             return false;
         }
 
-        fn reset(self: *This) void {
-            self.counter = self.period;
+        fn reset(self: *This, flags: ?*MemoryFlag) void {
+            self.counter = self.period.resolve(flags);
+        }
+
+        fn should_panic(self: *This) void {
+            self.period.lo.should_panic = true;
+            self.period.hi.should_panic = true;
         }
     };
 }
@@ -235,8 +287,8 @@ fn LengthUnit(number: comptime_int) type {
     return struct {
         const This = @This();
 
-        enable: bool,
-        initial_counter: if (number == 3) u8 else u6,
+        enable: TrackedValue(bool),
+        initial_counter: TrackedValue(if (number == 3) u8 else u6),
 
         counter: if (number == 3) u8 else u6,
 
@@ -244,14 +296,14 @@ fn LengthUnit(number: comptime_int) type {
             if (number != 1 and number != 2 and number != 3 and number != 4) @compileError("Invalid channel number.");
 
             return This{
-                .enable = undefined,
-                .initial_counter = undefined,
+                .enable = .init(true),
+                .initial_counter = .init(if (number == 3) 0xA else 0b101010),
                 .counter = 0,
             };
         }
 
         fn tick(self: *This, control: *ControlUnit) void {
-            if (!self.enable) {
+            if (!self.enable.resolve(null)) {
                 return;
             }
             self.counter +%= 1;
@@ -260,20 +312,25 @@ fn LengthUnit(number: comptime_int) type {
             }
         }
 
-        fn reset(self: *This) void {
-            self.counter = self.initial_counter;
+        fn reset(self: *This, flags: *MemoryFlag) void {
+            self.counter = self.initial_counter.resolve(flags);
+        }
+
+        fn should_panic(self: *This) void {
+            self.enable.should_panic = true;
+            self.initial_counter.should_panic = true;
         }
     };
 }
 
 const SquareWaveUnit = struct {
-    duty: NR11.WaveDuty,
+    duty: TrackedValue(NR11.WaveDuty),
 
     counter: u3,
 
     inline fn init() SquareWaveUnit {
         return SquareWaveUnit{
-            .duty = undefined,
+            .duty = .init(NR11.WaveDuty.duty_50),
             .counter = 0,
         };
     }
@@ -286,14 +343,18 @@ const SquareWaveUnit = struct {
             .{ true, false, false, false, false, false, false, true },
         };
         defer self.counter +%= 1;
-        return waveforms[@backingInt(self.duty)][self.counter];
+        return waveforms[@backingInt(self.duty.resolve(null))][self.counter];
+    }
+
+    fn should_panic(self: *SquareWaveUnit) void {
+        self.duty.should_panic = true;
     }
 };
 
 const LfsrUnit = struct {
-    clock_shift: u4,
-    width: NR43.LFSRWidth,
-    clock_div: u3,
+    clock_shift: TrackedValue(u4),
+    width: TrackedValue(NR43.LFSRWidth),
+    clock_div: TrackedValue(u3),
 
     register: u16,
     tick_counter: u20,
@@ -301,9 +362,9 @@ const LfsrUnit = struct {
 
     inline fn init() LfsrUnit {
         return LfsrUnit{
-            .clock_shift = undefined,
-            .width = undefined,
-            .clock_div = undefined,
+            .clock_shift = .init(0xA),
+            .width = .init(NR43.LFSRWidth.w7_bit),
+            .clock_div = .init(0b101),
 
             .register = 0,
             .tick_counter = 0,
@@ -321,10 +382,13 @@ const LfsrUnit = struct {
     }
 
     fn updateTarget(self: *LfsrUnit) void {
-        self.target = if (self.clock_div == 0)
-            @as(u20, 1) << (@as(u5, @intCast(self.clock_shift)) + 1)
+        const clock_shift = self.clock_shift.resolve(null);
+        const clock_div = self.clock_div.resolve(null);
+
+        self.target = if (clock_div == 0)
+            @as(u20, 1) << (@as(u5, @intCast(clock_shift)) + 1)
         else
-            @as(u20, @intCast(self.clock_div)) << (@as(u5, @intCast(self.clock_shift)) + 2);
+            @as(u20, @intCast(clock_div)) << (@as(u5, @intCast(clock_shift)) + 2);
     }
 
     fn sample(self: *LfsrUnit) bool {
@@ -333,7 +397,7 @@ const LfsrUnit = struct {
         const nxor: u1 = ~(bit0 ^ bit1);
 
         var mask: u16 = nxor;
-        if (self.width == .w7_bit) {
+        if (self.width.resolve(null) == .w7_bit) {
             mask <<= 8;
             mask |= nxor;
             mask <<= 7;
@@ -352,20 +416,31 @@ const LfsrUnit = struct {
     fn reset(self: *LfsrUnit) void {
         self.register = 0;
     }
+
+    fn should_panic(self: *LfsrUnit) void {
+        self.clock_div.should_panic = true;
+        self.clock_shift.should_panic = true;
+        self.width.should_panic = true;
+    }
 };
 
 const OutputLevelUnit = struct {
-    output_level: NR32.OutputLevel,
+    output_level: TrackedValue(NR32.OutputLevel),
 
     inline fn init() OutputLevelUnit {
         return OutputLevelUnit{
-            .output_level = undefined,
+            .output_level = .init(NR32.OutputLevel.volume_50),
         };
     }
 
     fn scale(self: *const OutputLevelUnit, sample: u4) u4 {
-        if (self.output_level == .mute) return 0;
-        return sample >> (@backingInt(self.output_level) - 1);
+        const output_level = self.output_level.resolve(null);
+        if (output_level == .mute) return 0;
+        return sample >> (@backingInt(output_level) - 1);
+    }
+
+    fn should_panic(self: *OutputLevelUnit) void {
+        self.output_level.should_panic = true;
     }
 };
 
@@ -392,7 +467,10 @@ const WaveSamplerUnit = struct {
             if (should_fail(channel)) {
                 return .{ .{ .illegal = true }, 0xFF };
             }
-            return .{ .{}, peek(channel, addr) };
+            return .{
+                .{ .uninitialized = channel.wave.points_uninit() },
+                peek(channel, addr),
+            };
         }
 
         pub fn write(channel: *Channel(3), addr: u16, val: u8) MemoryFlag {
@@ -405,6 +483,7 @@ const WaveSamplerUnit = struct {
     };
 
     samples: [16]u8,
+    samples_init: [16]bool,
 
     current_value: u4,
     next_index: u5,
@@ -412,6 +491,7 @@ const WaveSamplerUnit = struct {
     inline fn init() WaveSamplerUnit {
         return WaveSamplerUnit{
             .samples = @splat(0),
+            .samples_init = @splat(false),
 
             .current_value = 0,
             .next_index = 1,
@@ -421,6 +501,10 @@ const WaveSamplerUnit = struct {
     fn sample(self: *WaveSamplerUnit) u4 {
         defer self.advance();
         return self.current_value;
+    }
+
+    fn points_uninit(self: *WaveSamplerUnit) bool {
+        return self.samples_init[self.next_index / 2];
     }
 
     fn advance(self: *WaveSamplerUnit) void {
@@ -539,11 +623,11 @@ pub fn Channel(number: comptime_int) type {
         fn trigger(self: *This, flags: *MemoryFlag) void {
             self.control.active = true;
             if (self.length.counter == 0) {
-                self.length.reset();
+                self.length.reset(flags);
             }
-            if (number != 4) self.period.reset();
+            if (number != 4) self.period.reset(flags);
             if (number == 4) self.lfsr.reset();
-            if (number != 3) self.volume.reset();
+            if (number != 3) self.volume.reset(flags);
             if (number == 1) self.period_sweep.reset(&self.period, &self.control, flags);
         }
 
@@ -567,60 +651,54 @@ pub fn Channel(number: comptime_int) type {
                 },
                 1 => blk: {
                     if (number == 3) {
-                        break :blk self.length.initial_counter;
+                        break :blk self.length.initial_counter.resolve(&flags);
                     }
 
                     if (number == 1 or number == 2) {
                         break :blk @bitCast(NR11{ // NR21 is identical
-                            .wave_duty = self.square.duty,
-                            .initial_length_timer = self.length.initial_counter,
+                            .wave_duty = self.square.duty.resolve(&flags),
+                            .initial_length_timer = self.length.initial_counter.resolve(&flags),
                         });
                     }
 
                     break :blk @bitCast(NR41{
-                        .initial_length_timer = self.length.initial_counter,
+                        .initial_length_timer = self.length.initial_counter.resolve(&flags),
                     });
                 },
                 2 => blk: {
                     if (number == 3) {
                         break :blk @bitCast(NR32{
-                            .output_level = self.output_level.output_level,
+                            .output_level = self.output_level.output_level.resolve(&flags),
                         });
                     }
                     break :blk @bitCast(NR12{ // NR22 and NR42 are identical
-                        .env_dir = self.volume.direction,
-                        .initial_volume = self.volume.initial_volume,
-                        .sweep_pace = self.volume.pace,
+                        .env_dir = self.volume.direction.resolve(&flags),
+                        .initial_volume = self.volume.initial_volume.resolve(&flags),
+                        .sweep_pace = self.volume.pace.resolve(&flags),
                     });
                 },
                 3 => blk: {
                     if (number == 4) {
                         break :blk @bitCast(NR43{
-                            .clock_divider = self.lfsr.clock_div,
-                            .clock_shift = self.lfsr.clock_shift,
-                            .lfsr_width = self.lfsr.width,
+                            .clock_divider = self.lfsr.clock_div.resolve(&flags),
+                            .clock_shift = self.lfsr.clock_shift.resolve(&flags),
+                            .lfsr_width = self.lfsr.width.resolve(&flags),
                         });
                     }
-                    const reg = NR13_14{ // NR23 and NR33 are identical
-                        .period = self.period.period,
-                        .length_enable = self.length.enable,
-                        .trigger = true,
-                    };
-                    break :blk reg.lo();
+                    break :blk self.period.period.lo.resolve(&flags);
                 },
                 4 => blk: {
                     if (number == 4) {
                         break :blk @bitCast(NR44{
-                            .length_enable = self.length.enable,
+                            .length_enable = self.length.enable.resolve(&flags),
                             .trigger = true,
                         });
                     }
-                    const reg = NR13_14{ // NR 24 and NR34 are identical
-                        .period = self.period.period,
-                        .length_enable = self.length.enable,
+                    break :blk @bitCast(NR14{ // NR 24 and NR34 are identical
+                        .period_hi = self.period.period.hi.resolve(&flags),
+                        .length_enable = self.length.enable.resolve(&flags),
                         .trigger = true,
-                    };
-                    break :blk reg.hi();
+                    });
                 },
                 else => unreachable,
             };
@@ -644,59 +722,48 @@ pub fn Channel(number: comptime_int) type {
                 },
                 1 => {
                     if (number == 3) {
-                        self.length.initial_counter = val;
+                        self.length.initial_counter.set(val);
                     } else {
                         if (number == 1 or number == 2) {
                             const reg: NR11 = @bitCast(val);
-                            self.square.duty = reg.wave_duty;
-                            self.length.initial_counter = reg.initial_length_timer;
+                            self.square.duty.set(reg.wave_duty);
+                            self.length.initial_counter.set(reg.initial_length_timer);
                         } else {
                             const reg: NR41 = @bitCast(val);
-                            self.length.initial_counter = reg.initial_length_timer;
+                            self.length.initial_counter.set(reg.initial_length_timer);
                         }
                     }
                 },
                 2 => {
                     if (number == 3) {
                         const reg: NR32 = @bitCast(val);
-                        self.output_level.output_level = reg.output_level;
+                        self.output_level.output_level.set(reg.output_level);
                     } else {
                         const reg: NR12 = @bitCast(val);
-                        self.volume.initial_volume = reg.initial_volume;
-                        self.volume.direction = reg.env_dir;
-                        self.volume.pace = reg.sweep_pace;
+                        self.volume.initial_volume.set(reg.initial_volume);
+                        self.volume.direction.set(reg.env_dir);
+                        self.volume.pace.set(reg.sweep_pace);
                     }
                 },
                 3 => {
                     if (number == 4) {
                         const reg: NR43 = @bitCast(val);
-                        self.lfsr.clock_shift = reg.clock_shift;
-                        self.lfsr.width = reg.lfsr_width;
-                        self.lfsr.clock_div = reg.clock_divider;
+                        self.lfsr.clock_shift.set(reg.clock_shift);
+                        self.lfsr.width.set(reg.lfsr_width);
+                        self.lfsr.clock_div.set(reg.clock_divider);
                         self.lfsr.updateTarget();
                     } else {
-                        var reg = NR13_14{
-                            .length_enable = self.length.enable,
-                            .trigger = true,
-                            .period = self.period.period,
-                        };
-                        reg.setLo(val);
-                        self.period.period = reg.period;
+                        self.period.period.lo.set(val);
                     }
                 },
                 4 => {
                     if (number == 4) {
                         const reg: NR44 = @bitCast(val);
-                        self.length.enable = reg.length_enable;
+                        self.length.enable.set(reg.length_enable);
                     } else {
-                        var reg = NR13_14{
-                            .length_enable = self.length.enable,
-                            .trigger = true,
-                            .period = self.period.period,
-                        };
-                        reg.setHi(val);
-                        self.period.period = reg.period;
-                        self.length.enable = reg.length_enable;
+                        const reg: NR14 = @bitCast(val);
+                        self.period.period.hi.set(reg.period_hi);
+                        self.length.enable.set(reg.length_enable);
                     }
                 },
                 else => unreachable,
@@ -730,8 +797,8 @@ pub fn Channel(number: comptime_int) type {
                 self.inner_write(addr, val);
             }
 
-            if (number != 3) { // channel 3 uses a direct bit write instead of a side effect
-                if (self.volume.direction == .decrease and self.volume.initial_volume == 0) {
+            if (number != 3 and addr == 2) { // channel 3 uses a direct bit write instead of a side effect, update only after a write to the relevant register
+                if (self.volume.direction.resolve(&flags) == .decrease and self.volume.initial_volume.resolve(&flags) == 0) {
                     self.control.dac_enabled = false;
                 } else {
                     self.control.dac_enabled = true;
@@ -746,9 +813,13 @@ pub fn Channel(number: comptime_int) type {
         }
 
         pub fn should_panic(self: *This) void {
-            if (number == 1) {
-                self.period_sweep.should_panic();
-            }
+            if (number == 1) self.period_sweep.should_panic();
+            if (number != 4) self.period.should_panic();
+            if (number != 3) self.volume.should_panic();
+            if (number == 3) self.output_level.should_panic();
+            self.length.should_panic();
+            if (number == 1 or number == 2) self.square.should_panic();
+            if (number == 4) self.lfsr.should_panic();
         }
     };
 }
@@ -819,10 +890,10 @@ test "trigger sets active, length, volume envelope and period counters" {
 
     try std.testing.expect(ch.control.active);
     try std.testing.expectEqual(init_len, ch.length.counter);
-    try std.testing.expectEqual(@as(u11, 0x7FF), ch.period.period);
+    try std.testing.expectEqual(@as(u11, 0x7FF), ch.period.period.resolve(null));
     try std.testing.expectEqual(@as(u11, 0x7FF), ch.period.counter);
     try std.testing.expectEqual(init_vol, ch.volume.volume);
-    try std.testing.expectEqual(@as(u3, 0), ch.volume.pace);
+    try std.testing.expectEqual(@as(u3, 0), ch.volume.pace.resolve(null));
 }
 
 test "tick() obeys dacEnabled and active; waveform progression matches table" {
@@ -869,6 +940,7 @@ test "length timer disables channel when enabled and wraps" {
     // Prepare: length=63 so one length tick wraps to 0 and disables.
     _ = ch.write(1, (0b01 << 6) | 63); // any duty, length=63
     _ = ch.write(2, 0x10); // enable DAC
+    _ = ch.write(3, 0xAA); // initialize period
     _ = ch.write(4, 0xC0); // trigger + lengthEnable=1 (upper period=0)
 
     try std.testing.expect(ch.control.active);
@@ -885,7 +957,9 @@ test "volume envelope pace increases/decreases volume as configured" {
     ch.should_panic();
 
     // initial_volume=4, direction=1 (increase), pace=2
+    _ = ch.write(1, (0b01 << 6) | 63); // any duty, length=63
     _ = ch.write(2, (@as(u8, 4) << 4) | (1 << 3) | 2);
+    _ = ch.write(3, 0xAA); // initialize period
     _ = ch.write(4, 0x80); // trigger to load envelope and reset pace counter
 
     try std.testing.expectEqual(@as(u4, 4), ch.volume.volume);
@@ -909,7 +983,7 @@ test "poweroff blocks writes (except NR21 on DMG) and prevents trigger" {
 
     // Write to NR23 while powered off should be ignored
     _ = ch.write(3, 0xAA);
-    try std.testing.expectEqual(@as(u11, 0), ch.period.period & 0xFF);
+    try std.testing.expectEqual(@as(u11, 0), ch.period.period.resolve(null) & 0xFF);
 
     // NR21 is still writable on power-off (DMG quirk in this implementation)
     _ = ch.write(1, (0b11 << 6) | 17);
@@ -919,6 +993,9 @@ test "poweroff blocks writes (except NR21 on DMG) and prevents trigger" {
 test "isActive only true when both active and DAC enabled" {
     var ch = Channel(2).init();
     ch.should_panic();
+
+    _ = ch.write(1, (0b01 << 6) | 63); // any duty, length=63
+    _ = ch.write(3, 0xAA); // initialize period
 
     // Neither active nor DAC -> false
     try std.testing.expect(!ch.isActive());
@@ -956,6 +1033,8 @@ test "Channel(1) trigger with sweep step add checks overflow immediately and can
     var ch = Channel(1).init();
     ch.should_panic();
 
+    _ = ch.write(1, (0b01 << 6) | 63); // any duty, length=63
+
     // Enable DAC so channel can become active
     _ = ch.write(2, 0x10); // initial_volume=1
 
@@ -978,6 +1057,8 @@ test "Channel(1) period sweep subtract updates period on schedule (pace=2 -> 1 u
     var ch = Channel(1).init();
     ch.should_panic();
 
+    _ = ch.write(1, (0b01 << 6) | 63); // any duty, length=63
+
     // Enable DAC and set a known period
     _ = ch.write(2, 0x10); // initial_volume=1 enables DAC
     // Set period to 0x400
@@ -992,19 +1073,21 @@ test "Channel(1) period sweep subtract updates period on schedule (pace=2 -> 1 u
 
     try std.testing.expect(ch.control.active);
     try std.testing.expect(ch.period_sweep.enabled);
-    try std.testing.expectEqual(@as(u11, 0x400), ch.period.period);
+    try std.testing.expectEqual(@as(u11, 0x400), ch.period.period.resolve(null));
 
     // Sweep ticks every 4 divticks; with pace=2 we need 2 sweep ticks -> 8 divticks total
     inline for (0..8) |_| ch.divtick();
 
     // New period = P - (P >> 1) = 0x400 - 0x200 = 0x200
-    try std.testing.expectEqual(@as(u11, 0x200), ch.period.period);
+    try std.testing.expectEqual(@as(u11, 0x200), ch.period.period.resolve(null));
     try std.testing.expect(ch.control.active); // still active, no overflow
 }
 
 test "Channel(1) paced increment may overflow on a subsequent step (pace=1)" {
     var ch = Channel(1).init();
     ch.should_panic();
+
+    _ = ch.write(1, (0b01 << 6) | 63); // any duty, length=63
 
     // Enable DAC and set period to a value that won't overflow on the first calc,
     // but will overflow on the second calc.
@@ -1021,12 +1104,12 @@ test "Channel(1) paced increment may overflow on a subsequent step (pace=1)" {
 
     try std.testing.expect(ch.control.active);
     try std.testing.expect(ch.period_sweep.enabled);
-    try std.testing.expectEqual(@as(u11, 0x500), ch.period.period);
+    try std.testing.expectEqual(@as(u11, 0x500), ch.period.period.resolve(null));
 
     // One sweep step after 4 divticks (pace=1)
     inline for (0..4) |_| ch.divtick();
     // First update: 0x500 + (0x500 >> 1) = 0x500 + 0x280 = 0x780 (no overflow)
-    try std.testing.expectEqual(@as(u11, 0x780), ch.period.period);
+    try std.testing.expectEqual(@as(u11, 0x780), ch.period.period.resolve(null));
     // However, the overflow check takes place early, so the channel is already disabled here
     try std.testing.expect(!ch.control.active);
 }
@@ -1066,6 +1149,8 @@ test "Channel(4) NR44 (addr 4) peek exposes LEN enable and fixed ones; trigger w
     var ch = Channel(4).init();
     ch.should_panic();
 
+    _ = ch.write(1, (0b01 << 6) | 63); // any duty, length=63
+
     // Enable DAC so triggering can make it 'active'
     _ = ch.write(2, 0x10); // initial_volume=1
 
@@ -1080,13 +1165,15 @@ test "Channel(4) NR44 (addr 4) peek exposes LEN enable and fixed ones; trigger w
     _ = ch.write(4, 0b1100_0000); // lengthEnable=1, trigger=1
     try std.testing.expect(ch.control.active);
     try std.testing.expectEqual(@as(u16, 0), ch.lfsr.register); // reset() sets register=0
-    try std.testing.expectEqual(ch.volume.initial_volume, ch.volume.volume);
+    try std.testing.expectEqual(ch.volume.initial_volume.resolve(null), ch.volume.volume);
 }
 
 test "Channel(4) DAC gating: write(2) enables/disables; tick() respects DAC and active" {
     const eps: f32 = 1e-6;
     var ch = Channel(4).init();
     ch.should_panic();
+
+    _ = ch.write(1, (0b01 << 6) | 63); // any duty, length=63
 
     // 1) DAC disabled -> tick returns 0.0
     _ = ch.write(2, 0x00);
@@ -1115,7 +1202,7 @@ test "Channel(4) LFSR.sample() basic sequences: width=0 vs width=1" {
     ch.lfsr.reset();
 
     // width=0: first 14 samples low (0), then high (0xF) afterwards
-    ch.lfsr.width = .w15_bit;
+    ch.lfsr.width.set(.w15_bit);
     inline for (0..14) |i| {
         _ = i;
         try std.testing.expectEqual(false, ch.lfsr.sample());
@@ -1124,7 +1211,7 @@ test "Channel(4) LFSR.sample() basic sequences: width=0 vs width=1" {
 
     // Reset and use width=1: the tap changes; the 7th sample becomes high
     ch.lfsr.reset();
-    ch.lfsr.width = .w7_bit;
+    ch.lfsr.width.set(.w7_bit);
     inline for (0..6) |i| {
         _ = i;
         try std.testing.expectEqual(false, ch.lfsr.sample());
@@ -1161,9 +1248,9 @@ test "Channel(4) poweroff blocks writes (except NR41) and prevents trigger" {
 
     // Writes to NR43 while powered off are ignored
     _ = ch.write(3, 0xA5);
-    try std.testing.expectEqual(@as(u4, 0), ch.lfsr.clock_shift);
-    try std.testing.expectEqual(.w15_bit, ch.lfsr.width);
-    try std.testing.expectEqual(@as(u3, 0), ch.lfsr.clock_div);
+    try std.testing.expectEqual(@as(u4, 0), ch.lfsr.clock_shift.resolve(null));
+    try std.testing.expectEqual(.w15_bit, ch.lfsr.width.resolve(null));
+    try std.testing.expectEqual(@as(u3, 0), ch.lfsr.clock_div.resolve(null));
 
     // NR41 (addr 1, length) remains writable on power-off (DMG quirk in this impl)
     _ = ch.write(1, 17);
@@ -1213,13 +1300,13 @@ test "Channel(3) NR31/NR32/NR33/NR34 poke/peek basics" {
 
     // NR32: output level in bits 6..5; others read back as 1s with bit7=1
     _ = ch.write(2, 0b0110_0000); // output_level=0b11
-    try std.testing.expectEqual(.volume_25, ch.output_level.output_level);
+    try std.testing.expectEqual(.volume_25, ch.output_level.output_level.resolve(null));
     try std.testing.expectEqual(@as(u8, 0b1_11_11111), ch.peek(2));
 
     // NR33 low period, NR34 high period + length enable + trigger bit
     _ = ch.write(3, 0x34);
     _ = ch.write(4, 0b0100_0010); // len.enable=1, upper period=0b010, no trigger
-    try std.testing.expectEqual(@as(u11, 0b010_00110100), ch.period.period);
+    try std.testing.expectEqual(@as(u11, 0b010_00110100), ch.period.period.resolve(null));
 
     // peek(4): 7:1, 6:length.enable, 5..3:111, 2..0: upper period
     try std.testing.expectEqual(@as(u8, 0b1_1_111_010), ch.peek(4));
@@ -1229,6 +1316,8 @@ test "Channel(3) tick() respects DAC and active; baseline when inactive" {
     const eps: f32 = 1e-6;
     var ch = Channel(3).init();
     ch.should_panic();
+
+    _ = ch.write(1, 0xAA); // initialize some length
 
     // 1) DAC disabled -> 0.0
     _ = ch.write(0, 0x00);
@@ -1251,6 +1340,8 @@ test "Channel(3) output-level scaling maps nibble -> attenuation correctly" {
     const eps: f32 = 1e-6;
     var ch = Channel(3).init();
     ch.should_panic();
+
+    _ = ch.write(1, 0xAA); // initialize some length
 
     // Prepare: set a known nibble path via wave.current_value directly by advancing once
     ch.wave.samples[0] = 0xFF;
@@ -1336,6 +1427,7 @@ test "Channel(3) wave RAM access rules: illegal when active & not at sample tick
 
     // Activate with counter not at a wouldTick point -> access must fail (return 0xFF / illegal)
     _ = ch.write(0, 0x80); // DAC enable
+    _ = ch.write(1, 0xAA); // initialize some length
     _ = ch.write(3, 0x00); // low period = 0
     _ = ch.write(4, 0x80 | 0b000); // trigger with upper period=0 -> counter=0, wouldTick() = false
     {
@@ -1366,6 +1458,7 @@ test "Channel(3) length timer disables when enabled and wraps" {
 
     // Length=255 so one length 'tick' wraps to 0 and disables when enabled
     _ = ch.write(1, 255);
+    _ = ch.write(3, 0xAA); // initialize some period
     _ = ch.write(0, 0x80); // enable DAC
     _ = ch.write(4, 0xC0); // trigger + lengthEnable=1 (upper period=0)
 
@@ -1412,6 +1505,7 @@ test "Channel(3) illegal access flags: only NRx0 reads/writes are legal on ch3; 
 
     // Any other illegal address checks are exercised already across suite;
     // here just sanity-check a legal read via normal path
+    _ = ch.write(1, 0xAA);
     const rf1 = ch.read(1);
     try std.testing.expect(!rf1[0].illegal);
 }

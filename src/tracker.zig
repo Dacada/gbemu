@@ -230,17 +230,28 @@ const SongEventInternal = union(enum) {
                 return SongPlayError.NullChannel;
             }
 
-            const address: u16 = switch (channel.?) {
-                .ch1 => 0x04,
-                .ch2 => 0x09,
-                .ch3 => 0x0E,
-                .ch4 => 0x13,
+            const address_ctrl: u16, const address_val: u16 = switch (channel.?) {
+                .ch1 => .{ 0x04, 0x01 },
+                .ch2 => .{ 0x09, 0x06 },
+                .ch3 => .{ 0x0E, 0x0B },
+                .ch4 => .{ 0x13, 0x10 },
             };
 
-            var res = HardwareEvent.init(address);
-            res.clearBit(6);
+            var res_ctrl = HardwareEvent.init(address_ctrl);
+            res_ctrl.clearBit(6);
 
-            return singleElementArray(res, allocator, channel);
+            var res_val = HardwareEvent.init(address_val);
+            if (channel == .ch3) {
+                try res_val.setValue(0, @as(u8, 0));
+            } else {
+                try res_val.setValue(0, @as(u6, 0));
+            }
+
+            var res = try allocator.alloc(HardwareEvent, 3);
+            res[0] = res_ctrl;
+            res[1] = res_val;
+            res[2] = triggerEvent(channel.?);
+            return res;
         }
     },
     length_timer_enable: struct {
@@ -686,22 +697,26 @@ pub const SongComposer = struct {
                 .lengthTimer(null)
                 .duty(.one_in_two)
                 .envelope(null)
-                .volume(if (enabled) 15 else 0),
+                .volume(if (enabled) 15 else 0)
+                .pitch("A4"),
             .ch2 => self
                 .pan(true, true)
                 .lengthTimer(null)
                 .duty(.one_in_two)
                 .envelope(null)
-                .volume(if (enabled) 15 else 0),
+                .volume(if (enabled) 15 else 0)
+                .pitch("A4"),
             .ch3 => self
                 .pan(true, true)
                 .lengthTimer(null)
                 .dac(enabled)
-                .outputLevel(.full),
+                .outputLevel(.full)
+                .pitch("A4"),
             .ch4 => self
                 .pan(true, true)
                 .lengthTimer(null)
                 .envelope(null)
+                .lfsr(0, 0, .wide)
                 .volume(if (enabled) 15 else 0),
         };
     }

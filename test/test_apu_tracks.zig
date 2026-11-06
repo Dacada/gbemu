@@ -93,7 +93,7 @@ fn testTrack(allocator: std.mem.Allocator, song: tracker.Song, comptime name: []
         defer allocator.free(event);
 
         for (event) |write| {
-            //std.debug.print("addr={x} set={b} clear={b} | time={d}\n", .{ write.address, write.set_mask, write.clear_mask, total_ticks });
+            // std.debug.print("addr={x} set={b} clear={b} | time={d}\n", .{ write.address, write.set_mask, write.clear_mask, total_ticks });
             const addr = write.address;
             shadow[addr] = write.apply(shadow[addr]);
 
