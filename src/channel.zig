@@ -109,7 +109,7 @@ fn SweepPeriodUnit(number: comptime_int) type {
             }
         }
 
-        fn should_panic(self: *This) void {
+        fn shouldPanic(self: *This) void {
             self.pace.should_panic = true;
             self.individual_step.should_panic = true;
             self.direction.should_panic = true;
@@ -157,7 +157,7 @@ const VolumeUnit = struct {
         self.volume = self.initial_volume.resolve(flags);
     }
 
-    fn should_panic(self: *VolumeUnit) void {
+    fn shouldPanic(self: *VolumeUnit) void {
         self.pace.should_panic = true;
         self.direction.should_panic = true;
         self.initial_volume.should_panic = true;
@@ -254,7 +254,7 @@ fn PeriodUnit(number: comptime_int) type {
             self.counter = self.period.resolve(flags);
         }
 
-        fn should_panic(self: *This) void {
+        fn shouldPanic(self: *This) void {
             self.period.lo.should_panic = true;
             self.period.hi.should_panic = true;
         }
@@ -316,7 +316,7 @@ fn LengthUnit(number: comptime_int) type {
             self.counter = self.initial_counter.resolve(flags);
         }
 
-        fn should_panic(self: *This) void {
+        fn shouldPanic(self: *This) void {
             self.enable.should_panic = true;
             self.initial_counter.should_panic = true;
         }
@@ -346,7 +346,7 @@ const SquareWaveUnit = struct {
         return waveforms[@backingInt(self.duty.resolve(null))][self.counter];
     }
 
-    fn should_panic(self: *SquareWaveUnit) void {
+    fn shouldPanic(self: *SquareWaveUnit) void {
         self.duty.should_panic = true;
     }
 };
@@ -417,7 +417,7 @@ const LfsrUnit = struct {
         self.register = 0;
     }
 
-    fn should_panic(self: *LfsrUnit) void {
+    fn shouldPanic(self: *LfsrUnit) void {
         self.clock_div.should_panic = true;
         self.clock_shift.should_panic = true;
         self.width.should_panic = true;
@@ -439,7 +439,7 @@ const OutputLevelUnit = struct {
         return sample >> (@backingInt(output_level) - 1);
     }
 
-    fn should_panic(self: *OutputLevelUnit) void {
+    fn shouldPanic(self: *OutputLevelUnit) void {
         self.output_level.should_panic = true;
     }
 };
@@ -812,14 +812,14 @@ pub fn Channel(number: comptime_int) type {
             return flags;
         }
 
-        pub fn should_panic(self: *This) void {
-            if (number == 1) self.period_sweep.should_panic();
-            if (number != 4) self.period.should_panic();
-            if (number != 3) self.volume.should_panic();
-            if (number == 3) self.output_level.should_panic();
-            self.length.should_panic();
-            if (number == 1 or number == 2) self.square.should_panic();
-            if (number == 4) self.lfsr.should_panic();
+        pub fn shouldPanic(self: *This) void {
+            if (number == 1) self.period_sweep.shouldPanic();
+            if (number != 4) self.period.shouldPanic();
+            if (number != 3) self.volume.shouldPanic();
+            if (number == 3) self.output_level.shouldPanic();
+            self.length.shouldPanic();
+            if (number == 1 or number == 2) self.square.shouldPanic();
+            if (number == 4) self.lfsr.shouldPanic();
         }
     };
 }
@@ -837,7 +837,7 @@ test "dac() maps 4-bit samples to [-1,1]" {
 
 test "write(2) enables/disables DAC according to initial_volume/direction" {
     var ch = Channel(2).init();
-    ch.should_panic();
+    ch.shouldPanic();
 
     // volume=0, direction=0 -> DAC disabled
     _ = ch.write(2, 0x00);
@@ -858,7 +858,7 @@ test "write(2) enables/disables DAC according to initial_volume/direction" {
 
 test "poke/peek round-trips for NR21 (addr 1) and NR23 (addr 3)" {
     var ch = Channel(2).init();
-    ch.should_panic();
+    ch.shouldPanic();
 
     // NR21: duty in bits 7..6, length in bits 5..0
     const wd: u2 = 0b10;
@@ -873,7 +873,7 @@ test "poke/peek round-trips for NR21 (addr 1) and NR23 (addr 3)" {
 
 test "trigger sets active, length, volume envelope and period counters" {
     var ch = Channel(2).init();
-    ch.should_panic();
+    ch.shouldPanic();
 
     // Set NR21 (duty + length)
     const duty: u2 = 0b01;
@@ -899,7 +899,7 @@ test "trigger sets active, length, volume envelope and period counters" {
 test "tick() obeys dacEnabled and active; waveform progression matches table" {
     const eps: f32 = 1e-6;
     var ch = Channel(2).init();
-    ch.should_panic();
+    ch.shouldPanic();
 
     // 1) DAC disabled -> 0.0 output
     _ = ch.write(2, 0x00);
@@ -935,7 +935,7 @@ test "tick() obeys dacEnabled and active; waveform progression matches table" {
 
 test "length timer disables channel when enabled and wraps" {
     var ch = Channel(2).init();
-    ch.should_panic();
+    ch.shouldPanic();
 
     // Prepare: length=63 so one length tick wraps to 0 and disables.
     _ = ch.write(1, (0b01 << 6) | 63); // any duty, length=63
@@ -954,7 +954,7 @@ test "length timer disables channel when enabled and wraps" {
 
 test "volume envelope pace increases/decreases volume as configured" {
     var ch = Channel(2).init();
-    ch.should_panic();
+    ch.shouldPanic();
 
     // initial_volume=4, direction=1 (increase), pace=2
     _ = ch.write(1, (0b01 << 6) | 63); // any duty, length=63
@@ -973,7 +973,7 @@ test "volume envelope pace increases/decreases volume as configured" {
 
 test "poweroff blocks writes (except NR21 on DMG) and prevents trigger" {
     var ch = Channel(2).init();
-    ch.should_panic();
+    ch.shouldPanic();
 
     ch.poweroff();
 
@@ -992,7 +992,7 @@ test "poweroff blocks writes (except NR21 on DMG) and prevents trigger" {
 
 test "isActive only true when both active and DAC enabled" {
     var ch = Channel(2).init();
-    ch.should_panic();
+    ch.shouldPanic();
 
     _ = ch.write(1, (0b01 << 6) | 63); // any duty, length=63
     _ = ch.write(3, 0xAA); // initialize period
@@ -1015,7 +1015,7 @@ test "isActive only true when both active and DAC enabled" {
 
 test "NR10 (addr 0) poke/peek round-trip for Channel(1)" {
     var ch = Channel(1).init();
-    ch.should_panic();
+    ch.shouldPanic();
 
     // NR10 format: 1 | pace(3) | direction(1) | step(3)
     const pace: u3 = 0b101;
@@ -1031,7 +1031,7 @@ test "NR10 (addr 0) poke/peek round-trip for Channel(1)" {
 
 test "Channel(1) trigger with sweep step add checks overflow immediately and can disable on overflow" {
     var ch = Channel(1).init();
-    ch.should_panic();
+    ch.shouldPanic();
 
     _ = ch.write(1, (0b01 << 6) | 63); // any duty, length=63
 
@@ -1055,7 +1055,7 @@ test "Channel(1) trigger with sweep step add checks overflow immediately and can
 
 test "Channel(1) period sweep subtract updates period on schedule (pace=2 -> 1 update after 8 divticks)" {
     var ch = Channel(1).init();
-    ch.should_panic();
+    ch.shouldPanic();
 
     _ = ch.write(1, (0b01 << 6) | 63); // any duty, length=63
 
@@ -1085,7 +1085,7 @@ test "Channel(1) period sweep subtract updates period on schedule (pace=2 -> 1 u
 
 test "Channel(1) paced increment may overflow on a subsequent step (pace=1)" {
     var ch = Channel(1).init();
-    ch.should_panic();
+    ch.shouldPanic();
 
     _ = ch.write(1, (0b01 << 6) | 63); // any duty, length=63
 
@@ -1116,7 +1116,7 @@ test "Channel(1) paced increment may overflow on a subsequent step (pace=1)" {
 
 test "Channel(4) NR43 (addr 3) poke/peek round-trip + updateTarget math" {
     var ch = Channel(4).init();
-    ch.should_panic();
+    ch.shouldPanic();
 
     // Case 1: clock_div = 0, clock_shift = 4, width = 0
     // Expected target = 1 << (shift + 1) = 1 << 5 = 32
@@ -1147,7 +1147,7 @@ test "Channel(4) NR43 (addr 3) poke/peek round-trip + updateTarget math" {
 
 test "Channel(4) NR44 (addr 4) peek exposes LEN enable and fixed ones; trigger works" {
     var ch = Channel(4).init();
-    ch.should_panic();
+    ch.shouldPanic();
 
     _ = ch.write(1, (0b01 << 6) | 63); // any duty, length=63
 
@@ -1171,7 +1171,7 @@ test "Channel(4) NR44 (addr 4) peek exposes LEN enable and fixed ones; trigger w
 test "Channel(4) DAC gating: write(2) enables/disables; tick() respects DAC and active" {
     const eps: f32 = 1e-6;
     var ch = Channel(4).init();
-    ch.should_panic();
+    ch.shouldPanic();
 
     _ = ch.write(1, (0b01 << 6) | 63); // any duty, length=63
 
@@ -1196,7 +1196,7 @@ test "Channel(4) DAC gating: write(2) enables/disables; tick() respects DAC and 
 
 test "Channel(4) LFSR.sample() basic sequences: width=0 vs width=1" {
     var ch = Channel(4).init();
-    ch.should_panic();
+    ch.shouldPanic();
 
     // Start from a known state
     ch.lfsr.reset();
@@ -1221,7 +1221,7 @@ test "Channel(4) LFSR.sample() basic sequences: width=0 vs width=1" {
 
 test "Channel(4) length timer disables channel when enabled and wraps" {
     var ch = Channel(4).init();
-    ch.should_panic();
+    ch.shouldPanic();
 
     // Prepare: length=63 so one length 'tick' wraps to 0 and disables.
     _ = ch.write(1, 63); // NR41 length only for channel 4
@@ -1238,7 +1238,7 @@ test "Channel(4) length timer disables channel when enabled and wraps" {
 
 test "Channel(4) poweroff blocks writes (except NR41) and prevents trigger" {
     var ch = Channel(4).init();
-    ch.should_panic();
+    ch.shouldPanic();
 
     ch.poweroff();
 
@@ -1259,7 +1259,7 @@ test "Channel(4) poweroff blocks writes (except NR41) and prevents trigger" {
 
 test "Channel(4) illegal NRx0 access: read/write flag as illegal" {
     var ch = Channel(4).init();
-    ch.should_panic();
+    ch.shouldPanic();
 
     // Write to addr 0 should be flagged illegal
     const wf = ch.write(0, 0x12);
@@ -1272,7 +1272,7 @@ test "Channel(4) illegal NRx0 access: read/write flag as illegal" {
 
 test "Channel(3) NR30 (addr 0) poke/peek round-trip + DAC gating" {
     var ch = Channel(3).init();
-    ch.should_panic();
+    ch.shouldPanic();
 
     // Initially DAC disabled
     try std.testing.expect(!ch.control.dac_enabled);
@@ -1292,7 +1292,7 @@ test "Channel(3) NR30 (addr 0) poke/peek round-trip + DAC gating" {
 
 test "Channel(3) NR31/NR32/NR33/NR34 poke/peek basics" {
     var ch = Channel(3).init();
-    ch.should_panic();
+    ch.shouldPanic();
 
     // NR31: 8-bit length, echoed directly by peek(1)
     _ = ch.write(1, 0xA5);
@@ -1315,7 +1315,7 @@ test "Channel(3) NR31/NR32/NR33/NR34 poke/peek basics" {
 test "Channel(3) tick() respects DAC and active; baseline when inactive" {
     const eps: f32 = 1e-6;
     var ch = Channel(3).init();
-    ch.should_panic();
+    ch.shouldPanic();
 
     _ = ch.write(1, 0xAA); // initialize some length
 
@@ -1339,7 +1339,7 @@ test "Channel(3) tick() respects DAC and active; baseline when inactive" {
 test "Channel(3) output-level scaling maps nibble -> attenuation correctly" {
     const eps: f32 = 1e-6;
     var ch = Channel(3).init();
-    ch.should_panic();
+    ch.shouldPanic();
 
     _ = ch.write(1, 0xAA); // initialize some length
 
@@ -1381,7 +1381,7 @@ test "Channel(3) output-level scaling maps nibble -> attenuation correctly" {
 
 test "WaveSamplerUnit.sample() returns nibbles in [hi, lo, hi, lo, ...] order starting at index 1" {
     var ch = Channel(3).init();
-    ch.should_panic();
+    ch.shouldPanic();
 
     // Set first four bytes to known patterns: [AB, CD, EF, 01] in hex
     ch.wave.samples[0] = 0xAB; // A=high, B=low
@@ -1411,7 +1411,7 @@ test "WaveSamplerUnit.sample() returns nibbles in [hi, lo, hi, lo, ...] order st
 
 test "Channel(3) wave RAM access rules: illegal when active & not at sample tick; OK otherwise" {
     var ch = Channel(3).init();
-    ch.should_panic();
+    ch.shouldPanic();
 
     // Helper alias
     const W = Channel(3).wave_memory_interface;
@@ -1454,7 +1454,7 @@ test "Channel(3) wave RAM access rules: illegal when active & not at sample tick
 
 test "Channel(3) length timer disables when enabled and wraps" {
     var ch = Channel(3).init();
-    ch.should_panic();
+    ch.shouldPanic();
 
     // Length=255 so one length 'tick' wraps to 0 and disables when enabled
     _ = ch.write(1, 255);
@@ -1472,7 +1472,7 @@ test "Channel(3) length timer disables when enabled and wraps" {
 
 test "Channel(3) poweroff zeros NR30/NR32/NR33/NR34 (NR31 length spared on DMG quirk)" {
     var ch = Channel(3).init();
-    ch.should_panic();
+    ch.shouldPanic();
 
     // Seed non-zero values
     _ = ch.write(0, 0x80);
@@ -1495,7 +1495,7 @@ test "Channel(3) poweroff zeros NR30/NR32/NR33/NR34 (NR31 length spared on DMG q
 
 test "Channel(3) illegal access flags: only NRx0 reads/writes are legal on ch3; others illegal" {
     var ch = Channel(3).init();
-    ch.should_panic();
+    ch.shouldPanic();
 
     // addr 0 is legal (unlike ch2/ch4)
     const wf0 = ch.write(0, 0x80);

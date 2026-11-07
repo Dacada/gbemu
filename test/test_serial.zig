@@ -37,7 +37,7 @@ test "serial transfer" {
     const serial = container.get_serial();
     const sched = container.get_scheduler();
 
-    serial.should_panic();
+    serial.shouldPanic();
 
     // Wait a few cycles
     try spin(emu, 100);

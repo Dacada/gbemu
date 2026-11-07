@@ -70,7 +70,7 @@ fn testTrack(allocator: std.mem.Allocator, song: tracker.Song, comptime name: []
     var container = Container.init();
 
     var apu = container.get_apu();
-    apu.should_panic();
+    apu.shouldPanic();
 
     var backend = container.get_audio_backend();
     try backend.setup(allocator);

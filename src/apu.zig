@@ -444,11 +444,11 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
             return ret;
         }
 
-        pub fn should_panic(self: *This) void {
-            self.channel1.should_panic();
-            self.channel2.should_panic();
-            self.channel3.should_panic();
-            self.channel4.should_panic();
+        pub fn shouldPanic(self: *This) void {
+            self.channel1.shouldPanic();
+            self.channel2.shouldPanic();
+            self.channel3.shouldPanic();
+            self.channel4.shouldPanic();
         }
     };
 }

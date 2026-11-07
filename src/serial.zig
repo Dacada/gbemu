@@ -33,7 +33,7 @@ pub fn Serial(Scheduler: type, Interrupt: type) type {
         }
 
         /// only for testing: panic when attempting to read undefined values
-        pub fn should_panic(self: *This) void {
+        pub fn shouldPanic(self: *This) void {
             self.data.should_panic = true;
             self.transfer_enable.should_panic = true;
             self.clock_select.should_panic = true;
@@ -124,7 +124,7 @@ const TestSerial = TestContainer.Serial;
 test "Serial register read/write" {
     var container = TestContainer.init();
     var serial = container.get_serial();
-    serial.should_panic();
+    serial.shouldPanic();
 
     // Test writing to and reading from data register (0)
     serial.poke(0, 0xA5);
@@ -139,7 +139,7 @@ test "Serial register read/write" {
 test "Serial transfer initiation conditions" {
     var container = TestContainer.init();
     var serial = container.get_serial();
-    serial.should_panic();
+    serial.shouldPanic();
 
     // Initially not running
     try std.testing.expect(!serial.running);
@@ -156,7 +156,7 @@ test "Serial transfer initiation conditions" {
 test "Serial bit shift behavior" {
     var container = TestContainer.init();
     var serial = container.get_serial();
-    serial.should_panic();
+    serial.shouldPanic();
 
     serial.data.set(0b1010_0000);
 
@@ -170,7 +170,7 @@ test "Serial bit shift behavior" {
 test "Serial transfer completion" {
     var container = TestContainer.init();
     var serial = container.get_serial();
-    serial.should_panic();
+    serial.shouldPanic();
 
     serial.data.set(0x00);
     serial.transfer_enable.set(true);
