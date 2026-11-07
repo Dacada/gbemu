@@ -78,14 +78,25 @@ fn testTrack(allocator: std.mem.Allocator, song: tracker.Song, comptime name: []
     // container won't deinit stuff for us
     defer backend.deinit();
 
-    const events = try tracker.play(song, allocator);
-    defer allocator.free(events);
-
-    // keep exepected register state in a shadow register, initialized to 0
-    var shadow: [0x30]u8 = @splat(0);
-
     // Start sound system
     try std.testing.expect(!apu.write(0x16, 0b1000_0000).any());
+
+    // keep exepected register state in a shadow register
+    var shadow: [0x30]u8 = @splat(0);
+
+    const init_writes = try tracker.initialize(song, allocator);
+    defer allocator.free(init_writes);
+
+    // initialize the apu registers
+    for (init_writes) |write| {
+        const addr = write.address;
+        shadow[addr] = write.value;
+        const write_flags = apu.write(addr, write.value);
+        try std.testing.expect(!write_flags.any());
+    }
+
+    const events = try tracker.play(song, allocator);
+    defer allocator.free(events);
 
     var total_ticks: usize = 0;
     var div_counter: usize = 0;
@@ -124,6 +135,7 @@ test "test_track_1" {
         .channel(.ch3).setup(false)
         .channel(.ch4).setup(false)
         .channel(.ch2).setup(true)
+        .begin()
         .phrase(&.{
             .{ "A4", meta.beat(1, 4) },
             .{ "G#4", meta.beat(1, 4) },
@@ -175,6 +187,7 @@ test "happy birthday" {
         .channel(.ch3).setup(false)
         .channel(.ch4).setup(false)
         .channel(.ch2).setup(true)
+        .begin()
         .phrase(&.{
             // Happy birthday to you
             .{ "G4", meta.beat(11, 32) }, .{ null, meta.beat(1, 32) },
@@ -272,10 +285,11 @@ test "showcase" {
 
     var c = song.compose(allocator)
         .channel(null).setup(true)
-        .channel(.ch1).setup(true).advance(1)
-        .channel(.ch2).setup(true).advance(1)
-        .channel(.ch3).setup(true).advance(1)
-        .channel(.ch4).setup(true).advance(1);
+        .channel(.ch1).setup(true)
+        .channel(.ch2).setup(true)
+        .channel(.ch3).setup(true)
+        .channel(.ch4).setup(true)
+        .begin();
 
     c = c.channel(.ch1);
     var ear: usize = 1;

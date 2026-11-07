@@ -610,9 +610,11 @@ test "SongEvent pan" {
 
 pub const SongComposer = struct {
     allocator: std.mem.Allocator,
+    init_events: *std.ArrayList(SongEvent),
     events: *std.ArrayList(SongEvent),
     tpb: usize,
 
+    begun: bool,
     cursors: [4]usize,
     globalCursor: usize,
 
@@ -620,11 +622,13 @@ pub const SongComposer = struct {
 
     selectedChannel: ?Channel,
 
-    pub fn init(allocator: std.mem.Allocator, events: *std.ArrayList(SongEvent), tpb: usize) SongComposer {
+    pub fn init(allocator: std.mem.Allocator, events: *std.ArrayList(SongEvent), init_events: *std.ArrayList(SongEvent), tpb: usize) SongComposer {
         return SongComposer{
             .allocator = allocator,
+            .init_events = init_events,
             .events = events,
             .tpb = tpb,
+            .begun = false,
             .cursors = .{ 0, 0, 0, 0 },
             .globalCursor = 0,
             .volumes = .{ 15, 15, 15, 15 },
@@ -633,14 +637,27 @@ pub const SongComposer = struct {
     }
 
     fn addEvent(self: SongComposer, event: SongEventInternal) void {
-        const cursor = if (self.selectedChannel == null)
-            self.globalCursor
-        else
-            self.cursors[@backingInt(self.selectedChannel.?)];
-        const beat = cursor / self.tpb;
-        const tick = cursor % self.tpb;
+        if (self.begun) {
+            const cursor = if (self.selectedChannel == null)
+                self.globalCursor
+            else
+                self.cursors[@backingInt(self.selectedChannel.?)];
+            const beat = cursor / self.tpb;
+            const tick = cursor % self.tpb;
+            self.addEventInner(event, beat, tick, self.events);
+        } else {
+            self.addEventInner(event, 0, 0, self.init_events);
+        }
+    }
 
-        self.events.append(self.allocator, .{
+    fn addEventInner(
+        self: SongComposer,
+        event: SongEventInternal,
+        beat: usize,
+        tick: usize,
+        events: *std.ArrayList(SongEvent),
+    ) void {
+        events.append(self.allocator, .{
             .beat = beat,
             .tick = tick,
             .channel = self.selectedChannel,
@@ -719,6 +736,12 @@ pub const SongComposer = struct {
                 .lfsr(0, 0, .wide)
                 .volume(if (enabled) 15 else 0),
         };
+    }
+
+    pub fn begin(self: SongComposer) SongComposer {
+        var next = self;
+        next.begun = true;
+        return next;
     }
 
     pub fn apu(self: SongComposer, state: bool) SongComposer {
@@ -951,6 +974,9 @@ pub const SongComposer = struct {
         if (self.selectedChannel == null) {
             @panic("attempt to advance global cursor (use .syncTo instead)");
         }
+        if (!self.begun) {
+            @panic("cannot advance time before beginning");
+        }
         var next = self;
         next.cursors[@backingInt(self.selectedChannel.?)] += amount;
         return next;
@@ -964,22 +990,25 @@ pub const Song = struct {
     metadata: SongMetadata,
     waveforms: std.ArrayList(SongWaveform),
     events: std.ArrayList(SongEvent),
+    init_events: std.ArrayList(SongEvent),
 
     pub fn init(allocator: std.mem.Allocator, metadata: SongMetadata) !Song {
         return Song{
             .metadata = metadata,
             .waveforms = try std.ArrayList(SongWaveform).initCapacity(allocator, 16),
             .events = try std.ArrayList(SongEvent).initCapacity(allocator, 128),
+            .init_events = try std.ArrayList(SongEvent).initCapacity(allocator, 128),
         };
     }
 
     pub fn deinit(self: *Song, allocator: std.mem.Allocator) void {
         self.waveforms.deinit(allocator);
+        self.init_events.deinit(allocator);
         self.events.deinit(allocator);
     }
 
     pub fn compose(self: *Song, allocator: std.mem.Allocator) SongComposer {
-        return SongComposer.init(allocator, &self.events, self.metadata.tpb);
+        return SongComposer.init(allocator, &self.events, &self.init_events, self.metadata.tpb);
     }
 };
 
@@ -1067,6 +1096,51 @@ fn sortTriggerResigsterWritesLast(_: void, a: HardwareEvent, b: HardwareEvent) b
     return a.address < b.address;
 }
 
+fn merge_events_with_message(event: HardwareEvent, other: HardwareEvent, location: usize) SongPlayError!HardwareEvent {
+    return event.merge(other) catch |e| {
+        std.debug.print("Failed to merge hardware events: {any}\n", .{e});
+        std.debug.print("Current hardware event: {any}\n", .{event});
+        std.debug.print("Other hardware event: {any}\n", .{other});
+        std.debug.print("Location: {d}\n", .{location});
+        return e;
+    };
+}
+
+const SimpleWrite = struct {
+    address: u16,
+    value: u8,
+};
+
+pub fn initialize(song: Song, allocator: std.mem.Allocator) ![]SimpleWrite {
+    var event_per_register: [0x30]?HardwareEvent = @splat(null);
+
+    for (song.init_events.items) |song_event| {
+        const new_hardware_events = try song_event.intoHardwareEvents(allocator, song);
+        defer allocator.free(new_hardware_events);
+
+        for (new_hardware_events) |hardware_event| {
+            const addr = hardware_event.address;
+            if (event_per_register[addr]) |other_hardware_event| {
+                event_per_register[addr] = try merge_events_with_message(hardware_event, other_hardware_event, 0);
+            } else {
+                event_per_register[addr] = hardware_event;
+            }
+        }
+    }
+
+    var result = try std.ArrayList(SimpleWrite).initCapacity(allocator, 0x30);
+    for (0.., event_per_register) |addr, event| {
+        if (event) |evnt| {
+            try result.append(allocator, .{
+                .address = @intCast(addr),
+                .value = evnt.apply(0),
+            });
+        }
+    }
+
+    return result.toOwnedSlice(allocator);
+}
+
 pub fn play(song: Song, allocator: std.mem.Allocator) ![][]HardwareEvent {
     var hardware_events = try std.ArrayList(std.ArrayList(HardwareEvent)).initCapacity(allocator, 256);
 
@@ -1096,13 +1170,7 @@ pub fn play(song: Song, allocator: std.mem.Allocator) ![][]HardwareEvent {
             var added = false;
             for (hardware_events.items[location].items, 0..) |other_event, i| {
                 if (other_event.address == hardware_event.address) {
-                    hardware_events.items[location].items[i] = hardware_event.merge(other_event) catch |e| {
-                        std.debug.print("Failed to merge hardware events: {any}\n", .{e});
-                        std.debug.print("Current hardware event: {any}\n", .{hardware_event});
-                        std.debug.print("Other hardware event: {any}\n", .{other_event});
-                        std.debug.print("Location: {d}\n", .{location});
-                        return e;
-                    };
+                    hardware_events.items[location].items[i] = try merge_events_with_message(hardware_event, other_event, location);
                     added = true;
                 }
             }
