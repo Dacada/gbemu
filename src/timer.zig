@@ -1,5 +1,6 @@
 const MemoryFlag = @import("memory_flag.zig").MemoryFlag;
 const InterruptKind = @import("interrupt_kind.zig").InterruptKind;
+const TrackedValue = @import("tracked_value.zig").TrackedValue;
 const TAC = @import("mmio_register.zig").TAC;
 
 pub fn Timer(Apu: type, Interrupt: type) type {
@@ -9,11 +10,11 @@ pub fn Timer(Apu: type, Interrupt: type) type {
         apu: *Apu,
         intr: *Interrupt,
 
-        div: u16,
-        tima: u8,
-        tma: u8,
-        enable: bool,
-        clock_select: TAC.ClockSelect,
+        div: TrackedValue(u16),
+        tima: TrackedValue(u8),
+        tma: TrackedValue(u8),
+        enable: TrackedValue(bool),
+        clock_select: TrackedValue(TAC.ClockSelect),
 
         tima_overflow_next_tick: bool,
         wrote_tima_this_tick: bool,
@@ -22,11 +23,11 @@ pub fn Timer(Apu: type, Interrupt: type) type {
             return This{
                 .apu = apu,
                 .intr = intr,
-                .div = undefined,
-                .tima = undefined,
-                .tma = undefined,
-                .enable = undefined,
-                .clock_select = undefined,
+                .div = .init(0xAAAA),
+                .tima = .init(0xAA),
+                .tma = .init(0xAA),
+                .enable = .init(false),
+                .clock_select = .init(.freq_65536),
                 .tima_overflow_next_tick = false,
                 .wrote_tima_this_tick = false,
             };
@@ -39,100 +40,113 @@ pub fn Timer(Apu: type, Interrupt: type) type {
                 self.tima_overflow_next_tick = false;
             }
 
-            const prev_div = self.div;
-            self.div +%= 1;
-            self.triggerTimerTick(prev_div, self.enable, self.clock_select);
+            const prev_div = self.div.resolve(null);
+            self.div.set(prev_div +% 1);
+            self.triggerTimerTick(prev_div, self.enable.resolve(null), self.clock_select.resolve(null), null);
             self.wrote_tima_this_tick = false;
         }
 
-        pub fn peek(self: *This, addr: u16) u8 {
-            return switch (addr) {
-                0 => @intCast(self.div >> 8),
-                1 => self.tima,
-                2 => self.tma,
+        fn inner_read(self: *This, addr: u16) struct { MemoryFlag, u8 } {
+            var flag: MemoryFlag = .{};
+            const val: u8 = switch (addr) {
+                0 => @intCast(self.div.resolve(&flag) >> 8),
+                1 => self.tima.resolve(&flag),
+                2 => self.tma.resolve(&flag),
                 3 => @bitCast(TAC{
-                    .clock_select = self.clock_select,
-                    .enable = self.enable,
+                    .clock_select = self.clock_select.resolve(&flag),
+                    .enable = self.enable.resolve(&flag),
                 }),
                 else => unreachable,
             };
+
+            return .{ flag, val };
         }
 
-        pub fn poke(self: *This, addr: u16, val: u8) void {
+        fn inner_write(self: *This, addr: u16, val: u8) void {
             switch (addr) {
-                0 => self.div = @as(u16, @intCast(val)) << 8,
-                1 => self.tima = val,
-                2 => self.tma = val,
+                0 => self.div.set(@as(u16, @intCast(val)) << 8),
+                1 => self.tima.set(val),
+                2 => self.tma.set(val),
                 3 => {
                     const reg: TAC = @bitCast(val);
-                    self.enable = reg.enable;
-                    self.clock_select = reg.clock_select;
+                    self.enable.set(reg.enable);
+                    self.clock_select.set(reg.clock_select);
                 },
                 else => unreachable,
             }
         }
 
+        pub fn peek(self: *This, addr: u16) u8 {
+            return self.inner_read(addr).@"1";
+        }
+
+        pub fn poke(self: *This, addr: u16, val: u8) void {
+            return self.inner_write(addr, val);
+        }
+
         pub fn read(self: *This, addr: u16) struct { MemoryFlag, u8 } {
-            return .{ .{}, self.peek(addr) };
+            return self.inner_read(addr);
         }
 
         pub fn write(self: *This, addr: u16, val: u8) MemoryFlag {
+            var flag: MemoryFlag = .{};
+
             switch (addr) {
                 0 => {
-                    const prev_div = self.div;
-                    self.div = 0;
-                    self.triggerTimerTick(prev_div, self.enable, self.clock_select);
+                    const prev_div = self.div.resolve(&flag);
+                    self.div.set(0);
+                    self.triggerTimerTick(prev_div, self.enable.resolve(&flag), self.clock_select.resolve(&flag), &flag);
                 },
                 1 => {
                     // Assume tick will be called AFTER the CPU's tick, overwriting this write with TMA if needed
-                    self.poke(addr, val);
+                    self.inner_write(addr, val);
                     // HOWEVER, if instead of overwriting it THIS TICK we would overwrite it NEXT TICK, then we DO NOT because of the write "cancelling" the overflow
                     self.wrote_tima_this_tick = true;
                 },
                 2 => {
                     // If this cycle would update tima, it will do so with the written to value, will work assuming timer is updated AFTER cpu
-                    self.poke(addr, val);
+                    self.inner_write(addr, val);
                 },
                 3 => {
-                    const prev_enable = self.enable;
-                    const prev_clock_select = self.clock_select;
-                    self.poke(addr, val);
-                    self.triggerTimerTick(self.div, prev_enable, prev_clock_select);
+                    const prev_enable = self.enable.resolve(&flag);
+                    const prev_clock_select = self.clock_select.resolve(&flag);
+                    self.inner_write(addr, val);
+                    self.triggerTimerTick(self.div.resolve(&flag), prev_enable, prev_clock_select, &flag);
                 },
                 else => unreachable,
             }
-            return .{};
+            return flag;
         }
 
         // TODO: check if worth optimizing
-        fn triggerTimerTick(self: *This, prev_div: u16, prev_enable: bool, prev_clock_select: TAC.ClockSelect) void {
+        fn triggerTimerTick(self: *This, prev_div: u16, prev_enable: bool, prev_clock_select: TAC.ClockSelect, flag: ?*MemoryFlag) void {
             // DMG ONLY -- DIV-APU event uses a different bit in CGB in double speed mode
-            if (prev_div & (1 << 10) != 0 and self.div & (1 << 10) == 0) {
+            if (prev_div & (1 << 10) != 0 and self.div.resolve(flag) & (1 << 10) == 0) {
                 self.apu.divtick();
             }
 
             // DMG ONLY -- In CGB the hardware is slightly different, review: https://gbdev.io/pandocs/Timer_Obscure_Behaviour.html#relation-between-timer-and-divider-register
 
-            const mask = getBitMaskForDiv(self.clock_select);
+            const mask = getBitMaskForDiv(self.clock_select.resolve(flag));
             const prev_mask = getBitMaskForDiv(prev_clock_select);
 
-            const bit = self.div & mask != 0;
+            const bit = self.div.resolve(flag) & mask != 0;
             const prev_bit = prev_div & prev_mask != 0;
 
-            const curr = bit and self.enable;
+            const curr = bit and self.enable.resolve(flag);
             const prev = prev_bit and prev_enable;
 
             if (prev and !curr) {
-                self.doTimerTick();
+                self.doTimerTick(flag);
             }
         }
 
-        fn doTimerTick(self: *This) void {
-            const prev_tima = self.tima;
-            self.tima +%= 1;
+        fn doTimerTick(self: *This, flag: ?*MemoryFlag) void {
+            const prev_tima = self.tima.resolve(flag);
+            self.tima.set(prev_tima +% 1);
             const mask = 1 << 7;
 
-            if (prev_tima & mask != 0 and self.tima & mask == 0) {
+            if (prev_tima & mask != 0 and self.tima.resolve(flag) & mask == 0) {
                 if (!self.wrote_tima_this_tick) {
                     self.tima_overflow_next_tick = true;
                 }
@@ -148,6 +162,14 @@ pub fn Timer(Apu: type, Interrupt: type) type {
                 .freq_4096 => 1 << 9,
             };
         }
+
+        fn shouldPanic(self: *This) void {
+            self.div.should_panic = true;
+            self.tima.should_panic = true;
+            self.tma.should_panic = true;
+            self.enable.should_panic = true;
+            self.clock_select.should_panic = true;
+        }
     };
 }
 
@@ -162,44 +184,51 @@ const TestTimer = TestContainer.Timer;
 test "timer increments TIMA when enabled and selected DIV bit falls" {
     var container = TestContainer.init();
     var timer = container.get_timer();
-    timer.div = 0b00000001111111111; // bit 9 set
-    timer.enable = true; // enable
-    timer.clock_select = .freq_4096; // select bit 9
-    timer.tima = 0xAB;
+    timer.shouldPanic();
+
+    timer.div.set(0b00000001111111111); // bit 9 set
+    timer.enable.set(true); // enable
+    timer.clock_select.set(.freq_4096); // select bit 9
+    timer.tima.set(0xAB);
 
     timer.tick(); // fall of bit 9
-    try std.testing.expectEqual(0xAC, timer.tima);
+    try std.testing.expectEqual(0xAC, timer.tima.resolve(null));
 }
 
 test "timer does not increment TIMA when disabled" {
     var container = TestContainer.init();
     var timer = container.get_timer();
-    timer.div = 0b00000001111111111; // bit 9 set
-    timer.enable = false; // disabled
-    timer.clock_select = .freq_4096; // bit 9
+    timer.shouldPanic();
 
-    const startTima = timer.tima;
+    timer.div.set(0b00000001111111111); // bit 9 set
+    timer.enable.set(false); // disabled
+    timer.clock_select.set(.freq_4096); // bit 9
+    timer.tima.set(0xAB);
+
+    const startTima = timer.tima.resolve(null);
     timer.tick();
-    try std.testing.expectEqual(startTima, timer.tima);
+    try std.testing.expectEqual(startTima, timer.tima.resolve(null));
 }
 
 test "TIMA overflows and sets interrupt on next tick" {
     var container = TestContainer.init();
     const intr = container.get_interrupt();
     var timer = container.get_timer();
-    timer.enable = true; // enabled
-    timer.clock_select = .freq_4096; // bit 9
-    timer.tma = 0xAB;
-    timer.div = 0b00000001111111111; // bit 9 set
+    timer.shouldPanic();
 
-    timer.tima = 0xFF;
+    timer.enable.set(true); // enabled
+    timer.clock_select.set(.freq_4096); // bit 9
+    timer.tma.set(0xAB);
+    timer.div.set(0b00000001111111111); // bit 9 set
+
+    timer.tima.set(0xFF);
     timer.tick(); // triggers doTimerTick, overflow latch
 
-    try std.testing.expectEqual(0x00, timer.tima);
+    try std.testing.expectEqual(0x00, timer.tima.resolve(null));
     try std.testing.expectEqual(false, intr.requested != null);
 
     timer.tick(); // overflow happens
-    try std.testing.expectEqual(0xAB, timer.tima);
+    try std.testing.expectEqual(0xAB, timer.tima.resolve(null));
     try std.testing.expectEqual(InterruptKind.timer, intr.requested.?);
 }
 
@@ -207,67 +236,79 @@ test "writing to TIMA cancels overflow latching" {
     var container = TestContainer.init();
     const intr = container.get_interrupt();
     var timer = container.get_timer();
-    timer.enable = true;
-    timer.clock_select = .freq_4096;
-    timer.tma = 0x55;
-    timer.div = 0b00000001111111111; // bit 9 set
-    timer.tima = 0xFF;
+    timer.shouldPanic();
+
+    timer.enable.set(true);
+    timer.clock_select.set(.freq_4096);
+    timer.tma.set(0x55);
+    timer.div.set(0b00000001111111111); // bit 9 set
+    timer.tima.set(0xFF);
 
     _ = timer.write(1, 0xFF); // cancel overflow
     timer.tick(); // no overflow detected
     timer.tick(); // no latched interrupt and tma write
-    try std.testing.expectEqual(0x00, timer.tima);
+    try std.testing.expectEqual(0x00, timer.tima.resolve(null));
     try std.testing.expectEqual(null, intr.requested);
 }
 
 test "writing to DIV causes TIMA tick if falling edge is triggered" {
     var container = TestContainer.init();
     var timer = container.get_timer();
-    timer.enable = true; // enabled
-    timer.clock_select = .freq_4096; // bit 9
-    timer.div = 0b00000001111111111; // bit 9 set
-    const startTima = timer.tima;
+    timer.shouldPanic();
+
+    timer.enable.set(true); // enabled
+    timer.clock_select.set(.freq_4096); // bit 9
+    timer.div.set(0b00000001111111111); // bit 9 set
+    timer.tima.set(0xAB);
+    const startTima = timer.tima.resolve(null);
 
     _ = timer.write(0, 0x00); // reset DIV to 0, falling edge of bit 9
-    try std.testing.expectEqual(startTima + 1, timer.tima);
+    try std.testing.expectEqual(startTima + 1, timer.tima.resolve(null));
 }
 
 test "writing to TAC can cause immediate TIMA increment if falling edge is triggered" {
     var container = TestContainer.init();
     var timer = container.get_timer();
-    timer.div = 0b00000001111111111; // bit 9 set
-    timer.enable = true;
-    timer.clock_select = .freq_4096;
-    timer.tima = 0xAB;
+    timer.shouldPanic();
+
+    timer.div.set(0b00000001111111111); // bit 9 set
+    timer.enable.set(true);
+    timer.clock_select.set(.freq_4096);
+    timer.tima.set(0xAB);
 
     _ = timer.write(3, 0b00000000); // disable, select bit 9 — triggers fall
-    try std.testing.expectEqual(0xAC, timer.tima);
+    try std.testing.expectEqual(0xAC, timer.tima.resolve(null));
 }
 
 test "writing to TMA during pending overflow updates TIMA correctly" {
     var container = TestContainer.init();
     var timer = container.get_timer();
-    timer.div = 0b00000001111111111; // bit 9 set
-    timer.enable = true; // enabled
-    timer.clock_select = .freq_4096; // bit 9
-    timer.tima = 0xFF;
+    timer.shouldPanic();
+
+    timer.div.set(0b00000001111111111); // bit 9 set
+    timer.enable.set(true); // enabled
+    timer.clock_select.set(.freq_4096); // bit 9
+    timer.tima.set(0xFF);
 
     timer.tick(); // latch overflow
     _ = timer.write(2, 0x33); // write new TMA
     timer.tick(); // apply latched overflow
-    try std.testing.expectEqual(0x33, timer.tima);
+    try std.testing.expectEqual(0x33, timer.tima.resolve(null));
 }
 
 test "no tick occurs when no falling edge on selected bit" {
     var container = TestContainer.init();
     var timer = container.get_timer();
-    timer.div = 0b0000000000000000;
-    timer.enable = true;
-    timer.clock_select = .freq_4096;
+    timer.shouldPanic();
 
-    const startTima = timer.tima;
+    timer.div.set(0b0000000000000000);
+    timer.enable.set(true);
+    timer.clock_select.set(.freq_4096);
+    timer.tima.set(0xAB);
+
+    const startTima = timer.tima.resolve(null);
     timer.tick();
-    try std.testing.expectEqual(startTima, timer.tima);
+    try std.testing.expectEqual(startTima, timer.tima.resolve(null));
 }
 
 test "correct bit selected for various TAC inputs" {
