@@ -46,30 +46,30 @@ fn testInterrupt(target: InterruptKind, targetAddr: u16) !void {
 
     cpu.reg.pc = 0x100;
     cpu.reg.sp.setAll(0xFFFE);
-    intr.@"if" = target.asMask();
+    intr.@"if".set(target.asMask());
 
     // When IME is disabled and IE is disabled, interrupt is not serviced
     cpu.reg.ime = 0;
-    intr.ie = ~target.asMask();
+    intr.ie.set(~target.asMask());
     try runInstructions(cpu, 100);
     try std.testing.expectEqual(0x101, cpu.reg.pc);
 
     // When IME is enabled and IE is disabled, interrupt is not serviced
     cpu.reg.ime = 1;
-    intr.ie = ~target.asMask();
+    intr.ie.set(~target.asMask());
     try runInstructions(cpu, 100);
     try std.testing.expectEqual(0x101, cpu.reg.pc);
 
     // When IME is disabled and IE is enabled, interrupt is not serviced
     cpu.reg.ime = 0;
-    intr.ie = target.asMask();
+    intr.ie.set(target.asMask());
     try runInstructions(cpu, 100);
     try std.testing.expectEqual(0x101, cpu.reg.pc);
 
     // When IME is enabled and IE is enabled, interrupt is serviced
 
     cpu.reg.ime = 1;
-    intr.ie = target.asMask();
+    intr.ie.set(target.asMask());
 
     // M0 - Decrease PC
     cpu.tick();
@@ -142,8 +142,8 @@ test "halt normally: ime=1 and no interrupt pending" {
     cpu.reg.pc = 0;
     cpu.reg.sp.setAll(0xFFFE);
     cpu.reg.ime = 0;
-    intr.ie = InterruptKind.vblank.asMask();
-    intr.@"if" = 0;
+    intr.ie.set(InterruptKind.vblank.asMask());
+    intr.@"if".set(0);
 
     // execute ei
     cpu.tick(); // fetch ei
@@ -166,7 +166,7 @@ test "halt normally: ime=1 and no interrupt pending" {
     }
 
     // trigger interrupt
-    intr.@"if" = InterruptKind.vblank.asMask();
+    intr.@"if".set(InterruptKind.vblank.asMask());
 
     // we are no longer halted, servicing interrupt
     cpu.tick(); // adjust pc
@@ -205,8 +205,8 @@ test "halt normally: ime=0 and no interrupt pending" {
     cpu.reg.pc = 0;
     cpu.reg.sp.setAll(0xFFFE);
     cpu.reg.ime = 0;
-    intr.ie = InterruptKind.vblank.asMask();
-    intr.@"if" = 0;
+    intr.ie.set(InterruptKind.vblank.asMask());
+    intr.@"if".set(0);
 
     // execute nop
     cpu.tick(); // fetch nop
@@ -224,7 +224,7 @@ test "halt normally: ime=0 and no interrupt pending" {
     }
 
     // trigger interrupt
-    intr.@"if" = InterruptKind.vblank.asMask();
+    intr.@"if".set(InterruptKind.vblank.asMask());
 
     // we are no longer halted, execute nop (since interrupts are disabled)
     cpu.tick(); // execute nop, fetch 0xAA
@@ -255,8 +255,8 @@ test "halt bug: ei, halt" {
     cpu.reg.pc = 0;
     cpu.reg.sp.setAll(0xFFFE);
     cpu.reg.ime = 0;
-    intr.ie = InterruptKind.vblank.asMask();
-    intr.@"if" = InterruptKind.vblank.asMask();
+    intr.ie.set(InterruptKind.vblank.asMask());
+    intr.@"if".set(InterruptKind.vblank.asMask());
 
     // execute ei
     cpu.tick(); // fetch ei
@@ -317,8 +317,8 @@ test "halt bug: halt, inc b " {
     cpu.reg.sp.setAll(0xFFFE);
     cpu.reg.ime = 0;
     cpu.reg.bc.hi = 0;
-    intr.ie = InterruptKind.vblank.asMask();
-    intr.@"if" = InterruptKind.vblank.asMask();
+    intr.ie.set(InterruptKind.vblank.asMask());
+    intr.@"if".set(InterruptKind.vblank.asMask());
 
     // execute halt
     cpu.tick(); // fetch halt
@@ -357,8 +357,8 @@ test "halt bug: halt, ld B 4" {
     cpu.reg.sp.setAll(0xFFFE);
     cpu.reg.ime = 0;
     cpu.reg.bc.setAll(0);
-    intr.ie = InterruptKind.vblank.asMask();
-    intr.@"if" = InterruptKind.vblank.asMask();
+    intr.ie.set(InterruptKind.vblank.asMask());
+    intr.@"if".set(InterruptKind.vblank.asMask());
 
     // execute halt
     cpu.tick(); // fetch halt
@@ -399,8 +399,8 @@ test "halt bug: halt, rst 1" {
     cpu.reg.sp.setAll(0xFFFE);
     cpu.reg.ime = 0;
     cpu.reg.bc.setAll(0);
-    intr.ie = InterruptKind.vblank.asMask();
-    intr.@"if" = InterruptKind.vblank.asMask();
+    intr.ie.set(InterruptKind.vblank.asMask());
+    intr.@"if".set(InterruptKind.vblank.asMask());
 
     // execute halt
     cpu.tick(); // fetch halt
@@ -441,8 +441,8 @@ test "halt bug: halt, halt" {
     cpu.reg.sp.setAll(0xFFFE);
     cpu.reg.ime = 0;
     cpu.reg.bc.setAll(0);
-    intr.ie = InterruptKind.vblank.asMask();
-    intr.@"if" = InterruptKind.vblank.asMask();
+    intr.ie.set(InterruptKind.vblank.asMask());
+    intr.@"if".set(InterruptKind.vblank.asMask());
 
     // execute halt
     cpu.tick(); // fetch halt
