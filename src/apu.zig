@@ -5,6 +5,7 @@ const router = @import("router.zig");
 const GenericRouter = router.Router;
 const GenericRange = router.Range;
 const GenericTargetField = router.TargetField;
+const TrackedValue = @import("tracked_value.zig").TrackedValue;
 const Channel = @import("channel.zig").Channel;
 
 const mmio_register = @import("mmio_register.zig");
@@ -80,21 +81,21 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
 
         backend: *AudioBackend,
 
-        vin_left: bool,
-        vin_right: bool,
-        left_vol: u3,
-        right_vol: u3,
+        vin_left: TrackedValue(bool),
+        vin_right: TrackedValue(bool),
+        left_vol: TrackedValue(u3),
+        right_vol: TrackedValue(u3),
 
-        ch1_left: bool,
-        ch2_left: bool,
-        ch3_left: bool,
-        ch4_left: bool,
-        ch1_right: bool,
-        ch2_right: bool,
-        ch3_right: bool,
-        ch4_right: bool,
+        ch1_left: TrackedValue(bool),
+        ch2_left: TrackedValue(bool),
+        ch3_left: TrackedValue(bool),
+        ch4_left: TrackedValue(bool),
+        ch1_right: TrackedValue(bool),
+        ch2_right: TrackedValue(bool),
+        ch3_right: TrackedValue(bool),
+        ch4_right: TrackedValue(bool),
 
-        audio_on: bool,
+        audio_on: TrackedValue(bool),
 
         hpf_left: f32,
         hpf_right: f32,
@@ -126,26 +127,27 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
         };
 
         const Control = struct {
-            pub fn peek(self: *This, addr: u16) u8 {
-                return switch (addr) {
+            fn inner_read(self: *This, addr: u16) struct { MemoryFlag, u8 } {
+                var flag: MemoryFlag = .{};
+                const val: u8 = switch (addr) {
                     0 => @bitCast(NR50{
-                        .vin_left = self.vin_left,
-                        .vin_right = self.vin_right,
-                        .left_volume = self.left_vol,
-                        .right_volume = self.right_vol,
+                        .vin_left = self.vin_left.resolve(&flag),
+                        .vin_right = self.vin_right.resolve(&flag),
+                        .left_volume = self.left_vol.resolve(&flag),
+                        .right_volume = self.right_vol.resolve(&flag),
                     }),
                     1 => @bitCast(NR51{
-                        .ch1_left = self.ch1_left,
-                        .ch2_left = self.ch2_left,
-                        .ch3_left = self.ch3_left,
-                        .ch4_left = self.ch4_left,
-                        .ch1_right = self.ch1_right,
-                        .ch2_right = self.ch2_right,
-                        .ch3_right = self.ch3_right,
-                        .ch4_right = self.ch4_right,
+                        .ch1_left = self.ch1_left.resolve(&flag),
+                        .ch2_left = self.ch2_left.resolve(&flag),
+                        .ch3_left = self.ch3_left.resolve(&flag),
+                        .ch4_left = self.ch4_left.resolve(&flag),
+                        .ch1_right = self.ch1_right.resolve(&flag),
+                        .ch2_right = self.ch2_right.resolve(&flag),
+                        .ch3_right = self.ch3_right.resolve(&flag),
+                        .ch4_right = self.ch4_right.resolve(&flag),
                     }),
                     2 => @bitCast(NR52{
-                        .audio_on = self.audio_on,
+                        .audio_on = self.audio_on.resolve(&flag),
                         .ch1_on = self.channel1.isActive(),
                         .ch2_on = self.channel2.isActive(),
                         .ch3_on = self.channel3.isActive(),
@@ -153,38 +155,48 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
                     }),
                     else => unreachable,
                 };
+
+                return .{ flag, val };
             }
 
-            pub fn poke(self: *This, addr: u16, val: u8) void {
+            fn inner_write(self: *This, addr: u16, val: u8) void {
                 switch (addr) {
                     0 => {
                         const reg: NR50 = @bitCast(val);
-                        self.vin_left = reg.vin_left;
-                        self.vin_right = reg.vin_right;
-                        self.left_vol = reg.left_volume;
-                        self.right_vol = reg.right_volume;
+                        self.vin_left.set(reg.vin_left);
+                        self.vin_right.set(reg.vin_right);
+                        self.left_vol.set(reg.left_volume);
+                        self.right_vol.set(reg.right_volume);
                     },
                     1 => {
                         const reg: NR51 = @bitCast(val);
-                        self.ch4_left = reg.ch4_left;
-                        self.ch3_left = reg.ch3_left;
-                        self.ch2_left = reg.ch2_left;
-                        self.ch1_left = reg.ch1_left;
-                        self.ch4_right = reg.ch4_right;
-                        self.ch3_right = reg.ch3_right;
-                        self.ch2_right = reg.ch2_right;
-                        self.ch1_right = reg.ch1_right;
+                        self.ch4_left.set(reg.ch4_left);
+                        self.ch3_left.set(reg.ch3_left);
+                        self.ch2_left.set(reg.ch2_left);
+                        self.ch1_left.set(reg.ch1_left);
+                        self.ch4_right.set(reg.ch4_right);
+                        self.ch3_right.set(reg.ch3_right);
+                        self.ch2_right.set(reg.ch2_right);
+                        self.ch1_right.set(reg.ch1_right);
                     },
                     2 => {
                         const reg: NR52 = @bitCast(val);
-                        self.audio_on = reg.audio_on;
+                        self.audio_on.set(reg.audio_on);
                     },
                     else => unreachable,
                 }
             }
 
+            pub fn peek(self: *This, addr: u16) u8 {
+                return Control.inner_read(self, addr).@"1";
+            }
+
+            pub fn poke(self: *This, addr: u16, val: u8) void {
+                Control.inner_write(self, addr, val);
+            }
+
             pub fn read(self: *This, addr: u16) struct { MemoryFlag, u8 } {
-                return .{ .{}, Control.peek(self, addr) };
+                return Control.inner_read(self, addr);
             }
 
             pub fn write(self: *This, addr: u16, val: u8) MemoryFlag {
@@ -193,28 +205,29 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
                 // So if we're on addr 2 we set it immediately
                 // THEN we can check if audio is off and bail out
                 // And otherwise we do the write
+                var flags: MemoryFlag = .{};
 
                 if (addr == 2) {
-                    Control.poke(self, addr, val);
-                } else if (!self.audio_on) {
-                    return .{};
+                    Control.inner_write(self, addr, val);
+                } else if (!self.audio_on.resolve(&flags)) {
+                    return flags;
                 } else {
-                    Control.poke(self, addr, val);
+                    Control.inner_write(self, addr, val);
                 }
 
                 // If we are setting the audio on bit to 0, zero all registers
                 // If it was already 0, then we zero them again, which should be fine
 
                 if (addr == 2 and val & 0b1000_0000 == 0) {
-                    Control.poke(self, 0, 0);
-                    Control.poke(self, 1, 0);
+                    Control.inner_write(self, 0, 0);
+                    Control.inner_write(self, 1, 0);
                     self.channel1.poweroff();
                     self.channel2.poweroff();
                     self.channel3.poweroff();
                     self.channel4.poweroff();
                 }
 
-                return .{};
+                return flags;
             }
         };
 
@@ -314,19 +327,19 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
                 .channel3 = Channel3.init(),
                 .channel4 = Channel4.init(),
                 .backend = backend,
-                .vin_left = undefined,
-                .vin_right = undefined,
-                .left_vol = undefined,
-                .right_vol = undefined,
-                .ch1_left = undefined,
-                .ch2_left = undefined,
-                .ch3_left = undefined,
-                .ch4_left = undefined,
-                .ch1_right = undefined,
-                .ch2_right = undefined,
-                .ch3_right = undefined,
-                .ch4_right = undefined,
-                .audio_on = true,
+                .vin_left = .init(true),
+                .vin_right = .init(false),
+                .left_vol = .init(0b101),
+                .right_vol = .init(0b101),
+                .ch1_left = .init(true),
+                .ch2_left = .init(false),
+                .ch3_left = .init(true),
+                .ch4_left = .init(false),
+                .ch1_right = .init(true),
+                .ch2_right = .init(false),
+                .ch3_right = .init(true),
+                .ch4_right = .init(false),
+                .audio_on = .init(false),
                 .hpf_left = 0.0,
                 .hpf_right = 0.0,
                 .ch1_acc_left = .{},
@@ -343,7 +356,7 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
 
         /// This is intended to be called every APU tick
         pub fn tick(self: *This) void {
-            if (!self.audio_on) {
+            if (!self.audio_on.resolve(null)) {
                 return;
             }
 
@@ -360,9 +373,9 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
                     const volume_name = std.fmt.comptimePrint("{s}_vol", .{side});
 
                     // Select audio channels, attenuate, and accumulate for sampling.
-                    if (@field(self, channel_select_name)) {
+                    if (@field(self, channel_select_name).resolve(null)) {
                         // Attenuate the selected channel if needed
-                        var attenuation: f32 = @floatFromInt(@field(self, volume_name));
+                        var attenuation: f32 = @floatFromInt(@field(self, volume_name).resolve(null));
                         attenuation += 1.0;
                         attenuation /= 8.0;
 
