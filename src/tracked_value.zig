@@ -27,8 +27,11 @@ pub fn TrackedValue(T: type) type {
             return self.default;
         }
 
-        pub inline fn set(self: *This, value: T) void {
-            self.value = value;
+        pub inline fn set(self: *This, value: T, real: bool) void {
+            self.default = value;
+            if (real or self.value != null) {
+                self.value = value;
+            }
         }
     };
 }

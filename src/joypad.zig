@@ -74,7 +74,7 @@ pub fn Joypad(Interrupt: type, JoypadBackend: type) type {
             const new_joypad = self.backend.poll();
             inline for (@typeInfo(JoypadButtons).@"struct".field_names) |name| {
                 const value = @field(new_joypad, name);
-                @field(self.joypad, name).set(value);
+                @field(self.joypad, name).set(value, true);
             }
 
             self.check_trigger_interrupt(old_regval);
@@ -121,21 +121,21 @@ pub fn Joypad(Interrupt: type, JoypadBackend: type) type {
             const select_buttons = !reg.select_buttons_active_low;
             const select_dpad = !reg.select_d_pad_active_low;
 
-            self.select_buttons.set(select_buttons);
-            self.select_dpad.set(select_dpad);
+            self.select_buttons.set(select_buttons, false);
+            self.select_dpad.set(select_dpad, false);
 
             if (select_buttons) {
-                self.joypad.a.set(!reg.a_or_right_active_low);
-                self.joypad.b.set(!reg.b_or_left_active_low);
-                self.joypad.select.set(!reg.select_or_up_active_low);
-                self.joypad.start.set(!reg.start_or_down_active_low);
+                self.joypad.a.set(!reg.a_or_right_active_low, false);
+                self.joypad.b.set(!reg.b_or_left_active_low, false);
+                self.joypad.select.set(!reg.select_or_up_active_low, false);
+                self.joypad.start.set(!reg.start_or_down_active_low, false);
             }
 
             if (select_dpad) {
-                self.joypad.right.set(!reg.a_or_right_active_low);
-                self.joypad.left.set(!reg.b_or_left_active_low);
-                self.joypad.up.set(!reg.select_or_up_active_low);
-                self.joypad.down.set(!reg.start_or_down_active_low);
+                self.joypad.right.set(!reg.a_or_right_active_low, false);
+                self.joypad.left.set(!reg.b_or_left_active_low, false);
+                self.joypad.up.set(!reg.select_or_up_active_low, false);
+                self.joypad.down.set(!reg.start_or_down_active_low, false);
             }
         }
 
@@ -148,8 +148,8 @@ pub fn Joypad(Interrupt: type, JoypadBackend: type) type {
             const reg: JOYP = @bitCast(val);
 
             const old_regval = self.inner_read().@"1" & 0xF;
-            self.select_buttons.set(!reg.select_buttons_active_low);
-            self.select_dpad.set(!reg.select_d_pad_active_low);
+            self.select_buttons.set(!reg.select_buttons_active_low, true);
+            self.select_dpad.set(!reg.select_d_pad_active_low, true);
             self.check_trigger_interrupt(old_regval);
 
             return .{};
@@ -173,16 +173,16 @@ const TestContainer = @import("dependency_container.zig").Container(.{
 });
 
 fn init_joypad(joypad: *TestContainer.Joypad) void {
-    joypad.select_buttons.set(false);
-    joypad.select_dpad.set(false);
-    joypad.joypad.a.set(false);
-    joypad.joypad.b.set(false);
-    joypad.joypad.select.set(false);
-    joypad.joypad.start.set(false);
-    joypad.joypad.down.set(false);
-    joypad.joypad.left.set(false);
-    joypad.joypad.right.set(false);
-    joypad.joypad.up.set(false);
+    joypad.select_buttons.set(false, true);
+    joypad.select_dpad.set(false, true);
+    joypad.joypad.a.set(false, true);
+    joypad.joypad.b.set(false, true);
+    joypad.joypad.select.set(false, true);
+    joypad.joypad.start.set(false, true);
+    joypad.joypad.down.set(false, true);
+    joypad.joypad.left.set(false, true);
+    joypad.joypad.right.set(false, true);
+    joypad.joypad.up.set(false, true);
 }
 
 test "JOYP reads selected buttons with active-low semantics" {

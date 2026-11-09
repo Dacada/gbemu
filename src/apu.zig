@@ -159,29 +159,29 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
                 return .{ flag, val };
             }
 
-            fn inner_write(self: *This, addr: u16, val: u8) void {
+            fn inner_write(self: *This, addr: u16, val: u8, real: bool) void {
                 switch (addr) {
                     0 => {
                         const reg: NR50 = @bitCast(val);
-                        self.vin_left.set(reg.vin_left);
-                        self.vin_right.set(reg.vin_right);
-                        self.left_vol.set(reg.left_volume);
-                        self.right_vol.set(reg.right_volume);
+                        self.vin_left.set(reg.vin_left, real);
+                        self.vin_right.set(reg.vin_right, real);
+                        self.left_vol.set(reg.left_volume, real);
+                        self.right_vol.set(reg.right_volume, real);
                     },
                     1 => {
                         const reg: NR51 = @bitCast(val);
-                        self.ch4_left.set(reg.ch4_left);
-                        self.ch3_left.set(reg.ch3_left);
-                        self.ch2_left.set(reg.ch2_left);
-                        self.ch1_left.set(reg.ch1_left);
-                        self.ch4_right.set(reg.ch4_right);
-                        self.ch3_right.set(reg.ch3_right);
-                        self.ch2_right.set(reg.ch2_right);
-                        self.ch1_right.set(reg.ch1_right);
+                        self.ch4_left.set(reg.ch4_left, real);
+                        self.ch3_left.set(reg.ch3_left, real);
+                        self.ch2_left.set(reg.ch2_left, real);
+                        self.ch1_left.set(reg.ch1_left, real);
+                        self.ch4_right.set(reg.ch4_right, real);
+                        self.ch3_right.set(reg.ch3_right, real);
+                        self.ch2_right.set(reg.ch2_right, real);
+                        self.ch1_right.set(reg.ch1_right, real);
                     },
                     2 => {
                         const reg: NR52 = @bitCast(val);
-                        self.audio_on.set(reg.audio_on);
+                        self.audio_on.set(reg.audio_on, real);
                     },
                     else => unreachable,
                 }
@@ -192,7 +192,7 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
             }
 
             pub fn poke(self: *This, addr: u16, val: u8) void {
-                Control.inner_write(self, addr, val);
+                Control.inner_write(self, addr, val, false);
             }
 
             pub fn read(self: *This, addr: u16) struct { MemoryFlag, u8 } {
@@ -208,19 +208,19 @@ fn ApuGeneric(Channel1: type, Channel2: type, Channel3: type, Channel4: type, Au
                 var flags: MemoryFlag = .{};
 
                 if (addr == 2) {
-                    Control.inner_write(self, addr, val);
+                    Control.inner_write(self, addr, val, true);
                 } else if (!self.audio_on.resolve(&flags)) {
                     return flags;
                 } else {
-                    Control.inner_write(self, addr, val);
+                    Control.inner_write(self, addr, val, true);
                 }
 
                 // If we are setting the audio on bit to 0, zero all registers
                 // If it was already 0, then we zero them again, which should be fine
 
                 if (addr == 2 and val & 0b1000_0000 == 0) {
-                    Control.inner_write(self, 0, 0);
-                    Control.inner_write(self, 1, 0);
+                    Control.inner_write(self, 0, 0, true);
+                    Control.inner_write(self, 1, 0, true);
                     self.channel1.poweroff();
                     self.channel2.poweroff();
                     self.channel3.poweroff();

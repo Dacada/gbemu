@@ -52,13 +52,13 @@ pub fn Serial(Scheduler: type, Interrupt: type) type {
             return .{ flags, value };
         }
 
-        fn inner_write(self: *This, addr: u16, val: u8) void {
+        fn inner_write(self: *This, addr: u16, val: u8, real: bool) void {
             switch (addr) {
-                0 => self.data.set(val),
+                0 => self.data.set(val, real),
                 1 => {
                     const reg: SC = @bitCast(val);
-                    self.transfer_enable.set(reg.transfer_enable);
-                    self.clock_select.set(reg.clock_select);
+                    self.transfer_enable.set(reg.transfer_enable, real);
+                    self.clock_select.set(reg.clock_select, real);
                 },
                 else => unreachable,
             }
@@ -69,7 +69,7 @@ pub fn Serial(Scheduler: type, Interrupt: type) type {
         }
 
         pub fn poke(self: *This, addr: u16, val: u8) void {
-            self.inner_write(addr, val);
+            self.inner_write(addr, val, false);
         }
 
         pub fn read(self: *This, addr: u16) struct { MemoryFlag, u8 } {
@@ -77,7 +77,7 @@ pub fn Serial(Scheduler: type, Interrupt: type) type {
         }
 
         pub fn write(self: *This, addr: u16, val: u8) MemoryFlag {
-            self.inner_write(addr, val);
+            self.inner_write(addr, val, true);
             var flags: MemoryFlag = .{};
 
             if (addr == 1 and !self.running and self.transfer_enable.resolve(&flags) and self.clock_select.resolve(&flags) == .master) {
@@ -100,14 +100,14 @@ pub fn Serial(Scheduler: type, Interrupt: type) type {
             var data = self.data.resolve(null);
             data <<= 1;
             data |= 1; // only 1s coming in, simulating open bus
-            self.data.set(data);
+            self.data.set(data, false);
         }
 
         fn finishTransfer(selfptr: *anyopaque) void {
             const self: *This = @ptrCast(@alignCast(selfptr));
             doShift(selfptr);
             self.running = false;
-            self.transfer_enable.set(false);
+            self.transfer_enable.set(false, true);
             self.intr.request(InterruptKind.serial);
         }
     };
@@ -127,11 +127,11 @@ test "Serial register read/write" {
     serial.shouldPanic();
 
     // Test writing to and reading from data register (0)
-    serial.poke(0, 0xA5);
+    _ = serial.write(0, 0xA5);
     try std.testing.expectEqual(serial.peek(0), 0xA5);
 
     // Test writing to and reading from control register (1)
-    serial.poke(1, 0b1000_0001); // Transfer enabled, clock select 1
+    _ = serial.write(1, 0b1000_0001); // Transfer enabled, clock select 1
     try std.testing.expectEqual(serial.peek(1) & 0b1000_0000, 0b1000_0000);
     try std.testing.expectEqual(serial.peek(1) & 0b0000_0001, 0b0000_0001);
 }
@@ -158,7 +158,7 @@ test "Serial bit shift behavior" {
     var serial = container.get_serial();
     serial.shouldPanic();
 
-    serial.data.set(0b1010_0000);
+    serial.data.set(0b1010_0000, true);
 
     TestSerial.doShift(serial);
     try std.testing.expectEqual(serial.data.resolve(null), 0b0100_0001); // Shift left, bring in '1'
@@ -172,9 +172,9 @@ test "Serial transfer completion" {
     var serial = container.get_serial();
     serial.shouldPanic();
 
-    serial.data.set(0x00);
-    serial.transfer_enable.set(true);
-    serial.clock_select.set(.master);
+    serial.data.set(0x00, true);
+    serial.transfer_enable.set(true, true);
+    serial.clock_select.set(.master, true);
 
     serial.startTransfer();
     try std.testing.expect(serial.running);

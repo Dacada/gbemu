@@ -54,11 +54,11 @@ pub const Interrupt = struct {
     }
 
     pub inline fn request(self: *Interrupt, kind: InterruptKind) void {
-        self.@"if".set(self.@"if".resolve(null) | kind.asMask());
+        self.@"if".set(self.@"if".resolve(null) | kind.asMask(), false);
     }
 
     pub inline fn acknowledge(self: *Interrupt, kind: InterruptKind) void {
-        self.@"if".set(self.@"if".resolve(null) & ~kind.asMask());
+        self.@"if".set(self.@"if".resolve(null) & ~kind.asMask(), false);
     }
 
     pub fn pending(self: Interrupt) ?InterruptKind {
@@ -80,10 +80,10 @@ pub const Interrupt = struct {
         return .{ flag, val };
     }
 
-    fn inner_write(self: *Interrupt, addr: u16, val: u8) void {
+    fn inner_write(self: *Interrupt, addr: u16, val: u8, real: bool) void {
         switch (addr) {
-            0 => self.@"if".set(val),
-            1 => self.ie.set(val),
+            0 => self.@"if".set(val, real),
+            1 => self.ie.set(val, real),
             else => unreachable,
         }
     }
@@ -93,7 +93,7 @@ pub const Interrupt = struct {
     }
 
     pub fn poke(self: *Interrupt, addr: u16, val: u8) void {
-        self.inner_write(addr, val);
+        self.inner_write(addr, val, false);
     }
 
     pub fn read(self: *Interrupt, addr: u16) struct { MemoryFlag, u8 } {
@@ -101,15 +101,15 @@ pub const Interrupt = struct {
     }
 
     pub fn write(self: *Interrupt, addr: u16, val: u8) MemoryFlag {
-        self.inner_write(addr, val);
+        self.inner_write(addr, val, true);
         return .{};
     }
 };
 
 test "request sets appropriate bit in IF" {
     var int = Interrupt.init();
-    int.ie.set(0);
-    int.@"if".set(0);
+    int.ie.set(0, true);
+    int.@"if".set(0, true);
 
     int.request(InterruptKind.vblank);
     try std.testing.expectEqual(int.@"if".resolve(null), InterruptKind.vblank.asMask());
@@ -117,8 +117,8 @@ test "request sets appropriate bit in IF" {
 
 test "acknowledge resets appropriate bit in IF" {
     var int = Interrupt.init();
-    int.ie.set(0);
-    int.@"if".set(0xFF);
+    int.ie.set(0, true);
+    int.@"if".set(0xFF, true);
 
     int.acknowledge(InterruptKind.vblank);
     try std.testing.expectEqual(int.@"if".resolve(null), ~InterruptKind.vblank.asMask());
@@ -126,24 +126,24 @@ test "acknowledge resets appropriate bit in IF" {
 
 test "pending returns null when no interrupts are enabled" {
     var int = Interrupt.init();
-    int.ie.set(0x00);
-    int.@"if".set(InterruptKind.vblank.asMask());
+    int.ie.set(0x00, true);
+    int.@"if".set(InterruptKind.vblank.asMask(), true);
 
     try std.testing.expect(int.pending() == null);
 }
 
 test "pending returns correct interrupt when enabled and requested" {
     var int = Interrupt.init();
-    int.ie.set(InterruptKind.timer.asMask());
-    int.@"if".set(InterruptKind.timer.asMask());
+    int.ie.set(InterruptKind.timer.asMask(), true);
+    int.@"if".set(InterruptKind.timer.asMask(), true);
 
     try std.testing.expectEqual(int.pending(), InterruptKind.timer);
 }
 
 test "pending returns highest priority interrupt if multiple are set" {
     var int = Interrupt.init();
-    int.ie.set(InterruptKind.vblank.asMask() | InterruptKind.timer.asMask());
-    int.@"if".set(InterruptKind.vblank.asMask() | InterruptKind.timer.asMask());
+    int.ie.set(InterruptKind.vblank.asMask() | InterruptKind.timer.asMask(), true);
+    int.@"if".set(InterruptKind.vblank.asMask() | InterruptKind.timer.asMask(), true);
 
     // Assuming VBlank is highest priority
     try std.testing.expectEqual(int.pending(), InterruptKind.vblank);
@@ -151,8 +151,8 @@ test "pending returns highest priority interrupt if multiple are set" {
 
 test "peek returns correct register values" {
     var int = Interrupt.init();
-    int.ie.set(0xAB);
-    int.@"if".set(0xCD);
+    int.ie.set(0xAB, true);
+    int.@"if".set(0xCD, true);
 
     try std.testing.expectEqual(int.peek(0), 0xCD);
     try std.testing.expectEqual(int.peek(1), 0xAB);
@@ -160,8 +160,8 @@ test "peek returns correct register values" {
 
 test "poke writes correct values to registers" {
     var int = Interrupt.init();
-    int.ie.set(0x00);
-    int.@"if".set(0x00);
+    int.ie.set(0x00, true);
+    int.@"if".set(0x00, true);
 
     int.poke(0, 0x12);
     int.poke(1, 0x34);
@@ -171,8 +171,8 @@ test "poke writes correct values to registers" {
 
 test "read returns correct tuple for IF and IE" {
     var int = Interrupt.init();
-    int.ie.set(0x56);
-    int.@"if".set(0x78);
+    int.ie.set(0x56, true);
+    int.@"if".set(0x78, true);
 
     const if_result = int.read(0);
     const ie_result = int.read(1);
@@ -182,8 +182,8 @@ test "read returns correct tuple for IF and IE" {
 
 test "write modifies the correct register" {
     var int = Interrupt.init();
-    int.ie.set(0x00);
-    int.@"if".set(0x0);
+    int.ie.set(0x00, true);
+    int.@"if".set(0x0, true);
 
     _ = int.write(0, 0xAA);
     _ = int.write(1, 0xBB);

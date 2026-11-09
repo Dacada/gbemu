@@ -72,7 +72,7 @@ fn SweepPeriodUnit(number: comptime_int) type {
                 self.overflowCheck(new_period, control);
                 if (new_period <= 0x7FF and individual_step != 0) {
                     self.shadow = @intCast(new_period);
-                    period.period.set(@intCast(new_period));
+                    period.period.set(@intCast(new_period), false);
                     self.overflowCheck(self.periodCalculation(null), control);
                 }
             }
@@ -199,10 +199,10 @@ fn PeriodUnit(number: comptime_int) type {
             return compose(hi, lo);
         }
 
-        inline fn set(self: *This, value: u11) void {
+        inline fn set(self: *This, value: u11, real: bool) void {
             const hi, const lo = decompose(value);
-            self.hi.set(hi);
-            self.lo.set(lo);
+            self.hi.set(hi, real);
+            self.lo.set(lo, real);
         }
     };
 
@@ -468,7 +468,7 @@ const WaveSamplerUnit = struct {
                 return .{ .{ .illegal = true }, 0xFF };
             }
             return .{
-                .{ .uninitialized = channel.wave.points_uninit() },
+                .{ .uninitialized = !channel.wave.samples_init[addr] },
                 peek(channel, addr),
             };
         }
@@ -478,6 +478,7 @@ const WaveSamplerUnit = struct {
                 return .{ .illegal = true };
             }
             poke(channel, addr, val);
+            channel.wave.samples_init[addr] = true;
             return .{};
         }
     };
@@ -501,10 +502,6 @@ const WaveSamplerUnit = struct {
     fn sample(self: *WaveSamplerUnit) u4 {
         defer self.advance();
         return self.current_value;
-    }
-
-    fn points_uninit(self: *WaveSamplerUnit) bool {
-        return self.samples_init[self.next_index / 2];
     }
 
     fn advance(self: *WaveSamplerUnit) void {
@@ -706,14 +703,14 @@ pub fn Channel(number: comptime_int) type {
             return .{ flags, value };
         }
 
-        fn inner_write(self: *This, addr: u16, val: u8) void {
+        fn inner_write(self: *This, addr: u16, val: u8, real: bool) void {
             switch (addr) {
                 0 => {
                     if (number == 1) {
                         const reg: NR10 = @bitCast(val);
-                        self.period_sweep.pace.set(reg.pace);
-                        self.period_sweep.direction.set(reg.direction);
-                        self.period_sweep.individual_step.set(reg.individual_step);
+                        self.period_sweep.pace.set(reg.pace, real);
+                        self.period_sweep.direction.set(reg.direction, real);
+                        self.period_sweep.individual_step.set(reg.individual_step, real);
                     }
                     if (number == 3) {
                         const reg: NR30 = @bitCast(val);
@@ -722,48 +719,48 @@ pub fn Channel(number: comptime_int) type {
                 },
                 1 => {
                     if (number == 3) {
-                        self.length.initial_counter.set(val);
+                        self.length.initial_counter.set(val, real);
                     } else {
                         if (number == 1 or number == 2) {
                             const reg: NR11 = @bitCast(val);
-                            self.square.duty.set(reg.wave_duty);
-                            self.length.initial_counter.set(reg.initial_length_timer);
+                            self.square.duty.set(reg.wave_duty, real);
+                            self.length.initial_counter.set(reg.initial_length_timer, real);
                         } else {
                             const reg: NR41 = @bitCast(val);
-                            self.length.initial_counter.set(reg.initial_length_timer);
+                            self.length.initial_counter.set(reg.initial_length_timer, real);
                         }
                     }
                 },
                 2 => {
                     if (number == 3) {
                         const reg: NR32 = @bitCast(val);
-                        self.output_level.output_level.set(reg.output_level);
+                        self.output_level.output_level.set(reg.output_level, real);
                     } else {
                         const reg: NR12 = @bitCast(val);
-                        self.volume.initial_volume.set(reg.initial_volume);
-                        self.volume.direction.set(reg.env_dir);
-                        self.volume.pace.set(reg.sweep_pace);
+                        self.volume.initial_volume.set(reg.initial_volume, real);
+                        self.volume.direction.set(reg.env_dir, real);
+                        self.volume.pace.set(reg.sweep_pace, real);
                     }
                 },
                 3 => {
                     if (number == 4) {
                         const reg: NR43 = @bitCast(val);
-                        self.lfsr.clock_shift.set(reg.clock_shift);
-                        self.lfsr.width.set(reg.lfsr_width);
-                        self.lfsr.clock_div.set(reg.clock_divider);
+                        self.lfsr.clock_shift.set(reg.clock_shift, real);
+                        self.lfsr.width.set(reg.lfsr_width, real);
+                        self.lfsr.clock_div.set(reg.clock_divider, real);
                         self.lfsr.updateTarget();
                     } else {
-                        self.period.period.lo.set(val);
+                        self.period.period.lo.set(val, real);
                     }
                 },
                 4 => {
                     if (number == 4) {
                         const reg: NR44 = @bitCast(val);
-                        self.length.enable.set(reg.length_enable);
+                        self.length.enable.set(reg.length_enable, real);
                     } else {
                         const reg: NR14 = @bitCast(val);
-                        self.period.period.hi.set(reg.period_hi);
-                        self.length.enable.set(reg.length_enable);
+                        self.period.period.hi.set(reg.period_hi, real);
+                        self.length.enable.set(reg.length_enable, real);
                     }
                 },
                 else => unreachable,
@@ -775,7 +772,7 @@ pub fn Channel(number: comptime_int) type {
         }
 
         pub fn poke(self: *This, addr: u16, val: u8) void {
-            self.inner_write(addr, val);
+            self.inner_write(addr, val, false);
         }
 
         pub fn read(self: *This, addr: u16) struct { MemoryFlag, u8 } {
@@ -794,7 +791,7 @@ pub fn Channel(number: comptime_int) type {
             }
 
             if (!self.powered_off or addr == 1) { // DMG ONLY -- Length timers are unaffected by power off only on monochrome models
-                self.inner_write(addr, val);
+                self.inner_write(addr, val, true);
             }
 
             if (number != 3 and addr == 2) { // channel 3 uses a direct bit write instead of a side effect, update only after a write to the relevant register
@@ -974,6 +971,11 @@ test "volume envelope pace increases/decreases volume as configured" {
 test "poweroff blocks writes (except NR21 on DMG) and prevents trigger" {
     var ch = Channel(2).init();
     ch.shouldPanic();
+
+    _ = ch.write(4, 0x00);
+    _ = ch.write(3, 0x00);
+    _ = ch.write(2, 0x00);
+    _ = ch.write(1, 0x00);
 
     ch.poweroff();
 
@@ -1202,7 +1204,7 @@ test "Channel(4) LFSR.sample() basic sequences: width=0 vs width=1" {
     ch.lfsr.reset();
 
     // width=0: first 14 samples low (0), then high (0xF) afterwards
-    ch.lfsr.width.set(.w15_bit);
+    ch.lfsr.width.set(.w15_bit, true);
     inline for (0..14) |i| {
         _ = i;
         try std.testing.expectEqual(false, ch.lfsr.sample());
@@ -1211,7 +1213,7 @@ test "Channel(4) LFSR.sample() basic sequences: width=0 vs width=1" {
 
     // Reset and use width=1: the tap changes; the 7th sample becomes high
     ch.lfsr.reset();
-    ch.lfsr.width.set(.w7_bit);
+    ch.lfsr.width.set(.w7_bit, true);
     inline for (0..6) |i| {
         _ = i;
         try std.testing.expectEqual(false, ch.lfsr.sample());
@@ -1239,6 +1241,11 @@ test "Channel(4) length timer disables channel when enabled and wraps" {
 test "Channel(4) poweroff blocks writes (except NR41) and prevents trigger" {
     var ch = Channel(4).init();
     ch.shouldPanic();
+
+    _ = ch.write(4, 0x00);
+    _ = ch.write(3, 0x00);
+    _ = ch.write(2, 0x00);
+    _ = ch.write(1, 0x00);
 
     ch.poweroff();
 
