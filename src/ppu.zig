@@ -3,6 +3,8 @@ const std = @import("std");
 // DMG ONLY -- Basically everything, some other more specific stuff
 
 const MemoryFlag = @import("memory_flag.zig").MemoryFlag;
+const TrackedValue = @import("tracked_value.zig").TrackedValue;
+
 // TODO: this may need to be non global
 var static_vram: [0x2000]u8 = undefined;
 var static_init_vram: [0x2000]bool = @splat(false);
@@ -40,24 +42,31 @@ pub fn Ppu(VideoBackend: type) type {
             const Row = struct { u16, u16, u16, u16 };
 
             pub fn read(ppu: *This, addr: u16) struct { MemoryFlag, u8 } {
-                const illegal_access, const val = if (ppu.mode == .Mode0 or ppu.mode == .Mode1)
+                var flag: MemoryFlag = .{};
+
+                const mode = ppu.mode.resolve(&flag);
+                const illegal_access, const val = if (mode == .Mode0 or mode == .Mode1)
                     .{ false, static_oam[addr] }
                 else
                     .{ true, 0xFF };
                 const flags = MemoryFlag{
-                    .uninitialized = !static_init_oam[addr],
-                    .illegal = illegal_access,
+                    .uninitialized = flag.uninitialized or !static_init_oam[addr],
+                    .illegal = flag.illegal or illegal_access,
                 };
+
                 return .{ flags, val };
             }
 
             pub fn write(ppu: *This, addr: u16, val: u8) MemoryFlag {
-                const illegal_access = if (ppu.mode == .Mode0 or ppu.mode == .Mode1) brk: {
+                var flag: MemoryFlag = .{};
+
+                const mode = ppu.mode.resolve(&flag);
+                const illegal_access = if (mode == .Mode0 or mode == .Mode1) brk: {
                     static_oam[addr] = val;
                     static_init_oam[addr] = true;
                     break :brk false;
                 } else true;
-                return .{ .illegal = illegal_access };
+                return .{ .illegal = illegal_access, .uninitialized = flag.uninitialized };
             }
 
             pub fn peek(_: *This, addr: u16) u8 {
@@ -109,65 +118,81 @@ pub fn Ppu(VideoBackend: type) type {
             Black = 3,
         };
 
-        mode: Mode,
+        mode: TrackedValue(Mode),
 
-        enable: bool,
-        window_enable: bool,
-        obj_enable: bool,
-        bg_and_window_enable: bool, // DMG ONLY -- Different meaning in CGB
+        enable: TrackedValue(bool),
+        window_enable: TrackedValue(bool),
+        obj_enable: TrackedValue(bool),
+        bg_and_window_enable: TrackedValue(bool), // DMG ONLY -- Different meaning in CGB
 
-        enable_lyc_stat_int: bool,
-        enable_mode_2_stat_int: bool,
-        enable_mode_1_stat_int: bool,
-        enable_mode_0_stat_int: bool,
+        enable_lyc_stat_int: TrackedValue(bool),
+        enable_mode_2_stat_int: TrackedValue(bool),
+        enable_mode_1_stat_int: TrackedValue(bool),
+        enable_mode_0_stat_int: TrackedValue(bool),
 
-        window_tile_map_area_start: MemoryArea,
-        bg_window_tile_data_area_start: MemoryArea,
-        bg_tile_map_area_start: MemoryArea,
+        window_tile_map_area_start: TrackedValue(MemoryArea),
+        bg_window_tile_data_area_start: TrackedValue(MemoryArea),
+        bg_tile_map_area_start: TrackedValue(MemoryArea),
 
-        obj_size: ObjectSize,
+        obj_size: TrackedValue(ObjectSize),
 
-        lcd_y_coordinate_compare: u8,
-        background_viewport_x: u8,
-        background_viewport_y: u8,
-        window_x_pos: u8,
-        window_y_pos: u8,
+        lcd_y_coordinate_compare: TrackedValue(u8),
+        background_viewport_x: TrackedValue(u8),
+        background_viewport_y: TrackedValue(u8),
+        window_x_pos: TrackedValue(u8),
+        window_y_pos: TrackedValue(u8),
 
-        bg_palette: [4]Shade,
-        obj_palettes: [2][3]Shade,
+        bg_palette: [4]TrackedValue(Shade),
+        obj_palettes: [2][3]TrackedValue(Shade),
 
-        lcd_y_coordinate: u8,
+        lcd_y_coordinate: TrackedValue(u8),
 
         pub fn init(_: *VideoBackend) This {
             return This{
-                .mode = undefined,
+                .mode = .init(.Mode0),
 
-                .enable = undefined,
-                .window_enable = undefined,
-                .obj_enable = undefined,
-                .bg_and_window_enable = undefined,
+                .enable = .init(true),
+                .window_enable = .init(false),
+                .obj_enable = .init(true),
+                .bg_and_window_enable = .init(false),
 
-                .enable_lyc_stat_int = undefined,
-                .enable_mode_2_stat_int = undefined,
-                .enable_mode_1_stat_int = undefined,
-                .enable_mode_0_stat_int = undefined,
+                .enable_lyc_stat_int = .init(true),
+                .enable_mode_2_stat_int = .init(false),
+                .enable_mode_1_stat_int = .init(true),
+                .enable_mode_0_stat_int = .init(false),
 
-                .window_tile_map_area_start = undefined,
-                .bg_window_tile_data_area_start = undefined,
-                .bg_tile_map_area_start = undefined,
+                .window_tile_map_area_start = .init(.High),
+                .bg_window_tile_data_area_start = .init(.Low),
+                .bg_tile_map_area_start = .init(.High),
 
-                .obj_size = undefined,
+                .obj_size = .init(.Stacked),
 
-                .lcd_y_coordinate_compare = undefined,
-                .background_viewport_x = undefined,
-                .background_viewport_y = undefined,
-                .window_x_pos = undefined,
-                .window_y_pos = undefined,
+                .lcd_y_coordinate_compare = .init(0xAA),
+                .background_viewport_x = .init(0xAA),
+                .background_viewport_y = .init(0xAA),
+                .window_x_pos = .init(0xAA),
+                .window_y_pos = .init(0xAA),
 
-                .bg_palette = undefined,
-                .obj_palettes = undefined,
+                .bg_palette = .{
+                    .init(.Black),
+                    .init(.Black),
+                    .init(.Black),
+                    .init(.Black),
+                },
+                .obj_palettes = .{
+                    .{
+                        .init(.Black),
+                        .init(.Black),
+                        .init(.Black),
+                    },
+                    .{
+                        .init(.Black),
+                        .init(.Black),
+                        .init(.Black),
+                    },
+                },
 
-                .lcd_y_coordinate = undefined,
+                .lcd_y_coordinate = .init(0xAA),
             };
         }
 
@@ -175,11 +200,25 @@ pub fn Ppu(VideoBackend: type) type {
             //everything here ...
         }
 
+        fn inner_read(_: *This, _: u16) struct { MemoryFlag, u8 } {
+            return .{ .{}, 0xFF };
+        }
+
+        fn inner_write(_: *This, _: u16, _: u8, _: bool) void {}
+
+        pub fn peek(self: *This, addr: u16) u8 {
+            return self.inner_read(addr).@"1";
+        }
+
+        pub fn poke(self: *This, addr: u16, val: u8) void {
+            return self.inner_write(addr, val, false);
+        }
+
         pub fn read(self: *This, addr: u16) struct { MemoryFlag, u8 } {
             if (addr > 0xB) {
                 return .{ MemoryFlag{ .illegal = true }, 0xFF };
             }
-            return .{ .{}, self.peek(addr) };
+            return self.inner_read(addr);
         }
 
         pub fn write(self: *This, addr: u16, val: u8) MemoryFlag {
@@ -191,162 +230,9 @@ pub fn Ppu(VideoBackend: type) type {
                 // TODO: I have internal value that are not initialized directly by register writes. Should enabling the
                 // PPU initialize them? To which values?
             }
-            self.poke(addr, val);
+
+            self.inner_write(addr, val, true);
             return .{};
-        }
-
-        pub fn peek(self: *This, addr: u16) u8 {
-            switch (addr) {
-                0 => {
-                    var ret: u8 = 0;
-
-                    ret |= @intFromBool(self.enable);
-                    ret <<= 1;
-                    ret |= @backingInt(self.window_tile_map_area_start);
-                    ret <<= 1;
-                    ret |= @intFromBool(self.window_enable);
-                    ret <<= 1;
-                    ret |= @backingInt(self.bg_window_tile_data_area_start);
-                    ret <<= 1;
-                    ret |= @backingInt(self.bg_tile_map_area_start);
-                    ret <<= 1;
-                    ret |= @backingInt(self.obj_size);
-                    ret <<= 1;
-                    ret |= @intFromBool(self.obj_enable);
-                    ret <<= 1;
-                    ret |= @intFromBool(self.bg_and_window_enable);
-
-                    return ret;
-                },
-                1 => {
-                    var ret: u8 = 0;
-
-                    ret |= 1;
-                    ret <<= 1;
-                    ret |= @intFromBool(self.enable_lyc_stat_int);
-                    ret <<= 1;
-                    ret |= @intFromBool(self.enable_mode_2_stat_int);
-                    ret <<= 1;
-                    ret |= @intFromBool(self.enable_mode_1_stat_int);
-                    ret <<= 1;
-                    ret |= @intFromBool(self.enable_mode_0_stat_int);
-                    ret <<= 1;
-                    ret |= @intFromBool(self.lcd_y_coordinate == self.lcd_y_coordinate_compare);
-
-                    const mode: u8 = if (self.enable)
-                        @backingInt(self.mode)
-                    else
-                        0;
-
-                    ret <<= 2;
-                    ret |= mode;
-                    return ret;
-                },
-                2 => {
-                    return self.background_viewport_y;
-                },
-                3 => {
-                    return self.background_viewport_x;
-                },
-                4 => {
-                    return self.lcd_y_coordinate;
-                },
-                5 => {
-                    return self.lcd_y_coordinate_compare;
-                },
-                6 => {
-                    // TODO: DMA TRANSFER
-                    return 0x00;
-                },
-                7 => {
-                    var ret: u8 = 0;
-                    for (0..4) |i| {
-                        const ii: u2 = @intCast(i);
-                        ret |= @backingInt(self.bg_palette[ii]);
-                        ret <<= ii * 2;
-                    }
-                    return ret;
-                },
-                8, 9 => {
-                    var ret: u8 = 0;
-                    for (0..3) |i| {
-                        const ii: u2 = @intCast(i);
-                        ret |= @backingInt(self.obj_palettes[addr - 8][ii]);
-                        ret <<= ii * 2;
-                    }
-                    ret <<= 2;
-                    ret |= 0b11;
-                    return ret;
-                },
-                0xA => {
-                    return self.window_y_pos;
-                },
-                0xB => {
-                    return self.window_x_pos;
-                },
-                else => unreachable,
-            }
-        }
-
-        pub fn poke(self: *This, addr: u16, val: u8) void {
-            switch (addr) {
-                0 => {
-                    self.enable = val & 0b1000_0000 != 0;
-                    self.window_tile_map_area_start = @fromBackingInt(@intCast((val & 0b0100_0000) >> 6));
-                    self.window_enable = val & 0b0010_0000 != 0;
-                    self.bg_window_tile_data_area_start = @fromBackingInt(@intCast((val & 0b0001_0000) >> 4));
-                    self.bg_tile_map_area_start = @fromBackingInt(@intCast((val & 0b0000_1000) >> 3));
-                    self.obj_size = @fromBackingInt(@intCast((val & 0b0000_0100) >> 2));
-                    self.obj_enable = val & 0b0000_0010 != 0;
-                    self.bg_and_window_enable = val & 0b0000_0001 != 0;
-                },
-                1 => {
-                    self.enable_lyc_stat_int = val & 0b0100_0000 != 0;
-                    self.enable_mode_2_stat_int = val & 0b0010_0000 != 0;
-                    self.enable_mode_1_stat_int = val & 0b0001_0000 != 0;
-                    self.enable_mode_0_stat_int = val & 0b0000_1000 != 0;
-                },
-                2 => {
-                    self.background_viewport_y = val;
-                },
-                3 => {
-                    self.background_viewport_x = val;
-                },
-                4 => {
-                    // Nothing, read-only register
-                },
-                5 => {
-                    self.lcd_y_coordinate_compare = val;
-                },
-                6 => {
-                    // TODO: DMA TRANSFER
-                },
-                7 => {
-                    for (0..4) |i| {
-                        const ii: u2 = @intCast(i);
-                        const shift: u3 = ii * 2;
-                        var mask: u8 = 0b0000_0011;
-                        mask <<= shift;
-                        self.bg_palette[i] = @fromBackingInt(@intCast((val & mask) >> shift));
-                    }
-                },
-                8, 9 => {
-                    for (0..3) |i| {
-                        const ii: u2 = @intCast(i);
-                        const shift: u3 = (ii + 1) * 2;
-                        var mask: u8 = 0b0000_0011;
-                        mask <<= shift;
-                        self.obj_palettes[addr - 1][i] = @fromBackingInt(@intCast((val & mask) >> shift));
-                    }
-                },
-                0xA => {
-                    self.window_y_pos = val;
-                },
-                0xB => {
-                    self.window_x_pos = val;
-                },
-                else => unreachable,
-            }
         }
     };
 }
