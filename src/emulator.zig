@@ -139,6 +139,7 @@ pub fn initializeMemory(T: type, mmu: *T) void {
     mmu.write(0xFF26, 0xF1); // global
 
     // PPU
+    mmu.write(0xFF40, 0x00); // disable ppu for a known state
     mmu.write(0xFF40, 0x91); // enable ppu
     mmu.write(0xFF41, 0x85); // unset all conditions for STAT interrupt
     mmu.write(0xFF42, 0x00); // viewport Y to zero

@@ -4,6 +4,16 @@ const std = @import("std");
 
 const MemoryFlag = @import("memory_flag.zig").MemoryFlag;
 const TrackedValue = @import("tracked_value.zig").TrackedValue;
+const InterruptKind = @import("interrupt_kind.zig").InterruptKind;
+
+const mmio_register = @import("mmio_register.zig");
+const LCDC = mmio_register.LCDC;
+const STAT = mmio_register.STAT;
+const BGP = mmio_register.BGP;
+const OBP0 = mmio_register.OBP0;
+const OBP1 = mmio_register.OBP1;
+
+const logger = std.log.scoped(.ppu);
 
 // TODO: this may need to be non global
 var static_vram: [0x2000]u8 = undefined;
@@ -12,7 +22,7 @@ var static_init_vram: [0x2000]bool = @splat(false);
 var static_oam: [0xA0]u8 = undefined;
 var static_init_oam: [0xA0]bool = @splat(false);
 
-pub fn Ppu(VideoBackend: type) type {
+pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
     return struct {
         const This = @This();
 
@@ -39,34 +49,40 @@ pub fn Ppu(VideoBackend: type) type {
         };
 
         pub const Oam = struct {
-            const Row = struct { u16, u16, u16, u16 };
-
-            pub fn read(ppu: *This, addr: u16) struct { MemoryFlag, u8 } {
-                var flag: MemoryFlag = .{};
-
-                const mode = ppu.mode.resolve(&flag);
-                const illegal_access, const val = if (mode == .Mode0 or mode == .Mode1)
-                    .{ false, static_oam[addr] }
-                else
-                    .{ true, 0xFF };
-                const flags = MemoryFlag{
-                    .uninitialized = flag.uninitialized or !static_init_oam[addr],
-                    .illegal = flag.illegal or illegal_access,
+            const ObjectAttrs = packed struct(u8) {
+                const Palette = enum(u1) {
+                    obp0,
+                    obp1,
                 };
 
+                const Flipped = enum(u1) {
+                    normal,
+                    flipped,
+                };
+
+                const Priority = enum(u1) {
+                    none,
+                    bg_window_drawn_over,
+                };
+
+                _: u3 = 0b111, // DMG only -- palette for CGB
+                __: u1 = 1, // DMG only -- VRAM bank for CGB
+                palette: Palette, // DMG only -- Unused on CGB
+                xflip: Flipped,
+                yflip: Flipped,
+                priority: Priority,
+            };
+
+            pub fn read(_: *This, addr: u16) struct { MemoryFlag, u8 } {
+                const val = static_oam[addr];
+                const flags = MemoryFlag{ .uninitialized = !static_init_oam[addr] };
                 return .{ flags, val };
             }
 
-            pub fn write(ppu: *This, addr: u16, val: u8) MemoryFlag {
-                var flag: MemoryFlag = .{};
-
-                const mode = ppu.mode.resolve(&flag);
-                const illegal_access = if (mode == .Mode0 or mode == .Mode1) brk: {
-                    static_oam[addr] = val;
-                    static_init_oam[addr] = true;
-                    break :brk false;
-                } else true;
-                return .{ .illegal = illegal_access, .uninitialized = flag.uninitialized };
+            pub fn write(_: *This, addr: u16, val: u8) MemoryFlag {
+                static_oam[addr] = val;
+                static_init_oam[addr] = true;
+                return .{};
             }
 
             pub fn peek(_: *This, addr: u16) u8 {
@@ -75,6 +91,18 @@ pub fn Ppu(VideoBackend: type) type {
 
             pub fn poke(_: *This, addr: u16, val: u8) void {
                 static_oam[addr] = val;
+            }
+
+            pub fn get_object_data(idx: u8, comptime which: enum { y, x, tile, attrs }) if (which == .attrs) ObjectAttrs else u8 {
+                const offset = switch (which) {
+                    .y => 0,
+                    .x => 1,
+                    .tile => 2,
+                    .attrs => 3,
+                };
+
+                const val = static_oam[@as(u16, @intCast(idx))*4 + offset];
+                return @bitCast(val);
             }
         };
 
@@ -94,117 +122,316 @@ pub fn Ppu(VideoBackend: type) type {
             pub fn poke(_: *This, _: u16, _: u8) void {}
         };
 
-        const Mode = enum(u2) {
-            Mode0 = 0,
-            Mode1 = 1,
-            Mode2 = 2,
-            Mode3 = 3,
+        const Mode = union(STAT.PPUMode) {
+            Mode0: Mode0,
+            Mode1: Mode1,
+            Mode2: Mode2,
+            Mode3: Mode3,
+
+            fn tick(self: *@This(), ppu: *This) void {
+                const next = switch (self.*) {
+                    inline else => |*mode| mode.tick(ppu),
+                };
+
+                if (next) |new_mode| {
+                    self.* = new_mode;
+                }
+            }
         };
 
-        const MemoryArea = enum(u1) {
-            Low = 0,
-            High = 1,
+        const Mode0 = struct {
+            fn tick(_: *Mode0, _: *This) ?Mode {
+                return null;
+            }
         };
 
-        const ObjectSize = enum(u1) {
-            Square = 0,
-            Stacked = 1,
+        const Mode1 = struct {
+            fn tick(_: *Mode1, _: *This) ?Mode {
+                return null;
+            }
         };
 
-        const Shade = enum(u2) {
-            White = 0,
-            LightGray = 1,
-            DarkGray = 2,
-            Black = 3,
+        const Mode2 = struct {
+            objs_len: u8,
+            oam_idx: u8,
+
+            fn init() Mode2 {
+            }
+
+            fn tick(_: *Mode2, _: *This) ?Mode {
+                return null;
+            }
         };
 
-        mode: TrackedValue(Mode),
+        const Mode3 = struct {
+            fn tick(_: *Mode3, _: *This) ?Mode {
+                return null;
+            }
+        };
 
-        enable: TrackedValue(bool),
+        const IntSelect = struct {
+            mode0: bool,
+            mode1: bool,
+            mode2: bool,
+            lyc: bool,
+        };
+
+        enabled: TrackedValue(bool),
+
+        bg_tile_map_area: TrackedValue(LCDC.TileMapArea),
+        window_tile_map_area: TrackedValue(LCDC.TileMapArea),
+        bg_window_tile_data_area: TrackedValue(LCDC.TileDataArea),
+        obj_size: TrackedValue(LCDC.ObjSize),
+
         window_enable: TrackedValue(bool),
         obj_enable: TrackedValue(bool),
-        bg_and_window_enable: TrackedValue(bool), // DMG ONLY -- Different meaning in CGB
+        bg_window_enable: TrackedValue(bool), // DMG ONLY -- CGB instead does something with priority
 
-        enable_lyc_stat_int: TrackedValue(bool),
-        enable_mode_2_stat_int: TrackedValue(bool),
-        enable_mode_1_stat_int: TrackedValue(bool),
-        enable_mode_0_stat_int: TrackedValue(bool),
+        int_select: struct {
+            mode0: TrackedValue(bool),
+            mode1: TrackedValue(bool),
+            mode2: TrackedValue(bool),
+            lyc: TrackedValue(bool),
 
-        window_tile_map_area_start: TrackedValue(MemoryArea),
-        bg_window_tile_data_area_start: TrackedValue(MemoryArea),
-        bg_tile_map_area_start: TrackedValue(MemoryArea),
+            fn as_values(self: @This(), flag: ?*MemoryFlag) IntSelect {
+                return .{
+                    .mode0 = self.mode0.resolve(&flag),
+                    .mode1 = self.mode1.resolve(&flag),
+                    .mode2 = self.mode2.resolve(&flag),
+                    .lyc = self.lyc.resolve(&flag),
+                };
+            }
+        },
 
-        obj_size: TrackedValue(ObjectSize),
+        bg_viewport: struct {
+            x: TrackedValue(u8),
+            y: TrackedValue(u8),
+        },
+        win_viewport: struct {
+            x: TrackedValue(u8),
+            y: TrackedValue(u8),
+        },
 
-        lcd_y_coordinate_compare: TrackedValue(u8),
-        background_viewport_x: TrackedValue(u8),
-        background_viewport_y: TrackedValue(u8),
-        window_x_pos: TrackedValue(u8),
-        window_y_pos: TrackedValue(u8),
+        lyc: TrackedValue(u8),
 
-        bg_palette: [4]TrackedValue(Shade),
-        obj_palettes: [2][3]TrackedValue(Shade),
+        bg_win_palette: [4]TrackedValue(BGP.Color),
+        obj_palette_1: [4]TrackedValue(BGP.Color),
+        obj_palette_2: [4]TrackedValue(BGP.Color),
 
-        lcd_y_coordinate: TrackedValue(u8),
+        current_oam_dma_addr: TrackedValue(u8),
 
-        pub fn init(_: *VideoBackend) This {
+        mode: Mode,
+        ly: u8,
+        objects: [10]struct { x: u8, y: u8, idx: u8 };
+
+        oam_dma_progress: u8,
+        must_write_to_stat_next_mcycle: ?u8,
+
+        video_backend: *VideoBackend,
+        interrupt: *Interrupt,
+
+        pub fn init(video_backend: *VideoBackend, interrupt: *Interrupt) This {
             return This{
-                .mode = .init(.Mode0),
+                .enabled = .init(false),
 
-                .enable = .init(true),
+                .bg_tile_map_area = .init(.addr_9C00_to_9FFF),
+                .window_tile_map_area = .init(.addr_9C00_to_9FFF),
+                .bg_window_tile_data_area = .init(.addr_8000_to_8FFF),
+                .obj_size = .init(.size_8x16),
+
                 .window_enable = .init(false),
-                .obj_enable = .init(true),
-                .bg_and_window_enable = .init(false),
+                .obj_enable = .init(false),
+                .bg_window_enable = .init(false),
 
-                .enable_lyc_stat_int = .init(true),
-                .enable_mode_2_stat_int = .init(false),
-                .enable_mode_1_stat_int = .init(true),
-                .enable_mode_0_stat_int = .init(false),
-
-                .window_tile_map_area_start = .init(.High),
-                .bg_window_tile_data_area_start = .init(.Low),
-                .bg_tile_map_area_start = .init(.High),
-
-                .obj_size = .init(.Stacked),
-
-                .lcd_y_coordinate_compare = .init(0xAA),
-                .background_viewport_x = .init(0xAA),
-                .background_viewport_y = .init(0xAA),
-                .window_x_pos = .init(0xAA),
-                .window_y_pos = .init(0xAA),
-
-                .bg_palette = .{
-                    .init(.Black),
-                    .init(.Black),
-                    .init(.Black),
-                    .init(.Black),
-                },
-                .obj_palettes = .{
-                    .{
-                        .init(.Black),
-                        .init(.Black),
-                        .init(.Black),
-                    },
-                    .{
-                        .init(.Black),
-                        .init(.Black),
-                        .init(.Black),
-                    },
+                .int_select = .{
+                    .mode0 = .init(true),
+                    .mode1 = .init(false),
+                    .mode2 = .init(true),
+                    .lyc = .init(false),
                 },
 
-                .lcd_y_coordinate = .init(0xAA),
+                .bg_viewport = .{
+                    .x = .init(0xAA),
+                    .y = .init(0xAA),
+                },
+                .win_viewport = .{
+                    .x = .init(0xAA),
+                    .y = .init(0xAA),
+                },
+
+                .lyc = .init(0xAA),
+
+                .bg_win_palette = .{
+                    .init(.white),
+                    .init(.black),
+                    .init(.white),
+                    .init(.black),
+                },
+                .obj_palette_1 = .{
+                    .init(.white),
+                    .init(.black),
+                    .init(.white),
+                    .init(.black),
+                },
+                .obj_palette_2 = .{
+                    .init(.white),
+                    .init(.black),
+                    .init(.white),
+                    .init(.black),
+                },
+
+                .current_oam_dma_addr = .init(0xAA),
+
+                .mode = .{
+                    .Mode0 = .init(),
+                },
+                .ly = 0,
+
+                .oam_dma_progress = 0xFF,
+                .must_write_to_stat_next_mcycle = null,
+
+                .video_backend = video_backend,
+                .interrupt = interrupt,
             };
         }
 
-        pub fn tick(_: *This, _: u2) void {
-            //everything here ...
+        pub fn tick(self: *This, m_cycle_tick: u2) void {
+            if (m_cycle_tick == 0) {
+                if (self.must_write_to_stat_next_mcycle) |val| {
+                    _ = self.write(0x1, val);
+                    self.must_write_to_stat_next_mcycle = null;
+                }
+                self.tick_oam_dma();
+            }
+
+            if (!self.enabled) {
+                return;
+            }
+
+            const prev_ly = self.ly;
+            const prev_mode = std.meta.activeTag(self.mode);
+
+            // TODO: restrict memory access during ppu execution (related to OAM DMA, need changes in MMU)
+            self.mode.tick();
+
+            if (prev_ly != self.ly or prev_mode != self.mode) {
+                self.check_trigger_interrupt(self.int_select.as_values(null), prev_mode, prev_ly, self.lyc.resolve(null), null);
+            }
         }
 
-        fn inner_read(_: *This, _: u16) struct { MemoryFlag, u8 } {
-            return .{ .{}, 0xFF };
+        fn tick_oam_dma(self: *This) void {
+            if (self.oam_dma_progress >= 0xA0) {
+                return;
+            }
+
+            // TODO: implement transfer itself
+
+            self.oam_dma_progress += 1;
         }
 
-        fn inner_write(_: *This, _: u16, _: u8, _: bool) void {}
+        fn inner_read(self: *This, addr: u16) struct { MemoryFlag, u8 } {
+            var flag: MemoryFlag = .{};
+            const val: u8 = switch (addr) {
+                0x00 => @bitCast(LCDC{
+                    .bg_tile_map_area = self.bg_tile_map_area.resolve(&flag),
+                    .bg_window_enable = self.bg_window_enable.resolve(&flag),
+                    .bg_window_tile_data_area = self.bg_window_tile_data_area.resolve(&flag),
+                    .obj_enable = self.obj_enable.resolve(&flag),
+                    .obj_size = self.obj_size.resolve(&flag),
+                    .ppu_enable = self.enabled.resolve(&flag),
+                    .window_enable = self.window_enable.resolve(&flag),
+                    .window_tile_map_area = self.window_tile_map_area.resolve(&flag),
+                }),
+                0x01 => @bitCast(STAT{
+                    .ppu_mode = std.meta.activeTag(self.mode),
+                    .lyc_eq_ly = self.lyc.resolve(&flag) == self.ly,
+                    .mode_0_int_select = self.int_select.mode0.resolve(&flag),
+                    .mode_1_int_select = self.int_select.mode1.resolve(&flag),
+                    .mode_2_int_select = self.int_select.mode2.resolve(&flag),
+                    .lyc_int_select = self.int_select.lyc.resolve(&flag),
+                }),
+                0x02 => self.bg_viewport.y.resolve(&flag),
+                0x03 => self.bg_viewport.x.resolve(&flag),
+                0x04 => self.ly,
+                0x05 => self.lyc.resolve(&flag),
+                0x06 => self.current_oam_dma_addr.resolve(&flag),
+                0x07 => @bitCast(BGP{ // DMG ONLY -- CGB takes its palettes from elsewhere
+                    .id0 = self.bg_win_palette[0].resolve(&flag),
+                    .id1 = self.bg_win_palette[1].resolve(&flag),
+                    .id2 = self.bg_win_palette[2].resolve(&flag),
+                    .id3 = self.bg_win_palette[3].resolve(&flag),
+                }),
+                0x08 => @bitCast(OBP0{ // DMG ONLY -- CGB takes its palettes from elsewhere
+                    .id0 = self.obj_palette_1[0].resolve(&flag),
+                    .id1 = self.obj_palette_1[1].resolve(&flag),
+                    .id2 = self.obj_palette_1[2].resolve(&flag),
+                    .id3 = self.obj_palette_1[3].resolve(&flag),
+                }),
+                0x09 => @bitCast(OBP1{ // DMG ONLY -- CGB takes its palettes from elsewhere
+                    .id0 = self.obj_palette_2[0].resolve(&flag),
+                    .id1 = self.obj_palette_2[1].resolve(&flag),
+                    .id2 = self.obj_palette_2[2].resolve(&flag),
+                    .id3 = self.obj_palette_2[3].resolve(&flag),
+                }),
+                0x0A => self.win_viewport.y.resolve(&flag),
+                0x0B => self.win_viewport.x.resolve(&flag),
+                else => unreachable,
+            };
+
+            return .{ flag, val };
+        }
+
+        fn inner_write(self: *This, addr: u16, val: u8, real: bool) void {
+            switch (addr) {
+                0x00 => {
+                    const reg: LCDC = @bitCast(val);
+                    self.bg_tile_map_area.set(reg.bg_tile_map_area, real);
+                    self.bg_window_enable.set(reg.bg_window_enable, real);
+                    self.bg_window_tile_data_area.set(reg.bg_window_tile_data_area, real);
+                    self.obj_enable.set(reg.obj_enable, real);
+                    self.obj_size.set(reg.obj_size, real);
+                    self.enabled.set(reg.ppu_enable, real);
+                    self.window_enable.set(reg.window_enable, real);
+                    self.window_tile_map_area.set(reg.window_tile_map_area, real);
+                },
+                0x01 => {
+                    const reg: STAT = @bitCast(val);
+                    self.int_select.mode0.set(reg.mode_0_int_select, real);
+                    self.int_select.mode1.set(reg.mode_1_int_select, real);
+                    self.int_select.mode2.set(reg.mode_2_int_select, real);
+                    self.int_select.lyc.set(reg.lyc_int_select, real);
+                },
+                0x02 => self.bg_viewport.y.set(val, real),
+                0x03 => self.bg_viewport.x.set(val, real),
+                0x04 => self.ly = val, // allowed for debugging, write() should forbid it directly
+                0x05 => self.lyc.set(val, real),
+                0x06 => self.current_oam_dma_addr.set(val, real),
+                0x07 => {
+                    const reg: BGP = @bitCast(val);
+                    self.bg_win_palette[0].set(reg.id0, real);
+                    self.bg_win_palette[1].set(reg.id1, real);
+                    self.bg_win_palette[2].set(reg.id2, real);
+                    self.bg_win_palette[3].set(reg.id3, real);
+                },
+                0x08 => {
+                    const reg: OBP0 = @bitCast(val);
+                    self.obj_palette_1[0].set(reg.id0, real);
+                    self.obj_palette_1[1].set(reg.id1, real);
+                    self.obj_palette_1[2].set(reg.id2, real);
+                    self.obj_palette_1[3].set(reg.id3, real);
+                },
+                0x09 => {
+                    const reg: OBP1 = @bitCast(val);
+                    self.obj_palette_2[0].set(reg.id0, real);
+                    self.obj_palette_2[1].set(reg.id1, real);
+                    self.obj_palette_2[2].set(reg.id2, real);
+                    self.obj_palette_2[3].set(reg.id3, real);
+                },
+                0x0A => self.win_viewport.y.set(val, real),
+                0x0B => self.win_viewport.x.set(val, real),
+                else => unreachable,
+            }
+        }
 
         pub fn peek(self: *This, addr: u16) u8 {
             return self.inner_read(addr).@"1";
@@ -215,26 +442,93 @@ pub fn Ppu(VideoBackend: type) type {
         }
 
         pub fn read(self: *This, addr: u16) struct { MemoryFlag, u8 } {
-            if (addr > 0xB) {
-                return .{ MemoryFlag{ .illegal = true }, 0xFF };
-            }
             return self.inner_read(addr);
         }
 
-        pub fn write(self: *This, addr: u16, val: u8) MemoryFlag {
-            if (addr > 0xB or addr == 0x4) {
-                // TODO: should writing to a read-only register trigger the illegal write flag (addr=0x4)?
-                return .{ .illegal = true };
-            }
-            if (addr == 0x0) {
-                // TODO: I have internal value that are not initialized directly by register writes. Should enabling the
-                // PPU initialize them? To which values?
+        pub fn write(self: *This, addr: u16, in_val: u8) MemoryFlag {
+            var flag: MemoryFlag = .{};
+            var val = in_val;
+
+            if (addr == 0x00 and val & 0x80 == 0) {
+                if (self.enabled.resolve(&flag) and self.mode != .Mode1) {
+                    if (warn) {
+                        logger.warn("ppu turned off outside of mode 1 (vblank) will damage the hardware", .{});
+                    }
+                    flag.illegal = true;
+                }
+                self.poweroff();
             }
 
-            self.inner_write(addr, val, true);
-            return .{};
+            if (addr == 0x01) {
+                // DMG ONLY -- Hardware bug, from pandocs:
+                // A hardware quirk in the monochrome Game Boy makes the LCD interrupt sometimes trigger when writing to
+                // STAT (including writing $00) during OAM scan, HBlank, VBlank, or LY=LYC. It behaves as if $FF were
+                // written for one M-cycle, and then the written value were written the next M-cycle.
+                if (self.must_write_to_stat_next_mcycle == null and (self.mode != .Mode3 or self.ly == self.lyc.resolve(&flag))) {
+                    self.must_write_to_stat_next_mcycle = val;
+                    val = 0xFF;
+                }
+            }
+
+            const prev_int_select = self.int_select.as_values(&flag);
+            const prev_lyc = self.lyc.resolve(&flag);
+
+            if (addr == 0x04) {
+                flag.illegal = true;
+            } else {
+                self.inner_write(addr, val, true);
+            }
+
+            if (addr == 0x01 or addr == 0x05) {
+                self.check_trigger_interrupt(prev_int_select, self.mode, self.ly, prev_lyc, &flag);
+            }
+
+            if (addr == 0x06) {
+                if (val > 0xDF) {
+                    if (warn) {
+                        logger.warn("dma over invalid range will not behave as expected", .{});
+                    }
+                    flag.illegal = true;
+                }
+                self.oam_dma_progress = 0x00;
+            }
+
+            return flag;
+        }
+
+        fn check_trigger_interrupt(
+            self: *This,
+            prev_int_select: IntSelect,
+            prev_mode: STAT.PPUMode,
+            prev_ly: u8,
+            prev_lyc: u8,
+            flag: ?*MemoryFlag,
+        ) void {
+            if (!self.enabled) {
+                return;
+            }
+
+            const before = This.get_interrupt_state(prev_int_select, prev_mode, prev_ly == prev_lyc);
+            const after = This.get_interrupt_state(self.int_select.resolve(flag), self.mode, self.ly == self.lyc.resolve(flag));
+
+            if (!before and after) {
+                self.interrupt.request(InterruptKind.ppu);
+            }
+        }
+
+        fn get_interrupt_state(int_select: IntSelect, mode: STAT.PPUMode, ly_eq_lyc: bool) bool {
+            return (int_select.mode0 and mode == .Mode0) or
+                (int_select.mode1 and mode == .Mode1) or
+                (int_select.mode2 and mode == .Mode2) or
+                (int_select.lyc and ly_eq_lyc);
+        }
+
+        fn poweroff(self: *This) void {
+            self.enabled.set(false, true);
+            self.mode = .{
+                .Mode0 = .init(),
+            };
+            self.ly = 0;
         }
     };
 }
-
-// TODO: regiser read/write unit tests

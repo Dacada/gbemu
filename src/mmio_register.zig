@@ -223,17 +223,17 @@ pub const NR52 = packed struct(u8) {
 
 // FF40
 pub const LCDC = packed struct(u8) {
-    const ObjSize = enum(u1) {
+    pub const ObjSize = enum(u1) {
         size_8x8 = 0,
         size_8x16 = 1,
     };
 
-    const TileMapArea = enum(u1) {
+    pub const TileMapArea = enum(u1) {
         addr_9800_to_9BFF = 0,
         addr_9C00_to_9FFF = 1,
     };
 
-    const TileDataArea = enum(u1) {
+    pub const TileDataArea = enum(u1) {
         addr_8800_to_97FF = 0,
         addr_8000_to_8FFF = 1,
     };
@@ -250,7 +250,7 @@ pub const LCDC = packed struct(u8) {
 
 // FF41
 pub const STAT = packed struct(u8) {
-    const PPUMode = enum(u2) {
+    pub const PPUMode = enum(u2) {
         Mode0 = 0,
         Mode1 = 1,
         Mode2 = 2,
@@ -284,7 +284,7 @@ pub const STAT = packed struct(u8) {
 // FF47
 pub const BGP = packed struct(u8) {
     // DMG ONLY -- Meaningful only for DMG, CGB takes its palettes from elsewhere
-    const Color = enum(u2) {
+    pub const Color = enum(u2) {
         white,
         light_gray,
         dark_gray,
@@ -319,7 +319,7 @@ pub const OBP1 = BGP;
 // Unused // DMG ONLY -- On GCB this is VBK
 
 // FF50
-// BANK is not structured
+// BANK is used only by the bootloader to unmap itself
 
 // FF51-FFFE
 // Unused // DMG ONLY -- ON GCB there are several used ranges here
