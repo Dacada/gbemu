@@ -45,6 +45,7 @@ pub const ContainerConfig = struct {
     } = .real,
     ppu: enum {
         real,
+        real_nowarn,
         dummy,
     } = .real,
     boot_rom: enum {
@@ -142,7 +143,8 @@ pub fn Container(comptime cfg: ContainerConfig) type {
     };
 
     const c_Ppu = switch (cfg.ppu) {
-        .real => ppu.Ppu(c_VideoBackend),
+        .real => ppu.Ppu(c_VideoBackend, c_Interrupt, true),
+        .real_nowarn => ppu.Ppu(c_VideoBackend, c_Interrupt, false),
         .dummy => DummyWithTickArgument,
     };
 
@@ -301,7 +303,8 @@ pub fn Container(comptime cfg: ContainerConfig) type {
 
         fn make_ppu(self: *This) Ppu {
             return switch (cfg.ppu) {
-                .real => Ppu.init(self.get_video_backend()),
+                .real => Ppu.init(self.get_video_backend(), self.get_interrupt()),
+                .real_nowarn => Ppu.init(self.get_video_backend(), self.get_interrupt()),
                 .dummy => DummyWithTickArgument{},
             };
         }

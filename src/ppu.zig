@@ -92,18 +92,6 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
             pub fn poke(_: *This, addr: u16, val: u8) void {
                 static_oam[addr] = val;
             }
-
-            pub fn get_object_data(idx: u8, comptime which: enum { y, x, tile, attrs }) if (which == .attrs) ObjectAttrs else u8 {
-                const offset = switch (which) {
-                    .y => 0,
-                    .x => 1,
-                    .tile => 2,
-                    .attrs => 3,
-                };
-
-                const val = static_oam[@as(u16, @intCast(idx))*4 + offset];
-                return @bitCast(val);
-            }
         };
 
         pub const Forbidden = struct {
@@ -140,30 +128,91 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
         };
 
         const Mode0 = struct {
+            fn init() Mode0 {
+                return .{};
+            }
+
             fn tick(_: *Mode0, _: *This) ?Mode {
                 return null;
             }
         };
 
         const Mode1 = struct {
+            fn init() Mode1 {
+                return .{};
+            }
+
             fn tick(_: *Mode1, _: *This) ?Mode {
                 return null;
             }
         };
 
         const Mode2 = struct {
-            objs_len: u8,
-            oam_idx: u8,
+            objs_idx: u8,
+            oam_addr: u8,
+            current: struct { x: u8, y: u8 },
+            state: enum { read_next, write_next },
 
             fn init() Mode2 {
+                return .{
+                    .objs_idx = 0,
+                    .oam_addr = 0,
+                    .current = .{
+                        .x = 0,
+                        .y = 0,
+                    },
+                    .state = .read_next,
+                };
             }
 
-            fn tick(_: *Mode2, _: *This) ?Mode {
+            fn tick(self: *Mode2, ppu: *This) ?Mode {
+                switch (self.state) {
+                    .read_next => {
+                        _, self.current.y = Oam.read(ppu, self.oam_addr);
+                        _, self.current.x = Oam.read(ppu, self.oam_addr + 1);
+                        self.state = .write_next;
+                    },
+                    .write_next => {
+                        // object's y coordinate is offset by 16 from the actual screen coordinate
+                        const line = ppu.ly + 16;
+                        const height: u8 = switch (ppu.obj_size.resolve(null)) {
+                            .size_8x8 => 8,
+                            .size_8x16 => 16,
+                        };
+                        if (self.objs_idx < 10) {
+                            if (line >= self.current.y) {
+                                const offset = line - self.current.y;
+                                if (offset < height) {
+                                    ppu.objects_for_this_scanline[self.objs_idx] = .{
+                                        .x = self.current.x,
+                                        .y = self.current.y,
+                                        .addr = self.oam_addr,
+                                    };
+                                    self.objs_idx += 1;
+                                    ppu.total_objects_for_this_scanline = self.objs_idx;
+                                }
+                            }
+                        }
+
+                        self.oam_addr += 4;
+                        self.state = .read_next;
+                    },
+                }
+
+                if (self.oam_addr >= 4 * 40) {
+                    return .{
+                        .Mode3 = .init(),
+                    };
+                }
                 return null;
             }
         };
 
         const Mode3 = struct {
+            fn init() Mode3 {
+                return .{};
+            }
+
             fn tick(_: *Mode3, _: *This) ?Mode {
                 return null;
             }
@@ -195,10 +244,10 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
 
             fn as_values(self: @This(), flag: ?*MemoryFlag) IntSelect {
                 return .{
-                    .mode0 = self.mode0.resolve(&flag),
-                    .mode1 = self.mode1.resolve(&flag),
-                    .mode2 = self.mode2.resolve(&flag),
-                    .lyc = self.lyc.resolve(&flag),
+                    .mode0 = self.mode0.resolve(flag),
+                    .mode1 = self.mode1.resolve(flag),
+                    .mode2 = self.mode2.resolve(flag),
+                    .lyc = self.lyc.resolve(flag),
                 };
             }
         },
@@ -222,7 +271,8 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
 
         mode: Mode,
         ly: u8,
-        objects: [10]struct { x: u8, y: u8, idx: u8 };
+        objects_for_this_scanline: [10]struct { x: u8, y: u8, addr: u8 },
+        total_objects_for_this_scanline: u8,
 
         oam_dma_progress: u8,
         must_write_to_stat_next_mcycle: ?u8,
@@ -289,6 +339,8 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
 
                 .oam_dma_progress = 0xFF,
                 .must_write_to_stat_next_mcycle = null,
+                .objects_for_this_scanline = @splat(.{ .x = 0, .y = 0, .addr = 0 }),
+                .total_objects_for_this_scanline = 0,
 
                 .video_backend = video_backend,
                 .interrupt = interrupt,
@@ -304,7 +356,7 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
                 self.tick_oam_dma();
             }
 
-            if (!self.enabled) {
+            if (!self.enabled.resolve(null)) {
                 return;
             }
 
@@ -312,7 +364,7 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
             const prev_mode = std.meta.activeTag(self.mode);
 
             // TODO: restrict memory access during ppu execution (related to OAM DMA, need changes in MMU)
-            self.mode.tick();
+            self.mode.tick(self);
 
             if (prev_ly != self.ly or prev_mode != self.mode) {
                 self.check_trigger_interrupt(self.int_select.as_values(null), prev_mode, prev_ly, self.lyc.resolve(null), null);
@@ -504,12 +556,12 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
             prev_lyc: u8,
             flag: ?*MemoryFlag,
         ) void {
-            if (!self.enabled) {
+            if (!self.enabled.resolve(flag)) {
                 return;
             }
 
             const before = This.get_interrupt_state(prev_int_select, prev_mode, prev_ly == prev_lyc);
-            const after = This.get_interrupt_state(self.int_select.resolve(flag), self.mode, self.ly == self.lyc.resolve(flag));
+            const after = This.get_interrupt_state(self.int_select.as_values(flag), self.mode, self.ly == self.lyc.resolve(flag));
 
             if (!before and after) {
                 self.interrupt.request(InterruptKind.ppu);
