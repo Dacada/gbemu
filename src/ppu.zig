@@ -51,18 +51,18 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
         pub const Oam = struct {
             const ObjectAttrs = packed struct(u8) {
                 const Palette = enum(u1) {
-                    obp0,
-                    obp1,
+                    obp0 = 0,
+                    obp1 = 1,
                 };
 
                 const Flipped = enum(u1) {
-                    normal,
-                    flipped,
+                    normal = 0,
+                    flipped = 1,
                 };
 
                 const Priority = enum(u1) {
-                    none,
-                    bg_window_drawn_over,
+                    none = 0,
+                    bg_window_drawn_over = 1,
                 };
 
                 _: u3 = 0b111, // DMG only -- palette for CGB
