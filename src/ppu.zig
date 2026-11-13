@@ -132,8 +132,24 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
                 return .{};
             }
 
-            fn tick(_: *Mode0, _: *This) ?Mode {
-                return null;
+            fn tick(_: *Mode0, ppu: *This) ?Mode {
+                if (ppu.scanline_duration == 455) {
+                    ppu.scanline_duration = 0;
+                    if (ppu.ly == 143) {
+                        ppu.ly += 1; // we do keep increasing ly in vblank
+                        return .{
+                            .Mode1 = .init(),
+                        };
+                    } else {
+                        ppu.ly += 1;
+                        return .{
+                            .Mode2 = .init(),
+                        };
+                    }
+                } else {
+                    ppu.scanline_duration += 1;
+                    return null;
+                }
             }
         };
 
@@ -142,8 +158,22 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
                 return .{};
             }
 
-            fn tick(_: *Mode1, _: *This) ?Mode {
-                return null;
+            fn tick(_: *Mode1, ppu: *This) ?Mode {
+                if (ppu.scanline_duration == 455) {
+                    ppu.scanline_duration = 0;
+                    if (ppu.ly == 153) {
+                        ppu.ly = 0;
+                        return .{
+                            .Mode2 = .init(),
+                        };
+                    } else {
+                        ppu.ly += 1;
+                        return null;
+                    }
+                } else {
+                    ppu.scanline_duration += 1;
+                    return null;
+                }
             }
         };
 
@@ -166,6 +196,8 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
             }
 
             fn tick(self: *Mode2, ppu: *This) ?Mode {
+                ppu.scanline_duration += 1;
+
                 switch (self.state) {
                     .read_next => {
                         _, self.current.y = Oam.read(ppu, self.oam_addr);
@@ -268,6 +300,7 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
         ly: u8,
         objects_for_this_scanline: [10]struct { x: u8, y: u8, addr: u8 },
         total_objects_for_this_scanline: u8,
+        scanline_duration: u16,
 
         oam_dma_progress: u8,
         must_write_to_stat_next_mcycle: ?u8,
@@ -336,6 +369,7 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
                 .must_write_to_stat_next_mcycle = null,
                 .objects_for_this_scanline = @splat(.{ .x = 0, .y = 0, .addr = 0 }),
                 .total_objects_for_this_scanline = 0,
+                .scanline_duration = 0,
 
                 .video_backend = video_backend,
                 .interrupt = interrupt,
