@@ -285,10 +285,10 @@ pub const STAT = packed struct(u8) {
 pub const BGP = packed struct(u8) {
     // DMG ONLY -- Meaningful only for DMG, CGB takes its palettes from elsewhere
     pub const Color = enum(u2) {
-        white,
-        light_gray,
-        dark_gray,
-        black,
+        white = 0b00,
+        light_gray = 0b01,
+        dark_gray = 0b10,
+        black = 0b11,
     };
 
     id0: Color,
