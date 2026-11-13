@@ -179,19 +179,14 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
                             .size_8x8 => 8,
                             .size_8x16 => 16,
                         };
-                        if (self.objs_idx < 10) {
-                            if (line >= self.current.y) {
-                                const offset = line - self.current.y;
-                                if (offset < height) {
-                                    ppu.objects_for_this_scanline[self.objs_idx] = .{
-                                        .x = self.current.x,
-                                        .y = self.current.y,
-                                        .addr = self.oam_addr,
-                                    };
-                                    self.objs_idx += 1;
-                                    ppu.total_objects_for_this_scanline = self.objs_idx;
-                                }
-                            }
+                        if (self.objs_idx < 10 and self.current.x > 0 and line >= self.current.y and line < self.current.y + height) {
+                            ppu.objects_for_this_scanline[self.objs_idx] = .{
+                                .x = self.current.x,
+                                .y = self.current.y,
+                                .addr = self.oam_addr,
+                            };
+                            self.objs_idx += 1;
+                            ppu.total_objects_for_this_scanline = self.objs_idx;
                         }
 
                         self.oam_addr += 4;
