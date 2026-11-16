@@ -43,6 +43,7 @@ pub const NullVideoBackend = struct {
         return NullVideoBackend{};
     }
     pub fn submit(_: *NullVideoBackend, _: u2) void {}
+    pub fn poweroff(_: *NullVideoBackend) void {}
 };
 
 pub const WavAudioBackendError = error{TrackSizeOverflow};

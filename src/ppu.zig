@@ -117,6 +117,10 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
             Mode3: Mode3,
 
             fn tick(self: *@This(), ppu: *This) void {
+                if (ppu.ly == ppu.win_viewport.y) {
+                    ppu.wy_eq_ly = true;
+                }
+
                 const next = switch (self.*) {
                     inline else => |*mode| mode.tick(ppu),
                 };
@@ -137,6 +141,7 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
                     ppu.scanline_duration = 0;
                     if (ppu.ly == 143) {
                         ppu.ly += 1; // we do keep increasing ly in vblank
+                        ppu.window_line_counter = 0; // reset this mode3 register when entering vblank
                         return .{
                             .Mode1 = .init(),
                         };
@@ -163,6 +168,7 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
                     ppu.scanline_duration = 0;
                     if (ppu.ly == 153) {
                         ppu.ly = 0;
+                        ppu.wy_eq_ly = false;
                         return .{
                             .Mode2 = .init(),
                         };
@@ -207,16 +213,14 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
                     .write_next => {
                         // object's y coordinate is offset by 16 from the actual screen coordinate
                         const line = ppu.ly + 16;
-                        const height: u8 = switch (ppu.obj_size.resolve(null)) {
-                            .size_8x8 => 8,
-                            .size_8x16 => 16,
-                        };
+                        const height = ppu.obj_size.resolve(null).height();
                         if (self.objs_idx < 10 and self.current.x > 0 and line >= self.current.y and line < self.current.y + height) {
                             ppu.objects_for_this_scanline[self.objs_idx] = .{
                                 .x = self.current.x,
                                 .y = self.current.y,
                                 .addr = self.oam_addr,
                             };
+                            ppu.objects_fetched_this_scanline[self.objs_idx] = false;
                             self.objs_idx += 1;
                             ppu.total_objects_for_this_scanline = self.objs_idx;
                         }
@@ -236,12 +240,466 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
         };
 
         const Mode3 = struct {
-            fn init() Mode3 {
-                return .{};
+            const Pixel = packed struct(u4) {
+                color_idx: u2,
+                palette: Oam.ObjectAttrs.Palette,
+                priority: Oam.ObjectAttrs.Priority,
+            };
+
+            const FIFO = struct {
+                const SIZE: u8 = 8;
+                const MASK: u8 = SIZE - 1;
+
+                elements: [SIZE]Pixel,
+                head: u8,
+                tail: u8,
+
+                inline fn init() FIFO {
+                    var self: FIFO = undefined;
+                    self.reset();
+                    return self;
+                }
+
+                inline fn reset(self: *FIFO) void {
+                    self.head = 0;
+                    self.tail = 0;
+                }
+
+                inline fn size(self: FIFO) u8 {
+                    return self.tail -% self.head;
+                }
+
+                inline fn empty(self: FIFO) bool {
+                    return self.tail == self.head;
+                }
+
+                inline fn full(self: FIFO) bool {
+                    return self.size() == SIZE;
+                }
+
+                inline fn push(self: *FIFO, val: Pixel) void {
+                    if (self.full()) {
+                        @panic("attempt to push to full fifo");
+                    }
+
+                    self.elements[self.tail & MASK] = val;
+                    self.tail +%= 1;
+                }
+
+                inline fn at(self: *FIFO, idx: u8) *Pixel {
+                    if (idx >= self.size()) {
+                        @panic("attempt to index fifo with invalidm size");
+                    }
+
+                    return &self.elements[(self.head +% idx) & MASK];
+                }
+
+                inline fn pop(self: *FIFO) Pixel {
+                    if (self.empty()) {
+                        @panic("attempt to pop from empty fifo");
+                    }
+
+                    const val = self.elements[self.head & MASK];
+                    self.head +%= 1;
+                    return val;
+                }
+            };
+
+            fn Fetcher(which: enum { win_bg, obj }) type {
+                return struct {
+                    const ThisFetcher = @This();
+
+                    const State = enum {
+                        fetch_tile_1,
+                        fetch_tile_2,
+                        fetch_data_low_1,
+                        fetch_data_low_2,
+                        fetch_data_high_1,
+                        fetch_data_high_2,
+                        attempt_push,
+                    };
+
+                    const FetchMode = enum {
+                        background,
+                        window,
+                    };
+
+                    fifo: *FIFO,
+
+                    state: State,
+                    mode: if (which == .win_bg) FetchMode else void,
+
+                    xpos: u5,
+                    addr: u16,
+                    tilenum: u8,
+                    data_high: u8,
+                    data_low: u8,
+                    pixels: [8]Pixel,
+
+                    attrs: if (which == .obj) Oam.ObjectAttrs else void,
+                    virgin: if (which == .win_bg) bool else void,
+                    obj_idx: if (which == .obj) u8 else void,
+
+                    fn init() ThisFetcher {
+                        return .{
+                            .state = .fetch_tile_1,
+                            .mode = if (which == .win_bg) .background else {},
+
+                            .xpos = 0,
+                            .addr = 0,
+                            .tilenum = 0,
+                            .data_high = 0,
+                            .data_low = 0,
+                            .pixels = @splat(@bitCast(0)),
+
+                            .attrs = if (which == .obj) @bitCast(0) else {},
+                            .virgin = if (which == .win_bg) true else {},
+                            .obj_idx = if (which == .obj) 0 else {},
+                        };
+                    }
+
+                    fn switchToWinMode(self: *ThisFetcher, fifo: *FIFO) void {
+                        if (self.mode == .window) {
+                            return;
+                        }
+
+                        self.state = .fetch_tile_1;
+                        self.mode = .window;
+                        self.xpos = 0;
+                        fifo.reset();
+                    }
+
+                    fn tick(self: *ThisFetcher, ppu: *This, fifo: *FIFO) void {
+                        self.fifo = fifo;
+
+                        inline for (@typeInfo(State).@"enum".field_names) |state| {
+                            if (self.state == @field(State, state)) {
+                                if (which == .obj) {
+                                    const name = "tick_objects_" ++ state;
+                                    if (@hasDecl(ThisFetcher, name)) {
+                                        self.state = @field(ThisFetcher, name)(self, ppu);
+                                        return;
+                                    }
+                                } else {
+                                    inline for (@typeInfo(FetchMode).@"enum".field_names) |mode| {
+                                        if (self.mode == @field(FetchMode, mode)) {
+                                            const name = "tick_" ++ mode ++ "_" ++ state;
+                                            if (@hasDecl(ThisFetcher, name)) {
+                                                self.state = @field(ThisFetcher, name)(self, ppu);
+                                                return;
+                                            }
+                                        }
+                                    }
+                                }
+
+                                const name = "tick_" ++ state;
+                                self.state = @field(ThisFetcher, name)(self, ppu);
+                                return;
+                            }
+                        }
+                    }
+
+                    fn tick_background_fetch_tile_1(self: *ThisFetcher, ppu: *const This) State {
+                        const base_addr: u16 = ppu.bg_tile_map_area.resolve(null).baseAddr();
+                        const x_offset = self.xpos +% @as(u5, @intCast(ppu.bg_viewport.x.resolve(null) / 8));
+                        const y_offset = 32 * (ppu.ly +% @as(u5, @intCast(ppu.bg_viewport.y.resolve(null) / 8)));
+                        self.addr = base_addr + x_offset + y_offset;
+                        return .fetch_tile_2;
+                    }
+
+                    fn tick_window_fetch_tile_1(self: *ThisFetcher, ppu: *const This) State {
+                        const base_addr: u16 = ppu.window_tile_map_area.resolve(null).baseAddr();
+                        const x_offset = self.xpos;
+                        const y_offset = 32 * ((ppu.window_line_counter / 8) & 0x1F);
+                        self.addr = base_addr + x_offset + y_offset;
+                        return .fetch_tile_2;
+                    }
+
+                    fn tick_objects_fetch_tile_1(self: *ThisFetcher, ppu: *const This) State {
+                        self.addr = ppu.objects_for_this_scanline[self.obj_idx].addr + 2;
+                        return .fetch_tile_2;
+                    }
+
+                    fn tick_objects_fetch_tile_2(self: *ThisFetcher, ppu: *const This) State {
+                        _, self.tilenum = Oam.read(ppu, self.addr);
+                        _, const attrs = Oam.read(ppu, self.addr + 1);
+                        self.attrs = @bitCast(attrs);
+                        return .fetch_data_low_1;
+                    }
+
+                    fn tick_fetch_tile_2(self: *ThisFetcher, ppu: *const This) State {
+                        _, self.tilenum = Vram.read(ppu, self.addr);
+                        return .fetch_data_low_1;
+                    }
+
+                    fn tick_objects_fetch_data_low_1(self: *ThisFetcher, ppu: *const This) State {
+                        const height_enum = ppu.obj_size.resolve(null);
+                        const height = height_enum.height();
+
+                        const tilenum = if (height_enum == .size_8x16)
+                            self.tilenum & 0xFE
+                        else
+                            self.tilenum;
+                        const tile_offset = @as(u16, tilenum) * 16;
+
+                        var row = ppu.ly + 16 - ppu.objects_for_this_scanline[self.obj_idx].y;
+                        if (self.attrs.yflip == .flipped) {
+                            row = height - 1 - row;
+                        }
+
+                        self.addr = tile_offset + row * 2;
+
+                        return .fetch_data_low_2;
+                    }
+
+                    fn tick_fetch_data_low_1(self: *ThisFetcher, ppu: *const This) State {
+                        const tile_offset_method: LCDC.TileDataMethod = ppu.bg_window_tile_data_area.resolve(null);
+
+                        const tile_offset: u16 = switch (tile_offset_method) {
+                            .method_8000 => @as(u16, self.tilenum) * 16,
+                            .method_8800 => blk: {
+                                const signed_tile: i8 = @bitCast(self.tilenum);
+                                const offset: i16 = 0x1000 + @as(i16, signed_tile) * 16;
+                                break :blk @intCast(offset);
+                            },
+                        };
+
+                        const row: u16 = switch (self.mode) {
+                            .background => (@as(u16, ppu.ly) + ppu.bg_viewport.y.resolve(null)) & 7,
+                            .window => ppu.window_line_counter & 7,
+                        };
+
+                        self.addr = tile_offset + row * 2;
+
+                        return .fetch_data_low_2;
+                    }
+
+                    fn tick_fetch_data_low_2(self: *ThisFetcher, ppu: *const This) State {
+                        _, self.data_low = Vram.read(ppu, self.addr);
+                        return .fetch_data_high_1;
+                    }
+
+                    fn tick_fetch_data_high_1(self: *ThisFetcher, _: *const This) State {
+                        self.addr += 1;
+                        return .fetch_data_high_2;
+                    }
+
+                    fn tick_fetch_data_high_2(self: *ThisFetcher, ppu: *const This) State {
+                        _, self.data_high = Vram.read(ppu, self.addr);
+
+                        if (which == .win_bg and self.virgin) {
+                            self.virgin = false;
+                            return .fetch_tile_1;
+                        }
+
+                        return self.attempt_push();
+                    }
+
+                    fn tick_objects_push(self: *ThisFetcher, fifo: *FIFO, ppu: *This) State {
+                        const pixels = self.calculatePixels();
+                        const objx = ppu.objects_for_this_scanline[self.obj_idx].x;
+
+                        const shifted = if (objx < 8)
+                            pixels[8 - objx ..]
+                        else
+                            &pixels;
+
+                        var counter: u8 = 0;
+                        while (counter < fifo.size() and counter < shifted.len) {
+                            const pix = fifo.at(counter);
+                            pix.* = mergePixels(pix.*, shifted[counter]);
+                            counter += 1;
+                        }
+
+                        for (shifted[counter..]) |pixel| {
+                            fifo.push(pixel);
+                        }
+
+                        ppu.objects_fetched_this_scanline[self.obj_idx] = true;
+                        return .fetch_tile_1;
+                    }
+
+                    fn mergePixels(curr: Pixel, next: Pixel) Pixel {
+                        if (curr.color_idx == 0) {
+                            return next;
+                        }
+                        return curr;
+                    }
+
+                    fn tick_push(self: *ThisFetcher, fifo: *FIFO, _: *const This) State {
+                        if (!fifo.empty()) {
+                            return .push;
+                        }
+
+                        const pixels = self.calculatePixels();
+                        for (pixels) |pixel| {
+                            fifo.push(pixel);
+                        }
+                        self.xpos +%= 1;
+
+                        return .fetch_tile_1;
+                    }
+
+                    fn calculatePixels(self: *ThisFetcher) [8]Pixel {
+                        var pixels: [8]Pixel = undefined;
+                        for (0..8) |i| {
+                            const bit = if (which == .obj and self.attrs.xflip == .flipped) i else (7 - i);
+
+                            const color_idx_low: u1 = (self.data_low & 1 << bit) >> bit;
+                            const color_idx_high: u1 = (self.data_high & 1 << bit) >> bit;
+                            const color_idx: u2 = (@as(u2, color_idx_high) << 1) | color_idx_low;
+
+                            pixels[i] = .{
+                                .color_idx = color_idx,
+                                .palette = if (which == .obj) self.attrs.palette else .obp0,
+                                .priority = if (which == .obj) self.attrs.priority else .none,
+                            };
+                        }
+                        return pixels;
+                    }
+                };
             }
 
-            fn tick(_: *Mode3, _: *This) ?Mode {
+            bg_win_fetcher: Fetcher(.win_bg),
+            obj_fetcher: Fetcher(.obj),
+            active_fetcher: enum { win_bg, obj },
+
+            bg_win_fifo: FIFO,
+            obj_fifo: FIFO,
+
+            x: u8,
+            had_window: bool,
+            discarded_pixels: u8,
+
+            fn init() Mode3 {
+                return .{
+                    .bg_win_fetcher = .init(),
+                    .obj_fetcher = .init(),
+                    .active_fetcher = .win_bg,
+
+                    .bg_win_fifo = .init(),
+                    .obj_fifo = .init(),
+
+                    .x = 0,
+                    .had_window = false,
+                    .discarded_pixels = 0,
+                };
+            }
+
+            fn tick(self: *Mode3, ppu: *This) ?Mode {
+                ppu.scanline_duration += 1;
+
+                self.setActiveFetcher(ppu);
+                switch (self.active_fetcher) {
+                    .win_bg => self.bg_win_fetcher.tick(ppu, self.bg_win_fifo),
+                    .obj => self.obj_fetcher.tick(ppu, self.obj_fifo),
+                }
+                self.setActiveFetcher(ppu);
+
+                if (self.active_fetcher != .obj) {
+                    const pixel = self.renderPixel(ppu);
+                    if (pixel) |p| {
+                        if (self.discarded_pixels < ppu.bg_viewport.x % 8) {
+                            self.discarded_pixels += 1;
+                        } else {
+                            ppu.video_backend.submit(p);
+                            self.x += 1;
+                        }
+                    }
+                }
+
+                if (self.bg_win_fetcher.mode == .window) {
+                    self.had_window = true;
+                }
+
+                if (self.shouldBeInWinMode(ppu)) {
+                    self.bg_win_fetcher.switchToWinMode(self.bg_win_fifo);
+                }
+
+                if (self.x >= 160) {
+                    if (self.had_window) {
+                        ppu.window_line_counter += 1;
+                    }
+                    return .{
+                        .Mode0 = .init(),
+                    };
+                }
                 return null;
+            }
+
+            fn shouldBeInWinMode(self: Mode3, ppu: This) void {
+                if (!ppu.window_enable) {
+                    return false;
+                }
+                if (!ppu.wy_eq_ly) {
+                    return false;
+                }
+                if (self.x + 7 < ppu.win_viewport.x) {
+                    return false;
+                }
+                return true;
+            }
+
+            fn setActiveFetcher(self: *mode3, ppu: *const This) void {
+                if (self.shouldFetchObject(ppu)) |idx| {
+                    self.active_fetcher = .obj;
+                    self.obj_fetcher.obj_idx = idx;
+                } else {
+                    self.active_fetcher = .bg_win;
+                }
+            }
+
+            fn shouldFetchObject(self: *Mode3, ppu: *const This) ?u8 {
+                for (0..ppu.total_objects_for_this_scanline) |i| {
+                    if (ppu.objects_for_this_scanline[i].x == self.x and
+                        !ppu.objects_fetched_this_scanline[i])
+                    {
+                        return i;
+                    }
+                }
+                return null;
+            }
+
+            fn renderPixel(self: *Mode3, ppu: *This) ?u2 {
+                const res_null = self.resolvePixel();
+                if (res_null == null) {
+                    return null;
+                }
+                const pixel, const which = res_null.?;
+
+                const palette = switch (which) {
+                    .bg_win => ppu.bg_win_palette,
+                    .obj => switch (pixel.palette) {
+                        .obp0 => ppu.obj_palette_1,
+                        .obp1 => ppu.obj_palette_2,
+                    },
+                };
+
+                return @backingInt(palette[pixel.color_idx].resolve(null));
+            }
+
+            fn resolvePixel(self: *Mode3) ?struct { Pixel, enum { bg_win, obj } } {
+                if (!self.bg_win_fifo.canPop()) {
+                    return null;
+                }
+
+                const bg_win_pixel = self.bg_win_fifo.pop();
+
+                if (!self.obj_fifo.canPop()) {
+                    return .{ bg_win_pixel, .bg_win };
+                }
+
+                const obj_pixel = self.obj_fifo.pop();
+
+                if (obj_pixel.color_idx == 0) {
+                    return .{ bg_win_pixel, .bg_win };
+                }
+
+                if (obj_pixel.priority == .bg_window_drawn_over and bg_win_pixel.color_idx != 0) {
+                    return .{ bg_win_pixel, .bg_win };
+                }
+
+                return .{ obj_pixel, .obj };
             }
         };
 
@@ -256,7 +714,7 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
 
         bg_tile_map_area: TrackedValue(LCDC.TileMapArea),
         window_tile_map_area: TrackedValue(LCDC.TileMapArea),
-        bg_window_tile_data_area: TrackedValue(LCDC.TileDataArea),
+        bg_window_tile_data_area: TrackedValue(LCDC.TileDataMethod),
         obj_size: TrackedValue(LCDC.ObjSize),
 
         window_enable: TrackedValue(bool),
@@ -299,8 +757,11 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
         mode: Mode,
         ly: u8,
         objects_for_this_scanline: [10]struct { x: u8, y: u8, addr: u8 },
+        objects_fetched_this_scanline: [10]bool,
         total_objects_for_this_scanline: u8,
         scanline_duration: u16,
+        window_line_counter: u8,
+        wy_eq_ly: bool,
 
         oam_dma_progress: u8,
         must_write_to_stat_next_mcycle: ?u8,
@@ -314,7 +775,7 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
 
                 .bg_tile_map_area = .init(.addr_9C00_to_9FFF),
                 .window_tile_map_area = .init(.addr_9C00_to_9FFF),
-                .bg_window_tile_data_area = .init(.addr_8000_to_8FFF),
+                .bg_window_tile_data_area = .init(.method_8800),
                 .obj_size = .init(.size_8x16),
 
                 .window_enable = .init(false),
@@ -368,8 +829,11 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
                 .oam_dma_progress = 0xFF,
                 .must_write_to_stat_next_mcycle = null,
                 .objects_for_this_scanline = @splat(.{ .x = 0, .y = 0, .addr = 0 }),
+                .objects_fetched_this_scanline = @splat(false),
                 .total_objects_for_this_scanline = 0,
                 .scanline_duration = 0,
+                .window_line_counter = 0,
+                .wy_eq_ly = false,
 
                 .video_backend = video_backend,
                 .interrupt = interrupt,
@@ -605,6 +1069,7 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
         }
 
         fn poweroff(self: *This) void {
+            self.video_backend.poweroff();
             self.enabled.set(false, true);
             self.mode = .{
                 .Mode0 = .init(),

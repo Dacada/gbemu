@@ -226,23 +226,37 @@ pub const LCDC = packed struct(u8) {
     pub const ObjSize = enum(u1) {
         size_8x8 = 0,
         size_8x16 = 1,
+
+        pub fn height(self: @This()) u8 {
+            return switch (self) {
+                .size_8x8 => 8,
+                .size_8x16 => 16,
+            };
+        }
     };
 
     pub const TileMapArea = enum(u1) {
         addr_9800_to_9BFF = 0,
         addr_9C00_to_9FFF = 1,
+
+        pub fn baseAddr(self: @This()) u16 {
+            return switch (self) {
+                .addr_9800_to_9BFF => 0x9800 - 0x8000,
+                .addr_9C00_to_9FFF => 0x9C00 - 0x8000,
+            };
+        }
     };
 
-    pub const TileDataArea = enum(u1) {
-        addr_8800_to_97FF = 0,
-        addr_8000_to_8FFF = 1,
+    pub const TileDataMethod = enum(u1) {
+        method_8800 = 0,
+        method_8000 = 1,
     };
 
     bg_window_enable: bool, // DMG ONLY -- Different meaning in CGB
     obj_enable: bool,
     obj_size: ObjSize,
     bg_tile_map_area: TileMapArea,
-    bg_window_tile_data_area: TileDataArea,
+    bg_window_tile_data_area: TileDataMethod,
     window_enable: bool,
     window_tile_map_area: TileMapArea,
     ppu_enable: bool,
