@@ -117,7 +117,7 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
             Mode3: Mode3,
 
             fn tick(self: *@This(), ppu: *This) void {
-                if (ppu.ly == ppu.win_viewport.y) {
+                if (ppu.ly == ppu.win_viewport.y.resolve(null)) {
                     ppu.wy_eq_ly = true;
                 }
 
@@ -186,7 +186,7 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
         const Mode2 = struct {
             objs_idx: u8,
             oam_addr: u8,
-            current: struct { x: u8, y: u16 }, // y is 16 to avoid headaches with overflow when adding height
+            current: struct { x: u8, y: u8 },
             state: enum { read_next, write_next },
 
             fn init() Mode2 {
@@ -214,7 +214,7 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
                         // object's y coordinate is offset by 16 from the actual screen coordinate
                         const line = ppu.ly + 16;
                         const height = ppu.obj_size.resolve(null).height();
-                        if (self.objs_idx < 10 and line >= self.current.y and line < self.current.y + height) {
+                        if (self.objs_idx < 10 and line >= self.current.y and line < @as(u16, self.current.y) + height) {
                             const entry: This.ScannedOamEntry = .{
                                 .x = self.current.x,
                                 .y = self.current.y,
@@ -351,6 +351,8 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
 
                     fn init() ThisFetcher {
                         return .{
+                            .fifo = undefined,
+
                             .state = .fetch_tile_1,
                             .mode = if (which == .win_bg) .background else {},
 
@@ -360,8 +362,8 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
                             .data_high = 0,
                             .data_low = 0,
 
-                            .pixels = if (which == .win_bg) @splat(@bitCast(0)) else {},
-                            .attrs = if (which == .obj) @bitCast(0) else {},
+                            .pixels = if (which == .win_bg) @splat(@bitCast(@as(u4, 0))) else {},
+                            .attrs = if (which == .obj) @bitCast(@as(u8, 0)) else {},
                             .virgin = if (which == .win_bg) true else {},
                             .obj_idx = if (which == .obj) 0 else {},
                         };
@@ -402,8 +404,12 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
                                 }
 
                                 const name = "tick_" ++ state;
-                                self.state = @field(ThisFetcher, name)(self, ppu);
-                                return;
+                                if (@hasDecl(ThisFetcher, name)) {
+                                    self.state = @field(ThisFetcher, name)(self, ppu);
+                                    return;
+                                } else {
+                                    @panic("missing comptime definitions");
+                                }
                             }
                         }
                     }
@@ -600,7 +606,7 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
 
                     .x = 0,
                     .had_window = false,
-                    .pixels_to_discard = ?0,
+                    .pixels_to_discard = null,
                     .discarded_pixels = 0,
                 };
             }
@@ -609,13 +615,13 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
                 ppu.scanline_duration += 1;
 
                 if (self.pixels_to_discard == null) {
-                    self.pixels_to_discard = ppu.bg_viewport.x % 8;
+                    self.pixels_to_discard = ppu.bg_viewport.x.resolve(null) % 8;
                 }
 
                 self.setActiveFetcher(ppu);
                 switch (self.active_fetcher) {
-                    .win_bg => self.bg_win_fetcher.tick(ppu, self.bg_win_fifo),
-                    .obj => self.obj_fetcher.tick(ppu, self.obj_fifo),
+                    .win_bg => self.bg_win_fetcher.tick(ppu, &self.bg_win_fifo),
+                    .obj => self.obj_fetcher.tick(ppu, &self.obj_fifo),
                 }
                 self.setActiveFetcher(ppu);
 
@@ -641,24 +647,24 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
                 }
 
                 if (self.shouldBeInWinMode(ppu)) {
-                    self.bg_win_fetcher.switchToWinMode(self.bg_win_fifo);
+                    self.bg_win_fetcher.switchToWinMode(&self.bg_win_fifo);
                     self.had_window = true;
                 }
 
                 return null;
             }
 
-            fn shouldBeInWinMode(self: Mode3, ppu: This) bool {
-                if (!ppu.bg_window_enable) {
+            fn shouldBeInWinMode(self: Mode3, ppu: *const This) bool {
+                if (!ppu.bg_window_enable.resolve(null)) {
                     return false;
                 }
-                if (!ppu.window_enable) {
+                if (!ppu.window_enable.resolve(null)) {
                     return false;
                 }
                 if (!ppu.wy_eq_ly) {
                     return false;
                 }
-                if (self.x + 7 < ppu.win_viewport.x) {
+                if (self.x + 7 < ppu.win_viewport.x.resolve(null)) {
                     return false;
                 }
                 return true;
@@ -669,7 +675,7 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
                     self.active_fetcher = .obj;
                     self.obj_fetcher.obj_idx = idx;
                 } else {
-                    self.active_fetcher = .bg_win;
+                    self.active_fetcher = .win_bg;
                 }
             }
 
@@ -678,7 +684,7 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
                     if (ppu.objects_for_this_scanline[i].x <= self.x + 8 and
                         !ppu.objects_fetched_this_scanline[i])
                     {
-                        return i;
+                        return @intCast(i);
                     }
                 }
                 return null;
@@ -703,9 +709,9 @@ pub fn Ppu(VideoBackend: type, Interrupt: type, warn: bool) type {
                     return null;
                 }
 
-                const bg_win_pixel = self.bg_win_fifo.pop();
+                var bg_win_pixel = self.bg_win_fifo.pop();
 
-                if (!ppu.bg_window_enable) {
+                if (!ppu.bg_window_enable.resolve(null)) {
                     bg_win_pixel.color_idx = 0;
                 }
 
