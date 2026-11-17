@@ -5,8 +5,8 @@ const runProgram = testutil.runProgram;
 const TestCpuState = testutil.TestCpuState;
 
 fn translate_with_error(code: []const u8, allocator: std.mem.Allocator) ![]const u8 {
-    var diag: lib.assembler.TranslateDiagnostics = undefined;
-    return lib.assembler.translate(code, allocator, 0, &diag) catch |e| {
+    var diag: lib.tools.assembler.TranslateDiagnostics = undefined;
+    return lib.tools.assembler.translate(code, allocator, 0, &diag) catch |e| {
         std.debug.print("ERROR: {s}\n", .{@errorName(e)});
         switch (diag) {
             .parser => |p| {

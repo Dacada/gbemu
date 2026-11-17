@@ -1,6 +1,8 @@
 const std = @import("std");
 const Heap = @import("fixed_size_heap.zig").FixedSizeHeap(ScheduledEventInner, 32, scheduledEventComp, true);
 
+// TODO: only serial uses this, couple it more tightly
+
 pub const ScheduledEvent = struct {
     context: *anyopaque,
     callback: *const fn (*anyopaque) void,

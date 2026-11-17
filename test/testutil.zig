@@ -3,7 +3,7 @@ const lib = @import("lib");
 
 const InterruptKind = lib.interrupt_kind.InterruptKind;
 
-const Container = lib.dependency_container.Container(.{
+const Container = lib.Container(.{
     .interrupt = .mock,
     .mmu = .mock,
     .debugger = .mock,

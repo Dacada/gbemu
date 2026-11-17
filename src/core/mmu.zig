@@ -1,7 +1,7 @@
 const std = @import("std");
 
-const MemoryFlag = @import("memory_flag.zig").MemoryFlag;
-const router = @import("router.zig");
+const MemoryFlag = @import("utils/MemoryFlag.zig");
+const router = @import("mmu/router.zig");
 const GenericRouter = router.Router;
 const GenericRange = router.Range;
 const GenericTargetField = router.TargetField;
@@ -294,7 +294,7 @@ pub fn Dummy(comptime tick_receives_arg: bool) type {
     };
 }
 
-const TestContainer = @import("dependency_container.zig").Container(.{
+const TestContainer = @import("../dependency_container.zig").Container(.{
     .cartridge = .dummy,
     .ppu = .dummy,
     .mmio = .dummy,

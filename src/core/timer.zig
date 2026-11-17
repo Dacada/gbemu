@@ -1,7 +1,7 @@
-const MemoryFlag = @import("memory_flag.zig").MemoryFlag;
-const InterruptKind = @import("interrupt_kind.zig").InterruptKind;
-const TrackedValue = @import("tracked_value.zig").TrackedValue;
-const TAC = @import("mmio_register.zig").TAC;
+const MemoryFlag = @import("utils/MemoryFlag.zig");
+const InterruptKind = @import("interrupt.zig").InterruptKind;
+const TrackedValue = @import("utils/tracked_value.zig").TrackedValue;
+const TAC = @import("utils/mmio_register.zig").TAC;
 
 pub fn Timer(Apu: type, Interrupt: type) type {
     return struct {
@@ -175,7 +175,7 @@ pub fn Timer(Apu: type, Interrupt: type) type {
 
 const std = @import("std");
 
-const TestContainer = @import("dependency_container.zig").Container(.{
+const TestContainer = @import("../dependency_container.zig").Container(.{
     .apu = .mock,
     .interrupt = .mock,
 });

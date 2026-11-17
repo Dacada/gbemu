@@ -2,15 +2,16 @@ const std = @import("std");
 
 pub const ContainerConfig = struct {
     joypad_backend: enum {
-        mock_nil,
-    } = .mock_nil,
+        mock,
+        nil,
+    } = .nil,
     audio_backend: enum {
-        mock_wav,
-        mock_nil,
-    } = .mock_nil,
+        wav,
+        nil,
+    } = .nil,
     video_backend: enum {
-        mock_nil,
-    } = .mock_nil,
+        nil,
+    } = .nil,
     scheduler: enum {
         real,
         mock,
@@ -72,31 +73,35 @@ pub const ContainerConfig = struct {
 };
 
 pub fn Container(comptime cfg: ContainerConfig) type {
-    const backend = @import("backend.zig");
-    const cartridge = @import("cartridge.zig");
-    const scheduler = @import("scheduler.zig");
-    const interrupt = @import("interrupt.zig");
-    const mmio = @import("mmio.zig");
-    const mmu = @import("mmu.zig");
-    const cpu = @import("cpu.zig");
-    const apu = @import("apu.zig");
-    const timer = @import("timer.zig");
-    const ppu = @import("ppu.zig");
-    const debugger = @import("debugger.zig");
+    const cartridge = @import("core/cartridge.zig");
+    const scheduler = @import("core/serial/scheduler.zig"); // TODO: ugly, should be more tightly coupled to serial since only it uses it
+    const interrupt = @import("core/interrupt.zig");
+    const mmio = @import("core/mmu/mmio.zig"); // TODO: ugly, maybe mmu should own mmio directly
+    const mmu = @import("core/mmu.zig");
+    const cpu = @import("core/cpu.zig");
+    const apu = @import("core/apu.zig");
+    const timer = @import("core/timer.zig");
+    const ppu = @import("core/ppu.zig");
+    const debugger = @import("core/debugger.zig");
+    const emulator = @import("core/emulator.zig");
+    const joypad = @import("core/joypad.zig");
+    const serial = @import("core/serial.zig");
+
     const Dummy = mmu.Dummy(false);
     const DummyWithTickArgument = mmu.Dummy(true);
 
     const c_JoypadBackend = switch (cfg.joypad_backend) {
-        .mock_nil => backend.NullJoypadBackend,
+        .nil => @import("backends/joypad/Null.zig"),
+        .mock => @import("backends/joypad/Mock.zig"),
     };
 
     const c_AudioBackend = switch (cfg.audio_backend) {
-        .mock_wav => backend.WavAudioBackend,
-        .mock_nil => backend.NullAudioBackend,
+        .wav => @import("backends/audio/Wav.zig"),
+        .nil => @import("backends/audio/Null.zig"),
     };
 
     const c_VideoBackend = switch (cfg.video_backend) {
-        .mock_nil => backend.NullVideoBackend,
+        .nil => @import("backends/video/Null.zig"),
     };
 
     const c_Scheduler = switch (cfg.scheduler) {
@@ -118,12 +123,12 @@ pub fn Container(comptime cfg: ContainerConfig) type {
     };
 
     const c_Joypad = switch (cfg.joypad) {
-        .real => @import("joypad.zig").Joypad(c_Interrupt, c_JoypadBackend),
+        .real => joypad.Joypad(c_Interrupt, c_JoypadBackend),
         .dummy => Dummy,
     };
 
     const c_Serial = switch (cfg.serial) {
-        .real => @import("serial.zig").Serial(c_Scheduler, c_Interrupt),
+        .real => serial.Serial(c_Scheduler, c_Interrupt),
         .dummy => Dummy,
     };
 
@@ -170,7 +175,7 @@ pub fn Container(comptime cfg: ContainerConfig) type {
         .mock => debugger.MockDebugger,
     };
 
-    const c_Emulator = @import("emulator.zig").Emulator(c_Cpu, c_Apu, c_Ppu, c_Timer, c_Scheduler, c_Joypad, c_Debugger);
+    const c_Emulator = emulator.Emulator(c_Cpu, c_Mmu, c_Apu, c_Ppu, c_Timer, c_Scheduler, c_Joypad, c_Debugger);
 
     return struct {
         const This = @This();
@@ -225,20 +230,21 @@ pub fn Container(comptime cfg: ContainerConfig) type {
 
         fn make_joypad_backend(_: *This) JoypadBackend {
             return switch (cfg.joypad_backend) {
-                .mock_nil => JoypadBackend.init(),
+                .nil => JoypadBackend.init(),
+                .mock => JoypadBackend.init(),
             };
         }
 
         fn make_audio_backend(_: *This) AudioBackend {
             return switch (cfg.audio_backend) {
-                .mock_nil => AudioBackend.init(),
-                .mock_wav => AudioBackend.init(),
+                .nil => AudioBackend.init(),
+                .wav => AudioBackend.init(),
             };
         }
 
         fn make_video_backend(_: *This) VideoBackend {
             return switch (cfg.video_backend) {
-                .mock_nil => VideoBackend.init(),
+                .nil => VideoBackend.init(),
             };
         }
 

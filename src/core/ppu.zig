@@ -2,11 +2,11 @@ const std = @import("std");
 
 // DMG ONLY -- Basically everything, some other more specific stuff
 
-const MemoryFlag = @import("memory_flag.zig").MemoryFlag;
-const TrackedValue = @import("tracked_value.zig").TrackedValue;
-const InterruptKind = @import("interrupt_kind.zig").InterruptKind;
+const MemoryFlag = @import("utils/MemoryFlag.zig");
+const TrackedValue = @import("utils/tracked_value.zig").TrackedValue;
+const InterruptKind = @import("interrupt.zig").InterruptKind;
 
-const mmio_register = @import("mmio_register.zig");
+const mmio_register = @import("utils/mmio_register.zig");
 const LCDC = mmio_register.LCDC;
 const STAT = mmio_register.STAT;
 const BGP = mmio_register.BGP;

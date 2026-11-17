@@ -1,9 +1,10 @@
 const std = @import("std");
 const lib = @import("lib");
 
-const Container = lib.dependency_container.Container(.{});
+const Container = lib.Container(.{});
 const Mmu = Container.Mmu;
 const Cpu = Container.Cpu;
+const Emulator = Container.Emulator;
 
 pub fn main(init: std.process.Init) !void {
     const breakpoint_instruction: ?u8 = null;
@@ -31,11 +32,11 @@ pub fn main(init: std.process.Init) !void {
     try cart.loadFromBuffer(&romBuffer, null);
 
     const mmu = container.get_mmu();
-    lib.emulator.initializeMemory(Mmu, mmu);
+    Emulator.initializeMemory(mmu);
 
     var cpu = container.get_cpu();
     cpu.setBreakpointInstruction(breakpoint_instruction);
-    lib.emulator.initializeCpu(Cpu, cpu, cart.checksum);
+    Emulator.initializeCpu(cpu, cart.checksum);
 
     // This executes a nop and fetches the first instruction of the ROM
     cpu.tick();

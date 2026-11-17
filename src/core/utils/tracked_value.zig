@@ -1,4 +1,4 @@
-const MemoryFlag = @import("memory_flag.zig").MemoryFlag;
+const MemoryFlag = @import("MemoryFlag.zig");
 
 pub fn TrackedValue(T: type) type {
     return struct {

@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const MemoryFlag = @import("memory_flag.zig").MemoryFlag;
+const MemoryFlag = @import("utils/MemoryFlag.zig");
 
 const logger = std.log.scoped(.cartridge);
 

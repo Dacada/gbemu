@@ -1,14 +1,14 @@
 const std = @import("std");
 
-const MemoryFlag = @import("memory_flag.zig").MemoryFlag;
-const router = @import("router.zig");
+const MemoryFlag = @import("utils/MemoryFlag.zig");
+const router = @import("mmu/router.zig"); // TODO: ugly, may need to put router in util?
 const GenericRouter = router.Router;
 const GenericRange = router.Range;
 const GenericTargetField = router.TargetField;
-const TrackedValue = @import("tracked_value.zig").TrackedValue;
-const Channel = @import("channel.zig").Channel;
+const TrackedValue = @import("utils/tracked_value.zig").TrackedValue;
+const Channel = @import("apu/channel.zig").Channel;
 
-const mmio_register = @import("mmio_register.zig");
+const mmio_register = @import("utils/mmio_register.zig");
 const NR50 = mmio_register.NR50;
 const NR51 = mmio_register.NR51;
 const NR52 = mmio_register.NR52;

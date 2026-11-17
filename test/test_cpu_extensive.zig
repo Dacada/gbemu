@@ -2,7 +2,8 @@ const std = @import("std");
 const testutil = @import("testutil.zig");
 const runTestCase = testutil.runTestCase;
 const TestCpuState = testutil.TestCpuState;
-const register = @import("lib").register;
+const AluRegister = @import("lib").core.Alu;
+const AluFlags = AluRegister.Flags;
 
 // IUT = Instruction Under Test
 
@@ -860,9 +861,9 @@ test "Load HL from adjusted SP" {
 
         const unsigned_e: u8 = @intCast(e);
 
-        var reg = register.General{
+        var reg = AluRegister{
             .hi = 0x00,
-            .lo = register.Flags{
+            .lo = AluFlags{
                 .c = 0,
                 .h = 0,
                 .n = 0,
@@ -932,9 +933,9 @@ test "Add (register)" {
                 const instr: u8 = 0b10000000 | reg_u8 | (@as(u8, carry_instr) << 3);
                 const test_val: u8 = 0xBB;
 
-                var res = register.General{
+                var res = AluRegister{
                     .hi = test_val,
-                    .lo = register.Flags{
+                    .lo = AluFlags{
                         .c = carry_flag,
                         .h = 0,
                         .n = 0,
@@ -990,9 +991,9 @@ test "Add (register A)" {
 
             const instr: u8 = 0b10000111 | (@as(u8, carry_instr) << 3);
 
-            var res = register.General{
+            var res = AluRegister{
                 .hi = val_u8,
-                .lo = register.Flags{
+                .lo = AluFlags{
                     .c = carry_flag,
                     .h = 0,
                     .n = 0,
@@ -1045,9 +1046,9 @@ test "Add (indirect HL)" {
             const test_addr: u16 = 0xD00D;
             const instr: u8 = 0b10000110 | (@as(u8, carry_instr) << 3);
 
-            var res = register.General{
+            var res = AluRegister{
                 .hi = test_val,
-                .lo = register.Flags{
+                .lo = AluFlags{
                     .c = carry_flag,
                     .h = 0,
                     .n = 0,
@@ -1113,9 +1114,9 @@ test "Add (immediate)" {
             const test_val: u8 = 0xAA;
             const instr: u8 = 0b11000110 | (@as(u8, carry_instr) << 3);
 
-            var res = register.General{
+            var res = AluRegister{
                 .hi = test_val,
-                .lo = register.Flags{
+                .lo = AluFlags{
                     .c = carry_flag,
                     .h = 0,
                     .n = 0,
@@ -1179,9 +1180,9 @@ test "Sub (register)" {
                 const instr: u8 = 0b10010000 | reg_u8 | (@as(u8, carry_instr) << 3);
                 const test_val: u8 = 0xBB;
 
-                var res = register.General{
+                var res = AluRegister{
                     .hi = test_val,
-                    .lo = register.Flags{
+                    .lo = AluFlags{
                         .c = carry_flag,
                         .h = 0,
                         .n = 0,
@@ -1237,9 +1238,9 @@ test "Sub (register A)" {
 
             const instr: u8 = 0b10010111 | (@as(u8, carry_instr) << 3);
 
-            var res = register.General{
+            var res = AluRegister{
                 .hi = val_u8,
-                .lo = register.Flags{
+                .lo = AluFlags{
                     .c = carry_flag,
                     .h = 0,
                     .n = 0,
@@ -1292,9 +1293,9 @@ test "Sub (indirect HL)" {
             const test_addr: u16 = 0xD00D;
             const instr: u8 = 0b10010110 | (@as(u8, carry_instr) << 3);
 
-            var res = register.General{
+            var res = AluRegister{
                 .hi = test_val,
-                .lo = register.Flags{
+                .lo = AluFlags{
                     .c = carry_flag,
                     .h = 0,
                     .n = 0,
@@ -1360,9 +1361,9 @@ test "Sub (immediate)" {
             const test_val: u8 = 0xAA;
             const instr: u8 = 0b11010110 | (@as(u8, carry_instr) << 3);
 
-            var res = register.General{
+            var res = AluRegister{
                 .hi = test_val,
-                .lo = register.Flags{
+                .lo = AluFlags{
                     .c = carry_flag,
                     .h = 0,
                     .n = 0,
@@ -1422,9 +1423,9 @@ test "CP (register)" {
             const instr: u8 = 0b10111000 | reg_u8;
             const test_val: u8 = 0xBB;
 
-            var res = register.General{
+            var res = AluRegister{
                 .hi = test_val,
-                .lo = register.Flags{
+                .lo = AluFlags{
                     .c = 0,
                     .h = 0,
                     .n = 0,
@@ -1473,9 +1474,9 @@ test "CP (register A)" {
 
         const instr: u8 = 0b10111111;
 
-        var res = register.General{
+        var res = AluRegister{
             .hi = val_u8,
-            .lo = register.Flags{
+            .lo = AluFlags{
                 .c = 0,
                 .h = 0,
                 .n = 0,
@@ -1521,9 +1522,9 @@ test "CP (indirect HL)" {
         const test_addr: u16 = 0xD00D;
         const instr: u8 = 0b10111110;
 
-        var res = register.General{
+        var res = AluRegister{
             .hi = test_val,
-            .lo = register.Flags{
+            .lo = AluFlags{
                 .c = 0,
                 .h = 0,
                 .n = 0,
@@ -1583,9 +1584,9 @@ test "CP (immediate)" {
         const test_val: u8 = 0xAA;
         const instr: u8 = 0b11111110;
 
-        var res = register.General{
+        var res = AluRegister{
             .hi = test_val,
-            .lo = register.Flags{
+            .lo = AluFlags{
                 .c = 0,
                 .h = 0,
                 .n = 0,
@@ -1637,9 +1638,9 @@ test "INC/DEC Register" {
                 // Constants
                 const instr: u8 = 0b00_000_10_0 | (reg << 3) | incdec;
 
-                var rreg = register.General{
+                var rreg = AluRegister{
                     .hi = test_val,
-                    .lo = register.Flags{
+                    .lo = AluFlags{
                         .c = 0,
                         .h = 0,
                         .n = 0,
@@ -1688,9 +1689,9 @@ test "INC/DEC Indirect" {
             const instr: u8 = 0b00_110_10_0 | incdec;
             const test_addr = 0xD00D;
 
-            var reg = register.General{
+            var reg = AluRegister{
                 .hi = test_val,
-                .lo = register.Flags{
+                .lo = AluFlags{
                     .c = 0,
                     .h = 0,
                     .n = 0,
@@ -1754,9 +1755,9 @@ test "AND register" {
             const instr: u8 = 0b10100_000 | reg;
 
             const reg_val = 0xAA;
-            var res = register.General{
+            var res = AluRegister{
                 .hi = reg_val,
-                .lo = register.Flags{
+                .lo = AluFlags{
                     .c = 0,
                     .h = 0,
                     .n = 0,
@@ -1802,9 +1803,9 @@ test "AND register A" {
         // Constants
         const instr: u8 = 0b10100_111;
 
-        var res = register.General{
+        var res = AluRegister{
             .hi = test_val,
-            .lo = register.Flags{
+            .lo = AluFlags{
                 .c = 0,
                 .h = 0,
                 .n = 0,
@@ -1847,9 +1848,9 @@ test "AND indirect HL" {
 
         const test_addr = 0xD00D;
         const reg_val = 0xAA;
-        var res = register.General{
+        var res = AluRegister{
             .hi = reg_val,
-            .lo = register.Flags{
+            .lo = AluFlags{
                 .c = 0,
                 .h = 0,
                 .n = 0,
@@ -1904,9 +1905,9 @@ test "AND immediate" {
         const instr: u8 = 0b11100110;
 
         const reg_val = 0xAA;
-        var res = register.General{
+        var res = AluRegister{
             .hi = reg_val,
-            .lo = register.Flags{
+            .lo = AluFlags{
                 .c = 0,
                 .h = 0,
                 .n = 0,
@@ -1956,9 +1957,9 @@ test "OR register" {
             const instr: u8 = 0b10110_000 | reg;
 
             const reg_val = 0xAA;
-            var res = register.General{
+            var res = AluRegister{
                 .hi = reg_val,
-                .lo = register.Flags{
+                .lo = AluFlags{
                     .c = 0,
                     .h = 0,
                     .n = 0,
@@ -2004,9 +2005,9 @@ test "OR register A" {
         // Constants
         const instr: u8 = 0b10110_111;
 
-        var res = register.General{
+        var res = AluRegister{
             .hi = test_val,
-            .lo = register.Flags{
+            .lo = AluFlags{
                 .c = 0,
                 .h = 0,
                 .n = 0,
@@ -2049,9 +2050,9 @@ test "OR indirect HL" {
 
         const test_addr = 0xD00D;
         const reg_val = 0xAA;
-        var res = register.General{
+        var res = AluRegister{
             .hi = reg_val,
-            .lo = register.Flags{
+            .lo = AluFlags{
                 .c = 0,
                 .h = 0,
                 .n = 0,
@@ -2106,9 +2107,9 @@ test "OR immediate" {
         const instr: u8 = 0b11110110;
 
         const reg_val = 0xAA;
-        var res = register.General{
+        var res = AluRegister{
             .hi = reg_val,
-            .lo = register.Flags{
+            .lo = AluFlags{
                 .c = 0,
                 .h = 0,
                 .n = 0,
@@ -2158,9 +2159,9 @@ test "XOR register" {
             const instr: u8 = 0b10101_000 | reg;
 
             const reg_val = 0xAA;
-            var res = register.General{
+            var res = AluRegister{
                 .hi = reg_val,
-                .lo = register.Flags{
+                .lo = AluFlags{
                     .c = 0,
                     .h = 0,
                     .n = 0,
@@ -2206,9 +2207,9 @@ test "XOR register A" {
         // Constants
         const instr: u8 = 0b10101_111;
 
-        var res = register.General{
+        var res = AluRegister{
             .hi = test_val,
-            .lo = register.Flags{
+            .lo = AluFlags{
                 .c = 0,
                 .h = 0,
                 .n = 0,
@@ -2251,9 +2252,9 @@ test "XOR indirect HL" {
 
         const test_addr = 0xD00D;
         const reg_val = 0xAA;
-        var res = register.General{
+        var res = AluRegister{
             .hi = reg_val,
-            .lo = register.Flags{
+            .lo = AluFlags{
                 .c = 0,
                 .h = 0,
                 .n = 0,
@@ -2308,9 +2309,9 @@ test "XOR immediate" {
         const instr: u8 = 0b11101110;
 
         const reg_val = 0xAA;
-        var res = register.General{
+        var res = AluRegister{
             .hi = reg_val,
-            .lo = register.Flags{
+            .lo = AluFlags{
                 .c = 0,
                 .h = 0,
                 .n = 0,
@@ -2457,9 +2458,9 @@ test "Decimal adjust accumulator" {
     const test_halfcarry: u1 = 1;
     const test_subtraction: u1 = 1;
 
-    var res = register.General{
+    var res = AluRegister{
         .hi = test_value,
-        .lo = register.Flags{
+        .lo = AluFlags{
             .c = test_carry,
             .h = test_halfcarry,
             .n = test_subtraction,
@@ -2506,9 +2507,9 @@ test "Complement accumulator" {
     const instr: u8 = 0b00101111;
     const test_value = 0xAA;
 
-    var res = register.General{
+    var res = AluRegister{
         .hi = test_value,
-        .lo = register.Flags{
+        .lo = AluFlags{
             .c = 0,
             .h = 0,
             .n = 0,
@@ -2606,9 +2607,9 @@ test "Add register 16" {
                             const value_lo: u8 = @intCast(value & 0xFF);
                             const value_hi: u8 = @intCast((value & 0xFF00) >> 8);
 
-                            var res_1 = register.General{
+                            var res_1 = AluRegister{
                                 .hi = 0,
-                                .lo = register.Flags{
+                                .lo = AluFlags{
                                     .c = carry,
                                     .h = halfcarry,
                                     .n = subtract,
@@ -2696,9 +2697,9 @@ test "Add register HL" {
                         const value_lo: u8 = @intCast(value & 0xFF);
                         const value_hi: u8 = @intCast((value & 0xFF00) >> 8);
 
-                        var res_1 = register.General{
+                        var res_1 = AluRegister{
                             .hi = 0,
-                            .lo = register.Flags{
+                            .lo = AluFlags{
                                 .c = carry,
                                 .h = halfcarry,
                                 .n = subtract,
@@ -2774,9 +2775,9 @@ test "Add SP relative" {
 
         const unsigned_e: u8 = @intCast(e);
 
-        var reg = register.General{
+        var reg = AluRegister{
             .hi = 0x00,
-            .lo = register.Flags{
+            .lo = AluFlags{
                 .c = 0,
                 .h = 0,
                 .n = 0,
@@ -2832,19 +2833,19 @@ test "Add SP relative" {
 
 test "rotate accumulator" {
     inline for (.{ 0b00, 0b01, 0b10, 0b11 }) |op| {
-        const aluop: fn (*register.General, u8) u8 = switch (op) {
-            0b00 => register.General.rlc,
-            0b01 => register.General.rrc,
-            0b10 => register.General.rl,
-            0b11 => register.General.rr,
+        const aluop: fn (*AluRegister, u8) u8 = switch (op) {
+            0b00 => AluRegister.rlc,
+            0b01 => AluRegister.rrc,
+            0b10 => AluRegister.rl,
+            0b11 => AluRegister.rr,
             else => unreachable,
         };
         inline for (.{ 0xA5, 0x00, 0xFF }) |val| {
             const instr = 0b000_00_111 | (@as(u8, op) << 3);
 
-            var reg = register.General{
+            var reg = AluRegister{
                 .hi = 0,
-                .lo = register.Flags{
+                .lo = AluFlags{
                     .c = 0,
                     .h = 0,
                     .n = 0,
@@ -2888,24 +2889,24 @@ test "rotate accumulator" {
 
 test "rotate/swap register" {
     inline for (.{ 0b000, 0b001, 0b010, 0b011, 0b100, 0b101, 0b110, 0b111 }) |op| {
-        const aluop: fn (*register.General, u8) u8 = switch (op) {
-            0b000 => register.General.rlc,
-            0b001 => register.General.rrc,
-            0b010 => register.General.rl,
-            0b011 => register.General.rr,
-            0b100 => register.General.sla,
-            0b101 => register.General.sra,
-            0b110 => register.General.swap,
-            0b111 => register.General.srl,
+        const aluop: fn (*AluRegister, u8) u8 = switch (op) {
+            0b000 => AluRegister.rlc,
+            0b001 => AluRegister.rrc,
+            0b010 => AluRegister.rl,
+            0b011 => AluRegister.rr,
+            0b100 => AluRegister.sla,
+            0b101 => AluRegister.sra,
+            0b110 => AluRegister.swap,
+            0b111 => AluRegister.srl,
             else => unreachable,
         };
         inline for (.{ 0b000, 0b001, 0b010, 0b011, 0b100, 0b101, 0b111 }) |regIdx| {
             inline for (.{ 0xA5, 0x00, 0xFF }) |val| {
                 const instr = 0b00_000_000 | (@as(u8, op) << 3) | regIdx;
 
-                var reg = register.General{
+                var reg = AluRegister{
                     .hi = 0,
-                    .lo = register.Flags{
+                    .lo = AluFlags{
                         .c = 0,
                         .h = 0,
                         .n = 0,
@@ -2953,24 +2954,24 @@ test "rotate/swap register" {
 
 test "rotate/swap HL indirect" {
     inline for (.{ 0b000, 0b001, 0b010, 0b011, 0b100, 0b101, 0b110, 0b111 }) |op| {
-        const aluop: fn (*register.General, u8) u8 = switch (op) {
-            0b000 => register.General.rlc,
-            0b001 => register.General.rrc,
-            0b010 => register.General.rl,
-            0b011 => register.General.rr,
-            0b100 => register.General.sla,
-            0b101 => register.General.sra,
-            0b110 => register.General.swap,
-            0b111 => register.General.srl,
+        const aluop: fn (*AluRegister, u8) u8 = switch (op) {
+            0b000 => AluRegister.rlc,
+            0b001 => AluRegister.rrc,
+            0b010 => AluRegister.rl,
+            0b011 => AluRegister.rr,
+            0b100 => AluRegister.sla,
+            0b101 => AluRegister.sra,
+            0b110 => AluRegister.swap,
+            0b111 => AluRegister.srl,
             else => unreachable,
         };
         inline for (.{ 0xA5, 0x00, 0xFF }) |val| {
             const addr = 0xD00D;
             const instr = 0b00_000_110 | (@as(u8, op) << 3);
 
-            var reg = register.General{
+            var reg = AluRegister{
                 .hi = 0,
-                .lo = register.Flags{
+                .lo = AluFlags{
                     .c = 0,
                     .h = 0,
                     .n = 0,
@@ -3043,9 +3044,9 @@ test "test bit register" {
             inline for (.{ 0xA5, 0x00, 0xFF }) |val| {
                 const instr = 0b01_000_000 | (@as(u8, bitIdx) << 3) | regIdx;
 
-                var reg = register.General{
+                var reg = AluRegister{
                     .hi = 0,
-                    .lo = register.Flags{
+                    .lo = AluFlags{
                         .c = 0,
                         .h = 0,
                         .n = 0,
@@ -3101,9 +3102,9 @@ test "test bit HL" {
             const addr = 0xD00D;
             const instr = 0b01_000_110 | (@as(u8, bitIdx) << 3);
 
-            var reg = register.General{
+            var reg = AluRegister{
                 .hi = 0,
-                .lo = register.Flags{
+                .lo = AluFlags{
                     .c = 0,
                     .h = 0,
                     .n = 0,
@@ -3171,9 +3172,9 @@ test "set/reset bit register" {
                     const instr = 0b10_000_000 | (@as(u8, setReset) << 6) | (@as(u8, bitIdx) << 3) | regIdx;
 
                     const res = if (setReset == 0)
-                        register.General.res(val, bitIdx)
+                        AluRegister.res(val, bitIdx)
                     else
-                        register.General.set(val, bitIdx);
+                        AluRegister.set(val, bitIdx);
 
                     const name = try std.fmt.allocPrint(std.testing.allocator, "set/reset bit register ({d}) (bit={b}) (reg={b})", .{ val, bitIdx, regIdx });
                     defer std.testing.allocator.free(name);
@@ -3218,9 +3219,9 @@ test "set/reset bit HL" {
                 const instr = 0b10_000_110 | (@as(u8, @intCast(setReset)) << 6) | (@as(u8, @intCast(bitIdx)) << 3);
 
                 const res = if (setReset == 0)
-                    register.General.res(val, bitIdx)
+                    AluRegister.res(val, bitIdx)
                 else
-                    register.General.set(val, bitIdx);
+                    AluRegister.set(val, bitIdx);
 
                 const name = try std.fmt.allocPrint(std.testing.allocator, "set/reset bit register HL indirect ({d}) (bit={b})", .{ val, bitIdx });
                 defer std.testing.allocator.free(name);

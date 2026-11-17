@@ -1,6 +1,6 @@
 const std = @import("std");
-const assembler = @import("assembler.zig");
-const MemoryFlag = @import("memory_flag.zig").MemoryFlag;
+const assembler = @import("../tools/assembler.zig");
+const MemoryFlag = @import("utils/MemoryFlag.zig");
 
 extern fn readline(prompt: [*:0]const u8) callconv(.c) ?[*:0]u8;
 extern fn add_history(line: [*:0]const u8) callconv(.c) void;
@@ -428,7 +428,7 @@ pub const MockDebugger = struct {
     }
 };
 
-const TestContainer = @import("dependency_container.zig").Container(.{
+const TestContainer = @import("../dependency_container.zig").Container(.{
     .mmu = .mock,
     .cpu = .mock,
 });

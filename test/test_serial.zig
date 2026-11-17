@@ -1,9 +1,9 @@
 const std = @import("std");
 const lib = @import("lib");
 
-const Container = lib.dependency_container.Container(.{
+const Container = lib.Container(.{
     .apu = .mock,
-    .audio_backend = .mock_nil,
+    .audio_backend = .nil,
     .boot_rom = .dummy,
     .cartridge = .dummy,
     .cpu = .mock,
@@ -11,7 +11,7 @@ const Container = lib.dependency_container.Container(.{
     .joypad = .dummy,
     .ppu = .dummy,
     .timer = .dummy,
-    .video_backend = .mock_nil,
+    .video_backend = .nil,
     .debugger = .mock,
 
     // almost everything gets mocked, so making the real components explicit too

@@ -1,7 +1,7 @@
-const MemoryFlag = @import("memory_flag.zig").MemoryFlag;
-const InterruptKind = @import("interrupt_kind.zig").InterruptKind;
-const Tracked = @import("tracked_value.zig").TrackedValue;
-const SC = @import("mmio_register.zig").SC;
+const MemoryFlag = @import("utils/MemoryFlag.zig");
+const InterruptKind = @import("interrupt.zig").InterruptKind;
+const TrackedValue = @import("utils/tracked_value.zig").TrackedValue;
+const SC = @import("utils/mmio_register.zig").SC;
 
 // TODO: stub, always open bus
 
@@ -14,10 +14,10 @@ pub fn Serial(Scheduler: type, Interrupt: type) type {
 
         running: bool,
 
-        data: Tracked(u8),
-        transfer_enable: Tracked(bool),
+        data: TrackedValue(u8),
+        transfer_enable: TrackedValue(bool),
         // DMG ONLY -- Clock speed added by CGB
-        clock_select: Tracked(SC.ClockSelect),
+        clock_select: TrackedValue(SC.ClockSelect),
 
         pub fn init(sched: *Scheduler, intr: *Interrupt) This {
             return This{
@@ -115,7 +115,7 @@ pub fn Serial(Scheduler: type, Interrupt: type) type {
 
 const std = @import("std");
 
-const TestContainer = @import("dependency_container.zig").Container(.{
+const TestContainer = @import("../dependency_container.zig").Container(.{
     .scheduler = .mock,
     .interrupt = .mock,
 });

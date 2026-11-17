@@ -1,9 +1,9 @@
 const std = @import("std");
 const lib = @import("lib");
-const tracker = lib.tracker;
+const tracker = lib.tools.tracker;
 
-const Container = lib.dependency_container.Container(.{
-    .audio_backend = .mock_wav,
+const Container = lib.Container(.{
+    .audio_backend = .wav,
     .debugger = .mock,
 });
 const Apu = Container.Apu;

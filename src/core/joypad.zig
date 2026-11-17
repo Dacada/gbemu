@@ -1,7 +1,7 @@
-const MemoryFlag = @import("memory_flag.zig").MemoryFlag;
-const InterruptKind = @import("interrupt_kind.zig").InterruptKind;
-const TrackedValue = @import("tracked_value.zig").TrackedValue;
-const JOYP = @import("mmio_register.zig").JOYP;
+const MemoryFlag = @import("utils/MemoryFlag.zig");
+const InterruptKind = @import("interrupt.zig").InterruptKind;
+const TrackedValue = @import("utils/tracked_value.zig").TrackedValue;
+const JOYP = @import("utils/mmio_register.zig").JOYP;
 
 pub const JoypadButtons = packed struct {
     start: bool,
@@ -167,7 +167,7 @@ pub fn Joypad(Interrupt: type, JoypadBackend: type) type {
 
 const std = @import("std");
 
-const TestContainer = @import("dependency_container.zig").Container(.{
+const TestContainer = @import("../dependency_container.zig").Container(.{
     .interrupt = .mock,
     .joypad_backend = .mock_nil,
 });

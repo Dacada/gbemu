@@ -1,9 +1,9 @@
 const std = @import("std");
 const lib = @import("lib");
-const Channel1 = lib.channel.Channel(1);
-const Channel2 = lib.channel.Channel(2);
-const Channel3 = lib.channel.Channel(3);
-const Channel4 = lib.channel.Channel(4);
+const Channel1 = lib.core.ApuChannel(1);
+const Channel2 = lib.core.ApuChannel(2);
+const Channel3 = lib.core.ApuChannel(3);
+const Channel4 = lib.core.ApuChannel(4);
 
 const cpu_freq_hz = 4_194_304;
 const apu_freq_hz = cpu_freq_hz / 2;

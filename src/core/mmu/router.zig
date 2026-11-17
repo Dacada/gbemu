@@ -1,4 +1,4 @@
-const MemoryFlag = @import("memory_flag.zig").MemoryFlag;
+const MemoryFlag = @import("../utils/MemoryFlag.zig");
 
 pub fn Range(Target: type) type {
     return struct { start: u16, end: u16, target: Target };

@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const MemoryFlag = @import("memory_flag.zig").MemoryFlag;
+const MemoryFlag = @import("../utils/MemoryFlag.zig");
 const router = @import("router.zig");
 const GenericRouter = router.Router;
 const GenericRange = router.Range;
@@ -178,7 +178,7 @@ pub fn Mmio(Joypad: type, Serial: type, Timer: type, Interrupt: type, Apu: type,
     };
 }
 
-const TestContainer = @import("dependency_container.zig").Container(.{
+const TestContainer = @import("../../dependency_container.zig").Container(.{
     .apu = .dummy,
     .boot_rom = .dummy,
     .joypad = .dummy,

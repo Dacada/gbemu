@@ -1,7 +1,22 @@
 const std = @import("std");
-const MemoryFlag = @import("memory_flag.zig").MemoryFlag;
-const InterruptKind = @import("interrupt_kind.zig").InterruptKind;
-const TrackedValue = @import("tracked_value.zig").TrackedValue;
+const MemoryFlag = @import("utils/MemoryFlag.zig");
+const TrackedValue = @import("utils/tracked_value.zig").TrackedValue;
+
+pub const InterruptKind = enum(u3) {
+    vblank = 0,
+    ppu = 1,
+    timer = 2,
+    serial = 3,
+    joypad = 4,
+
+    pub inline fn asMask(self: InterruptKind) u8 {
+        return @as(u8, 1) << self.asOffset();
+    }
+
+    pub inline fn asOffset(self: InterruptKind) u3 {
+        return @backingInt(self);
+    }
+};
 
 pub const MockInterrupt = struct {
     requested: ?InterruptKind,
